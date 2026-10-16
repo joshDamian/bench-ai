@@ -82,6 +82,10 @@ test('a page that keeps the rules passes, and the pass says what was looked at',
   const { code, out } = await gate(path.join(FIXTURES, 'good'), ['--url', url]);
   assert.equal(code, 0, `expected a pass, got:\n${out}`);
   assert.match(out, /clean/);
+  // This page's `.box` turns its border colour over 120ms rather than in one frame, the way
+  // a real composer does, so the pass also says the focus states are judged where they
+  // settle rather than in the turn they were forced: read too early, the border is still
+  // the old colour and the field looks like one that never lights up.
   // A pass that does not say what it saw is worth nothing, so the states it looked at are
   // in the line - including the ones a person only reaches with a mouse or a tab key.
   assert.match(out, /hover and focus/);

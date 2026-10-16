@@ -112,13 +112,19 @@ export function TaskView({ projectId, taskId, sessionId, tab }) {
 
       <nav class="task-tabs" role="tablist">
         ${sessions.map(
-          (s) => html`<a role="tab" class="task-tab ${current?.id === s.id ? 'active' : ''} ${s.archived_at ? 'archived' : ''}" href=${`${base}/s/${s.id}`} key=${s.id}><${Dot} status=${s.status} /><span>${s.title}</span></a>`
+          /* `named`: the one tab whose label is not a fixed word but a session's own title, so
+             it is the one the phone lets shrink to an ellipsis. Changes, Log and Terminal keep
+             their width - a destination you have to guess at is worse than a short name. */
+          (s) => html`<a role="tab" class="task-tab named ${current?.id === s.id ? 'active' : ''} ${s.archived_at ? 'archived' : ''}" href=${`${base}/s/${s.id}`} key=${s.id}><${Dot} status=${s.status} /><span>${s.title}</span></a>`
         )}
         ${active ? html`<button class="task-tab add" type="button" onClick=${newSession} aria-label="New session in this task"><${Icon} name="plus" /></button>` : null}
         <span class="tab-gap"></span>
-        <a role="tab" class="task-tab ${tab === 'changes' ? 'active' : ''}" href=${`${base}/changes`}>Changes${git?.files ? html` <span class="count">${git.files}</span>` : ''}${git?.conflicted?.length ? html` <span class="badge badge-bad">!</span>` : ''}</a>
-        <a role="tab" class="task-tab ${tab === 'log' ? 'active' : ''}" href=${`${base}/log`}>Log</a>
-        ${active ? html`<a role="tab" class="task-tab ${tab === 'terminal' ? 'active' : ''}" href=${`${base}/terminal`}><${Icon} name="terminal" /> Terminal</a>` : null}
+        ${/* Every label in a tab is in a <span>, including the four that never change: the
+              tab is a flex row, and `text-overflow` does nothing to a bare text node in one,
+              so an unwrapped label is a label that can only be cut, never ellipsised. */ ''}
+        <a role="tab" class="task-tab ${tab === 'changes' ? 'active' : ''}" href=${`${base}/changes`}><span>Changes</span>${git?.files ? html` <span class="count">${git.files}</span>` : ''}${git?.conflicted?.length ? html` <span class="badge badge-bad">!</span>` : ''}</a>
+        <a role="tab" class="task-tab ${tab === 'log' ? 'active' : ''}" href=${`${base}/log`}><span>Log</span></a>
+        ${active ? html`<a role="tab" class="task-tab ${tab === 'terminal' ? 'active' : ''}" href=${`${base}/terminal`}><${Icon} name="terminal" /><span>Terminal</span></a>` : null}
       </nav>
 
       <div
@@ -270,7 +276,10 @@ function DecisionLog({ task, sessions }) {
     api.taskLog(task.id).then(setLog).catch(toast);
   }, [task.id, task.updated_at]);
   if (log === null) return html`<div class="muted pane-empty">Loading…</div>`;
-  if (!log.length) return html`<div class="muted pane-empty">No decisions logged yet. Sessions add them with the <code>log</code> tool, each with the evidence behind it. A loop writes here too: every attempt, and why it ended.</div>`;
+  // One <p>, not a bare run of text: `.pane-empty` is a grid, and a grid blockifies every
+  // inline child into its own item, so the <code>log</code> in the middle of this sentence
+  // was drawn on a line of its own between two halves of a sentence.
+  if (!log.length) return html`<div class="muted pane-empty"><p>No decisions logged yet. Sessions add them with the <code>log</code> tool, each with the evidence behind it. A loop writes here too: every attempt, and why it ended.</p></div>`;
   const titled = (id) => sessions.find((s) => s.id === id)?.title || (id ? id.slice(0, 8) : '');
   return html`
     <ol class="decision-log">

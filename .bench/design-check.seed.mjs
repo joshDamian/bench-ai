@@ -35,7 +35,14 @@ if (folder === '--pick') {
   const task = s.tasks.find((/** @type {any} */ t) => t.state === 'active' && s.sessions.some((/** @type {any} */ x) => x.task_id === t.id)) || s.tasks[0];
   const project = task ? task.project_id : s.projects[0]?.id;
   const checkout = s.sessions.find((/** @type {any} */ x) => !x.task_id && x.project_id === project) || s.sessions.find((/** @type {any} */ x) => !x.task_id);
-  const ids = { project, task: task?.id, taskSession: s.sessions.find((/** @type {any} */ x) => x.task_id === task?.id)?.id, session: checkout?.id };
+  // A project with nothing in it at all, for the empty-project route. It has to have no
+  // tasks and no sessions, not merely none active: the route is the project view with
+  // nothing in flight, and a project that is merely quiet paints the same screen as one
+  // with work. Without this the route's id stays the literal `{emptyProject}` - or, worse,
+  // a substitution of `undefined` - and the gate then reports a page nobody asked for as
+  // clean, which is the one thing a gate must never do.
+  const empty = s.projects.find((/** @type {any} */ p) => !s.tasks.some((/** @type {any} */ t) => t.project_id === p.id) && !s.sessions.some((/** @type {any} */ x) => x.project_id === p.id));
+  const ids = { project, task: task?.id, taskSession: s.sessions.find((/** @type {any} */ x) => x.task_id === task?.id)?.id, session: checkout?.id, emptyProject: empty?.id };
   const missing = Object.entries(ids).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) {
     console.error(`The running Bench has no ${missing.join(', ')} to gate. Stop it and let the gate start a seeded one.`);

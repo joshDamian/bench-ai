@@ -862,6 +862,16 @@ ${themeScript}
 
       const audit = `(${pageAudit})(${JSON.stringify({ ignore: o.ignore })})`;
       const declared = `(${pageDeclared})(${JSON.stringify({ tokens: tokens ? path.basename(tokens) : '', ignore: o.ignore })})`;
+      // A hover or focus style is entitled to arrive over a moment - Bench's composer turns
+      // its border colour over 120ms - and `getComputedStyle` during a transition answers
+      // with the colour on the way there, not the one it is going to. Read in the same turn
+      // the state was forced, a field that lights up slowly reads as a field that does not
+      // light up at all, and which of the two a run gets depends on nothing but timing.
+      // Every transition is held still for the two passes that judge a state, so what is
+      // judged is what it settles into. Motion is measured on its own pass, on a page these
+      // were never added to.
+      const hold = `(() => { const s = document.createElement('style'); s.id = 'design-check-held'; s.textContent = '*{transition-duration:0s!important;transition-delay:0s!important}'; document.head.appendChild(s); return true; })()`;
+      const release = `(() => { document.getElementById('design-check-held')?.remove(); return true; })()`;
 
       // What the stylesheets declare is the same whatever theme the page is rendered in -
       // a `@media (prefers-color-scheme: dark)` block is in the CSS either way - so it is
@@ -896,6 +906,7 @@ ${themeScript}
 
         // Hover, then focus. The browser puts every element into the state and the same
         // audit runs again, so what is measured is what the state really produces.
+        await page.evaluate(hold);
         const tagged = await page.nodes('[data-bc-id]');
         await page.forcePseudo(tagged, ['hover']);
         const hovered = await page.evaluate(audit);
@@ -909,6 +920,7 @@ ${themeScript}
         findings.push(...focusFindings(plain.focusables, focused.focusables, route, theme));
         await page.forcePseudo(tagged, []);
         await page.forcePseudo(around, []);
+        await page.evaluate(release);
       }
 
       if (!o.onlyShots) {

@@ -9,8 +9,11 @@ a { display: inline-block; padding: var(--space-1); color: var(--brand); font-si
 a:focus-visible { outline: 3px solid var(--focus); }
 /* A tinted tag: the ink is read over the tint blended onto the page, not over the tint alone. */
 .tag { padding: var(--space-1); color: var(--brand); background-color: var(--tint); font-size: 16px; }
-/* A field whose focus shows on the box around it. */
-.box { border: 1px solid var(--line); }
+/* A field whose focus shows on the box around it - and arrives over a moment rather than
+   in one frame, the way a real composer's does. The gate has to judge the state it settles
+   into: read in the turn the state was forced, the border is still the old colour and the
+   field looks like one that never lights up. */
+.box { border: 1px solid var(--line); transition: border-color 120ms ease; }
 .box:focus-within { border-color: var(--focus); }
 textarea { display: block; width: 100%; min-height: 40px; border: 0; outline: none; background-color: var(--bg); color: var(--ink); font-size: 16px; }
 /* A row title clamped to one line: the note inside it is drawn away short, which is the

@@ -686,14 +686,21 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .logo{color:var(--text);text-decoration:none;font-weight:700;font-size:var(--text-lg);display:flex;gap:var(--space-2);align-items:center}
 .logo-mark{color:var(--accent)}
 .side-waiting{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn);text-decoration:none;font-weight:600;font-size:var(--text-sm)}
-.side-projects{display:grid;gap:var(--space-3);flex:1;align-content:start}
-.side-project{display:grid;gap:1px}
+/* `minmax(0,1fr)` rather than the implicit `auto`: an auto column is sized to its widest
+   row's max-content, so a long task title made this a 355px grid inside a 235px rail. The
+   rows then overflowed the sidebar and were cut mid-letter with no ellipsis, because a
+   box that is never narrower than its text never has anything to ellipsise. */
+.side-projects{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-3);flex:1;align-content:start}
+.side-project{display:grid;grid-template-columns:minmax(0,1fr);gap:1px}
 .side-project-head{display:flex;align-items:center;gap:var(--space-1);padding:0 var(--space-2) 0 0;border-radius:var(--radius-sm)}
 .side-project-head a{flex:1;min-width:0;padding:var(--space-1) 0;color:var(--text);text-decoration:none;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .side-project-head.active{background:var(--surface-2)}
 .fold{width:var(--space-6);min-height:var(--space-6);color:var(--muted);font-size:var(--text-xs)}
-.side-item{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-2) var(--space-2) calc(var(--space-6) + var(--space-half));border-radius:var(--radius-sm);color:var(--muted);text-decoration:none;font-size:var(--text-sm)}
-.side-item span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-item{display:flex;align-items:center;gap:var(--space-2);min-width:0;padding:var(--space-2) var(--space-2) var(--space-2) calc(var(--space-6) + var(--space-half));border-radius:var(--radius-sm);color:var(--muted);text-decoration:none;font-size:var(--text-sm)}
+/* The label, not every span in the row: the status dot is a span too, and the ellipsis
+   rule was landing on it - an 8px dot given `overflow:hidden` and `text-overflow`. */
+.side-item > .dot{flex:none}
+.side-item span:not(.dot){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .side-item:hover{background:var(--surface-2);color:var(--text)}
 .side-item.active{background:var(--surface-2);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
 .side-item.checkout span::before{content:'⌂ ';color:var(--muted)}
@@ -714,6 +721,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .page{padding:var(--space-6) var(--space-7) var(--space-7);max-width:1100px;width:100%;box-sizing:border-box}
 .page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-4)}
 .page-header h1{margin:0 0 var(--space-1)}
+/* The stamp at a page's right is one short machine value that reads as a lie in two
+   lines: "12:29:20" over "PM" looks like a wrapped sentence rather than a clock. It takes
+   its own width and the title beside it gives up the room, which is the one of the two
+   that can be read somewhere else. */
+.page-header>.mono-sm{flex:none;white-space:nowrap}
 .section-hint{margin:0 0 var(--space-2);font-size:var(--text-sm)}
 .section-toggle{color:var(--muted);font-weight:600}
 .empty-line{padding:var(--space-3) 0}
@@ -866,6 +878,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .thumb img{width:56px;height:56px;object-fit:cover;border-radius:var(--radius-sm);border:1px solid var(--line)}
 .thumb button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--surface-3);border:1px solid var(--line);font-size:var(--text-sm);line-height:1}
 .pane-empty{padding:var(--space-7);text-align:center;display:grid;gap:var(--space-3);justify-items:center}
+/* Centred prose needs a measure or it is one 1000px line with the reader's eye starting
+   somewhere new each time. 56ch keeps an empty-state sentence to three short lines at any
+   width, and the grid centres the block rather than the words inside it. */
+.pane-empty p{max-width:56ch}
 
 /* ---- a task ---- */
 .task-view{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -1071,9 +1087,16 @@ button.side-settings{width:100%;text-align:left}
      and ellipsises, so the line stays one line and stays inside the page. */
   .task-meta code.mono-sm{display:inline-block;vertical-align:bottom;max-width:calc(50% - var(--space-6));overflow:hidden;text-overflow:ellipsis}
   .task-meta .mono-sm{font-size:var(--text-xs)}
-  /* Every destination stays on screen: the tabs share the strip, and a name too long for
-     its share ellipsises rather than pushing the rest off the edge. */
-  .task-tab{flex:1 1 0;min-width:0;overflow:hidden;min-height:38px;padding-top:0;padding-bottom:0}
+  /* Every destination stays whole and stays on screen. Nothing here scrolls - a tab you
+     have to scroll to reach is a tab you cannot see - so the width comes from the session
+     tabs: a name gives up its room first and completely (shrink 100 against the others'
+     1), which is what keeps "Changes", "Log" and "Terminal" whole at every phone width.
+     They are the view's fixed vocabulary; the session's name is repeated in the head
+     above. An equal share of the strip cut Terminal to "Term" instead. The tabs also give
+     back their side padding before they give up a letter - at 280px that is the difference
+     between "Log" and "Lo…". */
+  .task-tab{flex:0 1 auto;min-width:0;overflow:hidden;min-height:38px;padding:0 var(--space-2)}
+  .task-tab.named{flex-shrink:100}
   .session-head{padding-top:var(--space-1);padding-bottom:var(--space-1)}
   .session-controls .select-trigger{min-height:34px}
 }
@@ -1121,9 +1144,12 @@ button.side-settings{width:100%;text-align:left}
 .tool-group-body .tool{background:var(--surface-1)}
 
 /* The settings for the session behind one chip, on a phone. Hidden where the sidebar and
-   the inline controls are already on screen. */
+   the inline controls are already on screen. Where it does show it takes the whole line
+   under the title rather than a share of it: its model name is unbreakable and 62% wide,
+   so sharing one row squeezed the session's own name to "Ch…" - and the name is the one
+   thing on that row the chip cannot show in full. */
 .session-chip{display:none;align-items:center;gap:var(--space-2);max-width:62%;padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:999px;background:var(--surface-1);color:var(--text);font-size:var(--text-xs);font-weight:650}
-.session-chip-model{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-chip-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .session-chip-mode{color:var(--muted);border-left:1px solid var(--line);padding-left:var(--space-2);white-space:nowrap}
 .session-chip .ic{color:var(--muted)}
 
@@ -1162,7 +1188,7 @@ button.side-settings{width:100%;text-align:left}
 
 @media(max-width:860px){
   .session-head .session-controls{display:none}
-  .session-chip{display:inline-flex}
+  .session-chip{display:inline-flex;flex:1 1 100%;max-width:none;min-width:0}
   .session-title{flex:1;min-width:0}
 }
 /* Beside a docked terminal the chat column is narrower than the header's row of pickers,
@@ -1171,7 +1197,7 @@ button.side-settings{width:100%;text-align:left}
 .session.docked .session-main{container:chat / inline-size}
 @container chat (max-width:900px){
   .session-head .session-controls{display:none}
-  .session-chip{display:inline-flex}
+  .session-chip{display:inline-flex;flex:1 1 100%;max-width:none;min-width:0}
   .session-title{flex:1;min-width:0}
 }
 
