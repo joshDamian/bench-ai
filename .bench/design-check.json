@@ -1,0 +1,22 @@
+{
+  "$why": "Run through .bench/design-check.sh, which starts a fresh Bench on its own data folder with the fake SDK, seeds it (.bench/design-check.seed.mjs) and fills the {project}/{task}/{taskSession}/{session} ids in these routes. grid 4 and bodyPx 14 are Design.md's recorded decisions (Space, Type), not exemptions.",
+  "url": "http://127.0.0.1:4399",
+  "routes": [
+    "/#/",
+    "/#/inbox",
+    "/#/sessions",
+    "/#/dashboard",
+    "/#/p/{project}",
+    "/#/p/{project}/s/{session}",
+    "/#/p/{project}/t/{task}",
+    "/#/p/{project}/t/{task}/s/{taskSession}",
+    "/#/p/{project}/t/{task}/changes",
+    "/#/settings",
+    "/#/pair/BENCH-CODE"
+  ],
+  "themes": ["light", "dark"],
+  "themeScript": ".bench/design-check.theme.js",
+  "grid": 4,
+  "bodyPx": 14,
+  "wait": 30000
+}

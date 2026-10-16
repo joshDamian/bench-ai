@@ -25,19 +25,30 @@ const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
 // black-through-white are left at xterm's defaults, which are tuned for a dark
 // background - which is why a theme's terminal is its code well (--well-bg), dark in
 // every theme, and only Classic, which has no well, draws on the page's own colours.
+// xterm's own stylesheet is a library's, written in its own values, and only a page with
+// a terminal on it needs it: it is linked the first time one opens, not on every page.
+function linkStylesheet() {
+  if (document.querySelector('link[data-xterm]')) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = '/vendor/xterm/css/xterm.css';
+  link.dataset.xterm = '';
+  document.head.append(link);
+}
+
 function palette() {
-  const read = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
-  const well = read('--well-bg', '');
+  const read = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const well = read('--well-bg');
   if (well) {
-    const ink = read('--well-text', '#e9e9ea');
-    return { background: well, foreground: ink, cursor: ink, cursorAccent: well, selectionBackground: 'rgba(255,255,255,.22)' };
+    const ink = read('--well-text');
+    return { background: well, foreground: ink, cursor: ink, cursorAccent: well, selectionBackground: read('--well-select') };
   }
   return {
-    background: read('--bg', '#0a0c10'),
-    foreground: read('--text', '#edf2f7'),
-    cursor: read('--accent', '#9fb9ff'),
-    cursorAccent: read('--bg', '#0a0c10'),
-    selectionBackground: read('--accent-dim', '#4a6fa5'),
+    background: read('--bg'),
+    foreground: read('--text'),
+    cursor: read('--accent'),
+    cursorAccent: read('--bg'),
+    selectionBackground: read('--accent-dim'),
   };
 }
 
@@ -65,6 +76,7 @@ export function TerminalPane({ query }) {
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return undefined;
+    linkStylesheet();
 
     const term = new Terminal({
       fontFamily: MONO,

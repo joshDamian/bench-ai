@@ -380,9 +380,10 @@ function FileBox({ f, split, folded, large, viewed, markable, hljs, size, boxRef
           ${f.add + f.del ? html`<span class="dv-add">+${f.add}</span><span class="dv-del">−${f.del}</span>` : null}
           <${Bar} add=${f.add} del=${f.del} />
           ${markable
-            ? html`<label class="dv-viewed">
-                <input type="checkbox" checked=${viewed} onChange=${(e) => onViewed(e.currentTarget.checked)} /> Viewed
-              </label>`
+            ? html`<button class="dv-viewed" type="button" aria-pressed=${viewed} onClick=${() => onViewed(!viewed)}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${viewed ? html`<path d="m2.5 6.5 2.5 2.5 4.5-6" />` : html`<rect x="1.5" y="1.5" width="9" height="9" rx="2" />`}</svg>
+                Viewed
+              </button>`
             : null}
         </span>
       </header>

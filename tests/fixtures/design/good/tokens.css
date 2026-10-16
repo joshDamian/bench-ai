@@ -7,6 +7,7 @@
   --brand-ink: #ffffff;
   --focus: #1d4ed8;
   --line: #d1d5db;
+  --tint: rgba(29, 78, 216, 0.1);
   --space-1: 8px;
   --space-2: 16px;
   --space-3: 24px;
@@ -21,5 +22,6 @@
     --brand-ink: #0b1220;
     --focus: #93c5fd;
     --line: #334155;
+    --tint: rgba(147, 197, 253, 0.12);
   }
 }

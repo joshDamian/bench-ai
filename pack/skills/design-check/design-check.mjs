@@ -102,21 +102,38 @@ function pageAudit(opts) {
   /** @param {any} el */
   const words = (el) => String(el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
 
+  /** A computed colour as red, green, blue and alpha. @param {string} v */
+  const rgba = (v) => {
+    const n = (String(v).match(/-?[\d.]+/g) || []).map(Number);
+    if (n.length < 3) return null;
+    // `color(srgb r g b / a)` - what a color-mix() computes to - is written in 0-1.
+    const k = /^color\(srgb/.test(v) ? 255 : 1;
+    return [n[0] * k, n[1] * k, n[2] * k, n.length > 3 ? n[3] : 1];
+  };
   /**
-   * The first background a person would see behind this text, and whether a picture or a
-   * gradient is in the way of knowing it.
+   * The background a person would see behind this text, and whether a picture or a
+   * gradient is in the way of knowing it. A translucent fill - a tinted badge, a hover
+   * wash - is seen over whatever is under it, so the layers are blended down to the
+   * first opaque one, as the screen does; measured on its own it would be mostly empty.
    * @param {any} el
    */
   const behind = (el) => {
     let node = el;
     let image = false;
+    /** @type {number[][]} */ const layers = [];
     while (node && node.nodeType === 1) {
       const cs = getComputedStyle(node);
       if (cs.backgroundImage && cs.backgroundImage !== 'none') image = true;
-      if (!/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)) return { color: cs.backgroundColor, image };
+      const c = rgba(cs.backgroundColor);
+      if (c && c[3] > 0) {
+        layers.push(c);
+        if (c[3] >= 1) break;
+      }
       node = node.parentElement;
     }
-    return { color: 'rgb(255, 255, 255)', image };
+    let out = [255, 255, 255];
+    for (const c of layers.reverse()) out = out.map((v, i) => c[i] * c[3] + v * (1 - c[3]));
+    return { color: `rgb(${out.map((v) => Math.round(v)).join(', ')})`, image };
   };
 
   /** @type {any[]} */ const texts = [];
@@ -169,6 +186,15 @@ function pageAudit(opts) {
     }
 
     if (el.matches(FOCUSABLE) && !el.hasAttribute('disabled') && el.getAttribute('tabindex') !== '-1' && on) {
+      // A field inside a box that lights up with :focus-within - a composer, a search bar
+      // - shows its focus on the box. The two nearest ancestors are measured too, and are
+      // marked so the focus pass can put them in :focus-within - only that: forced into
+      // :focus-visible, a plain div would draw the browser's own ring and pass for anything.
+      const around = [el.parentElement, el.parentElement?.parentElement].filter((a) => a && a !== document.body).map((/** @type {any} */ a) => {
+        a.setAttribute('data-bc-around', '');
+        const ac = getComputedStyle(a);
+        return `${ac.outlineStyle} ${ac.outlineWidth} ${ac.outlineColor}|${ac.boxShadow}|${ac.borderColor}|${ac.backgroundColor}`;
+      });
       focusables.push({
         id: idOf(el),
         selector: where(el),
@@ -180,6 +206,7 @@ function pageAudit(opts) {
           color: cs.color,
           decoration: cs.textDecorationLine,
         },
+        around,
       });
     }
 
@@ -494,12 +521,12 @@ function semanticsFindings(seen, route, theme) {
  */
 function focusFindings(plain, focused, route, theme) {
   /** @type {Map<string, string>} */
-  const before = new Map(plain.map((f) => [f.id, JSON.stringify(f.style)]));
+  const before = new Map(plain.map((f) => [f.id, JSON.stringify([f.style, f.around])]));
   /** @type {Finding[]} */
   const out = [];
   for (const f of focused) {
     const was = before.get(f.id);
-    if (was === undefined || was !== JSON.stringify(f.style)) continue;
+    if (was === undefined || was !== JSON.stringify([f.style, f.around])) continue;
     out.push({ rule: 'focus', route, theme, state: 'focus', viewport: '', selector: f.selector, detail: 'nothing about it changes when it is focused: no ring, no outline, no colour' });
   }
   return out;
@@ -811,11 +838,14 @@ ${themeScript}
         const hovered = await page.evaluate(audit);
         findings.push(...contrastFindings({ texts: hovered.texts, route, theme, state: 'hover', interactiveOnly: true }));
 
-        await page.forcePseudo(tagged, ['focus', 'focus-visible']);
+        const around = await page.nodes('[data-bc-around]:not([data-bc-id])');
+        await page.forcePseudo(around, ['focus-within']);
+        await page.forcePseudo(tagged, ['focus', 'focus-visible', 'focus-within']);
         const focused = await page.evaluate(audit);
         findings.push(...contrastFindings({ texts: focused.texts, route, theme, state: 'focus', interactiveOnly: true }));
         findings.push(...focusFindings(plain.focusables, focused.focusables, route, theme));
         await page.forcePseudo(tagged, []);
+        await page.forcePseudo(around, []);
       }
 
       if (!o.onlyShots) {
