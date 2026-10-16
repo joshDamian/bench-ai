@@ -81,7 +81,10 @@ export function TerminalPane({ query }) {
     const term = new Terminal({
       fontFamily: MONO,
       fontSize: 12.5,
-      cursorBlink: true,
+      // A blinking cursor is the emulator's only motion, and a person who has asked
+      // their system not to animate things has asked here too. Read once, at the size
+      // and theme the terminal is built with.
+      cursorBlink: !matchMedia('(prefers-reduced-motion: reduce)').matches,
       // History is the server's to keep (it replays its own on attach); this is only
       // how far back the wheel can scroll without asking it, which is a person's
       // memory of what they just read.

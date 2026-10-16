@@ -114,6 +114,9 @@ test('a planted defect is caught for every rule the gate keeps', looking, async 
     ['focus', 'button', /nothing about it changes when it is focused/],
     ['overflow', 'div.wide', /scrolls sideways at 280px/],
     ['contrast', 'p.veiled', /shown at 40%/],
+    // A widget's own stylesheet counts as the page's until the widget is ignored: this is
+    // the finding that has to disappear once `.widget` is on the ignore list below.
+    ['tokens', '.widget-ink', /is a colour written out/],
     ['motion', 'div.spin', /still moving/],
   ];
   for (const [rule, selector, detail] of planted) {
@@ -159,7 +162,7 @@ test('a design review gets both themes and the clicked state, and no picture of 
 test('a config file in the project is read, and what it ignores is left alone', looking, async () => {
   const dir = copy('bad');
   fs.mkdirSync(path.join(dir, '.bench'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.bench', 'design-check.json'), JSON.stringify({ themes: ['light'], ignore: ['.spin', '.wide'] }));
+  fs.writeFileSync(path.join(dir, '.bench', 'design-check.json'), JSON.stringify({ themes: ['light'], ignore: ['.spin', '.wide', '.widget'] }));
   const { url } = /** @type {any} */ (served.get('bad'));
   const { code, out } = await gate(dir, ['--url', url, '--json']);
   assert.equal(code, 1, `the rest of the page is still a defect, got:\n${out}`);
@@ -167,6 +170,11 @@ test('a config file in the project is read, and what it ignores is left alone', 
   const rules = new Set(report.findings.map((/** @type {any} */ f) => f.rule));
   assert.ok(!rules.has('motion'), 'the ignored animation is left alone');
   assert.ok(!rules.has('overflow'), 'the ignored element is left alone');
+  assert.ok(
+    !report.findings.some((/** @type {any} */ f) => f.selector.includes('widget')),
+    'an ignored widget is left alone whole, stylesheet included',
+  );
+  assert.ok(report.findings.some((/** @type {any} */ f) => f.rule === 'tokens' && f.selector.includes('hardcoded')), 'the page\'s own written-out colour is still reported');
   assert.ok(rules.has('target') && rules.has('contrast'), 'and the rest is still judged');
   assert.deepEqual([...new Set(report.findings.map((/** @type {any} */ f) => f.theme))].filter(Boolean), ['light'], 'only the theme the config asks for');
 });

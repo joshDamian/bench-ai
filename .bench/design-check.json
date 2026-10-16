@@ -12,6 +12,8 @@
     "/#/p/{project}/t/{task}",
     "/#/p/{project}/t/{task}/s/{taskSession}",
     "/#/p/{project}/t/{task}/changes",
+    "/#/p/{project}/t/{task}/terminal",
+    "/#/p/{project}/t/{task}/log",
     "/#/settings",
     "/#/pair/BENCH-CODE"
   ],
@@ -19,5 +21,7 @@
   "themeScript": ".bench/design-check.theme.js",
   "grid": 4,
   "bodyPx": 11,
+  "$ignoreWhy": "`.xterm` is the vendored emulator (web/components/terminal.mjs, xterm.js). It writes its own 256-colour stylesheet and its own DOM the moment it opens - the `xterm-fg-*`/`xterm-bg-*` palette classes and its scrollbar slider - and those are a library's values, not Bench's components, so the tokens, target and semantics rules have nothing of Bench's to judge in there. Bench's part of the terminal is outside it and still checked: .terminal-frame, .terminal-bar, .terminal-key and the box around the emulator. The one thing inside that is Bench's to get right is the cursor blink, and that is fixed in terminal.mjs rather than left to the gate: cursorBlink is off under prefers-reduced-motion.",
+  "ignore": [".xterm"],
   "wait": 30000
 }

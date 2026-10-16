@@ -271,7 +271,8 @@ function pageAudit(opts) {
  * The values written in the page's own stylesheets, with `var()` still in them - the only
  * place a hardcoded value is still visible, since a computed style has resolved every
  * token away - along with the token names the page declares anywhere.
- * @param {{tokens:string}} opts the token file's name, whose own values are the tokens
+ * @param {{tokens:string, ignore?:string[]}} opts the token file's name, whose own values
+ * are the tokens, and the selectors the caller has already decided not to judge
  */
 function pageDeclared(opts) {
   /** The property a declaration has to be written as a token, and which kind it is. */
@@ -314,6 +315,17 @@ function pageDeclared(opts) {
 
   for (const sheet of Array.from(document.styleSheets)) {
     if (opts.tokens && String(sheet.href || '').split('/').pop() === opts.tokens) continue;
+    // A widget that carries its own stylesheet carries it in its own subtree, and a
+    // widget left alone is left alone whole: an emulator ignored for its markup must not
+    // then be reported for the palette it writes for itself.
+    const owner = /** @type {any} */ (sheet.ownerNode);
+    if (owner && opts.ignore?.length && opts.ignore.some((/** @type {string} */ sel) => {
+      try {
+        return !!owner.closest(sel);
+      } catch {
+        return false;
+      }
+    })) continue;
     /** @type {any} */
     let rules;
     try {
@@ -843,7 +855,7 @@ ${themeScript}
       looked++;
 
       const audit = `(${pageAudit})(${JSON.stringify({ ignore: o.ignore })})`;
-      const declared = `(${pageDeclared})(${JSON.stringify({ tokens: tokens ? path.basename(tokens) : '' })})`;
+      const declared = `(${pageDeclared})(${JSON.stringify({ tokens: tokens ? path.basename(tokens) : '', ignore: o.ignore })})`;
 
       // What the stylesheets declare is the same whatever theme the page is rendered in -
       // a `@media (prefers-color-scheme: dark)` block is in the CSS either way - so it is
