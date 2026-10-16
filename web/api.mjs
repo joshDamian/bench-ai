@@ -4,6 +4,7 @@
 // what changed comes back down the socket, so a write is never applied twice.
 import { useEffect, useState, useRef, recall, remember } from './lib.mjs';
 import { showToast } from './components/toast.mjs';
+import { dropTranscript, undropTranscript } from './transcript-cache.mjs';
 
 /** @typedef {import('../src/contract.d.mts').Project} Project */
 /** @typedef {import('../src/contract.d.mts').Task} Task */
@@ -152,16 +153,33 @@ export const api = {
   reopenTask: (/** @type {string} */ id) => post(`/api/tasks/${id}/reopen`),
 
   createSession: (/** @type {any} */ b) => post('/api/sessions', b),
-  session: (/** @type {string} */ id) => get(`/api/sessions/${id}`),
+  session: (/** @type {string} */ id, /** @type {{after?:number}} */ o = {}) => get(`/api/sessions/${id}${o.after ? `?after=${o.after}` : ''}`),
   sessionCommands: (/** @type {string} */ id) => get(`/api/sessions/${id}/commands`),
-  events: (/** @type {string} */ id, /** @type {number} */ before) => get(`/api/sessions/${id}/events?before=${before}`),
+  events: (/** @type {string} */ id, /** @type {{before?:number, after?:number}} */ o) =>
+    get(`/api/sessions/${id}/events?${o.after ? `after=${o.after}` : `before=${o.before}`}`),
   send: sendMessage,
   upload,
   fileStat: (/** @type {string} */ id, /** @type {string[]} */ paths) => post(`/api/sessions/${enc(id)}/files/stat`, { paths }),
   interrupt: (/** @type {string} */ id) => post(`/api/sessions/${id}/interrupt`),
   updateSession: (/** @type {string} */ id, /** @type {any} */ b) => patch(`/api/sessions/${id}`, b),
-  archiveSession: (/** @type {string} */ id, archived = true) => post(`/api/sessions/${id}/archive`, { archived }),
-  deleteSession: (/** @type {string} */ id) => del(`/api/sessions/${id}`),
+  // An archived or deleted session's cached transcript goes with it. The socket says so
+  // too, for other devices and for archives the server makes itself; this is for here, now.
+  archiveSession: (/** @type {string} */ id, archived = true) => {
+    // Dropped before the request, so a pane that closes on the way out does not write it back.
+    if (archived) dropTranscript(id);
+    else undropTranscript(id);
+    return post(`/api/sessions/${id}/archive`, { archived }).catch((e) => {
+      if (archived) undropTranscript(id);
+      throw e;
+    });
+  },
+  deleteSession: (/** @type {string} */ id) => {
+    dropTranscript(id);
+    return del(`/api/sessions/${id}`).catch((e) => {
+      undropTranscript(id);
+      throw e;
+    });
+  },
   answer: (/** @type {string} */ id, /** @type {import('../src/contract.d.mts').ApprovalAnswer} */ a) => post(`/api/approvals/${id}`, a),
 
   providers: () => get('/api/providers'),
@@ -366,8 +384,14 @@ export function closeNotification(tag) {
 /** @param {ServerMessage} m */
 function onMessage(m) {
   if (m.type === 'hello') set({ sessions: m.sessions, approvals: m.approvals });
-  else if (m.type === 'session') set({ sessions: upsert(state.sessions, m.session) });
-  else if (m.type === 'session-removed') set({ sessions: state.sessions.filter((s) => s.id !== m.id) });
+  else if (m.type === 'session') {
+    if (m.session.archived_at) dropTranscript(m.session.id);
+    else undropTranscript(m.session.id);
+    set({ sessions: upsert(state.sessions, m.session) });
+  } else if (m.type === 'session-removed') {
+    dropTranscript(m.id);
+    set({ sessions: state.sessions.filter((s) => s.id !== m.id) });
+  }
   else if (m.type === 'task') set({ tasks: upsert(state.tasks, m.task) });
   else if (m.type === 'approval') set({ approvals: [...state.approvals.filter((a) => a.id !== m.approval.id), m.approval] });
   else if (m.type === 'approval-done') {
