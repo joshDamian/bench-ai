@@ -1038,7 +1038,7 @@ function Composer({ session: s, commands, quick }) {
           }} />
           <button class="btn ghost icon-only" type="button" aria-label="Attach files" title="Attach images, PDFs, APKs or any file (or drop them here)" onClick=${() => file.current?.click()}><${Icon} name="attach" /></button>
           <button class="mode-chip" type="button" onClick=${cycleMode} title="Permission mode (Shift+Tab)">${MODES.find((m) => m.value === s.permission_mode)?.label}</button>
-          <span class="composer-hint muted hide-touch">Enter to send · Shift+Enter new line${running ? ' · Esc to stop' : ''}</span>
+          <span class="composer-hint muted hide-touch">Enter to send<span class="hint-more"> · Shift+Enter new line${running ? ' · Esc to stop' : ''}</span></span>
           <span class="composer-gap"></span>
           ${SR ? html`<button class="btn ghost icon-only ${listening ? 'listening' : ''}" type="button" aria-label=${listening ? 'Stop dictation' : 'Dictate'} title="Dictate" onClick=${dictate}><${Icon} name="mic" /></button>` : null}
           ${running ? html`<button class="btn danger icon-only" type="button" aria-label="Stop" title="Stop (Esc)" onClick=${() => api.interrupt(s.id).catch(toast)}><${Icon} name="stop" /></button>` : null}

@@ -218,8 +218,12 @@ code{font-family:var(--font-mono);font-size:var(--text-sm)}
 button{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:pointer}
 /* The default is the primary action: a `.btn` with no variant is the thing on the
    page a person is meant to press. `btn primary` says the same thing out loud, so
-   both spellings are correct and neither has to be chased through the views. */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);background:var(--accent);color:var(--on-accent);border:1px solid transparent;border-radius:var(--radius-sm);padding:var(--space-2) var(--space-4);font-weight:650;cursor:pointer;text-decoration:none;transition:filter var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease)}
+   both spellings are correct and neither has to be chased through the views. The
+   label is one line: a button is a thing you aim at, and a two-line one changes
+   height as the text around it changes width - which is how "New session" came to
+   sit 48px tall on a phone with its plus stranded beside "New". Which line gives
+   when two will not fit is settled by the box the button is in, not by the label. */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);background:var(--accent);color:var(--on-accent);border:1px solid transparent;border-radius:var(--radius-sm);padding:var(--space-2) var(--space-4);font-weight:650;cursor:pointer;text-decoration:none;white-space:nowrap;transition:filter var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease)}
 .btn.primary{background:var(--accent);color:var(--on-accent)}
 .btn:disabled{opacity:.5;cursor:default}
 /* Hover lifts the fill rather than dropping the button's opacity. At .9 the label
@@ -863,6 +867,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .composer-bar .send-btn:disabled{opacity:.35}
 .composer-gap{flex:1}
 .composer-hint{font-size:var(--text-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;margin-left:var(--space-2)}
+/* The hint asks for 198px and the bar has 198 for it from 520 up; below that the flex row
+   takes it down to 70 and the ellipsis landed mid-phrase, on the separator - "Enter to
+   send · …". A hint that trails off after its own bullet reads as a fault, not as a
+   shortening. So the bar's room decides: the part that is true of any keyboard is its own
+   clause here and always survives, and the rest is dropped when it will not fit. On a
+   finger it is `hide-touch` that answers, and drops the whole line. */
+@media(max-width:520px){.composer-hint .hint-more{display:none}}
 .mode-chip{font-size:var(--text-xs);font-weight:600;color:var(--muted);background:none;border:1px solid var(--line);border-radius:999px;padding:var(--space-1) var(--space-3);white-space:nowrap;cursor:pointer}
 .mode-chip:hover{color:var(--text);border-color:var(--line-strong)}
 .composer-box .thumbs{padding:var(--space-3) var(--space-3) 0}
@@ -1340,7 +1351,14 @@ button.side-settings{width:100%;text-align:left}
 @keyframes tp-in{from{opacity:0;transform:translateY(-4px) scale(.985)}}
 @keyframes tp-card-in{from{opacity:0;transform:translateY(4px)}}
 @media(prefers-reduced-motion:reduce){.tp-panel,.tp-card{animation:none}}
+/* The sidebar header is 219px of room for a 89px mark and this pill, and the longest theme
+   Bench ships asks the pill for 145px. One of the pill's two parts has to give, so the name
+   stays whole and the colour dots stand down: the name is what the pill is for - which look
+   is on - and the sidebar the pill sits on is already painted in it. Cut instead, "Quiet
+   Temple" - the light default - read "Quiet T…" on every screen. Settings' own pill, which
+   has the room, keeps its dots. */
 .side-top .tp-trigger{flex:0 1 auto}
+.side-top .tp-dots{display:none}
 
 /* A task's bar for done, and a check run in the transcript. */
 .task-bar{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;padding:0 var(--space-5) var(--space-2);font-size:var(--text-sm)}

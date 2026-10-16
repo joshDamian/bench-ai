@@ -11,7 +11,7 @@
 **Hierarchy:**
 1. The page title (20px `--text-xl`, 650, the theme's `--font-title`) in `.page-header`, with at most one muted line under it - a path, a hostname, a "from *branch*".
 2. The view's content, left-aligned to the title.
-3. The sidebar: the product mark and `Bench` (16px, 700), the "N waiting on you" link when there is anything, then one row per project with its active tasks and checkout sessions nested under it.
+3. The sidebar: the product mark and `Bench` (16px, 700) with the theme pill in the same row, the "N waiting on you" link when there is anything, then one row per project with its active tasks and checkout sessions nested under it.
 4. The sidebar's footer - Dashboard, Add project, Settings - in `--muted`, marked with `--accent` and a `--surface-2` fill when current.
 
 **The shell owns, and the views may rely on:** the 260px sidebar on `--surface-rail`; the bottom tab bar under 860px; the mobile topbar with its menu and back controls; the toast stack; the confirm dialog and the generic `Dialog`; the theme picker; and the `.page` column - `max-width:1100px`, padding `24px 32px 32px` on desktop and 16px on the phone.
@@ -28,6 +28,8 @@
 - *The tab bar is for destinations, not for tasks.* Five top-level screens is what fits a thumb; anything deeper is a place you were sent to, and a back control is the honest way out of it. This also keeps the composer off the bottom edge, where the keyboard arrives.
 - *The sidebar footer holds Dashboard, Add project and Settings rather than the top.* `page-shell` puts account and settings at the bottom of the sidebar; Bench's same three every time are what a person reaches for after the projects list, not before it.
 - *Emphasis in the sidebar is a fill plus an accent rule, never bold alone.* A folded project still reports on its sessions through a status dot, so folding is not the same as forgetting.
+- *A button's label is one line.* A button is a thing you aim at, and one whose label wraps changes height as the text around it changes width, so the same control is 29px tall where the heading is short and 48px where it is long - which is how **New session** came to sit two lines tall on a phone with its plus stranded beside the lone word "New". Which element gives when two will not fit is settled by the box the button is in, never by the label.
+- *The sidebar's theme pill names the theme; it does not preview it.* The header row is 219px of room for an 89px mark and this pill, and the longest theme Bench ships asks the pill for 145px. The name is what the pill is for, so it stays whole and the three colour dots stand down there - the sidebar they would sit on is already painted in the theme. Cut instead, `Quiet Temple`, the light default, read "Quiet T…" on every screen. Settings' own pill has the room and keeps its dots.
 
 ## View: Home - projects (`#/`)
 
@@ -206,6 +208,7 @@
 - *Auto-scroll follows the bottom only while the reader is there.* Otherwise it offers "New reply". Yanking a page out from under someone mid-sentence is the one thing a transcript must never do.
 - *Tool runs collapse to a line, but a single call does not.* The prose is what a person reads and the steps are what they open - and collapsing one call hides a thing with nothing to gain.
 - *Bench's own tools read as what they do.* "Bench: run check", not `mcp__bench__run_check`: the transcript is read by a person, not by a log parser.
+- *The composer's keyboard hint is two clauses, and the second is the one that goes.* "Enter to send" is true of any keyboard; "· Shift+Enter new line · Esc to stop" is a desk's shorthand. The line asks for 198px and the bar has that for it from 520px up; squeezed below that the ellipsis landed on the separator itself - "Enter to send · …" - which reads as a fault. So the second clause is droppable and the first is not, and on a finger `hide-touch` drops the whole line.
 
 ## View: Pairing (`#/pair/:code`) and Not paired
 
