@@ -3,6 +3,7 @@ import { html, useEffect, useMemo, useRef, useState, recall, remember, isTouch, 
 import { api, useStore, watchSession, outboxCount } from '../api.mjs';
 import { Markdown } from '../components/markdown.mjs';
 import { slashMatches } from '../format.mjs';
+import { mergeEvents, finishesStream } from '../transcript.mjs';
 import { MoreMenu } from '../components/menu.mjs';
 import { CopyButton } from '../components/copy.mjs';
 import { showToast } from '../components/toast.mjs';
@@ -17,7 +18,7 @@ const toast = (e) => showToast(e.message || String(e), 'error');
 // common case on a phone, where a session is left and returned to all day - draws its
 // history at once instead of an empty pane and a spinner. Bounded to the tail: that is
 // what a person comes back to, and a whole conversation of tool output is more than the
-// small storage a browser grants will hold. The fetch replaces it either way.
+// small storage a browser grants will hold. The fetch supersedes it either way.
 const eventsKey = (id) => `bench:events:${id}`;
 const EVENTS_CACHED = 150;
 
@@ -88,22 +89,38 @@ export function SessionPane({ sessionId, onArchived }) {
   const [viewing, view, closeViewer] = useViewer();
   const filesCtx = useMemo(() => ({ sessionId, files, view }), [sessionId, files]);
 
-  const load = () =>
-    api
-      .session(sessionId)
+  // Each read is numbered, and only the newest one for the session on screen is used: a
+  // reconnect can start a second read while the first is still coming, and the pane can
+  // move to another session before either lands.
+  const loads = useRef(0);
+  const shown = useRef(sessionId);
+  shown.current = sessionId;
+  // `finished` is called when the read holds the end of the reply now streaming, which
+  // only a read after a dropped line can: on open, the socket brings that end itself.
+  const load = (finished) => {
+    const n = ++loads.current;
+    const id = sessionId;
+    const current = () => n === loads.current && id === shown.current;
+    return api
+      .session(id)
       .then((r) => {
+        if (!current()) return;
         setLoaded(r);
         if (r.commands?.length) setCommands(r.commands);
-        setEvents(r.events);
+        setEvents((held) => {
+          if (finished && finishesStream(held, r.events)) finished();
+          return mergeEvents(held, r.events);
+        });
         setMore(r.events.length >= 400);
-        setStream({ text: '', thinking: '' });
-        remember(eventsKey(sessionId), r.events.slice(-EVENTS_CACHED));
+        remember(eventsKey(id), r.events.slice(-EVENTS_CACHED));
       })
-      .catch(toast);
+      .catch((e) => current() && toast(e));
+  };
 
   useEffect(() => {
     setLoaded(null);
     setEvents(recall(eventsKey(sessionId), []));
+    setStream({ text: '', thinking: '' });
     setSuggestion('');
     setCommands([]);
     pinned.current = true;
@@ -142,14 +159,17 @@ export function SessionPane({ sessionId, onArchived }) {
         if (!frame) frame = requestAnimationFrame(flush);
       }
     });
-    const again = () => {
-      drop();
-      load();
-    };
+    const again = () =>
+      load(() => {
+        drop();
+        setStream({ text: '', thinking: '' });
+      });
     window.addEventListener('bench:reconnected', again);
     return () => {
       off();
       drop();
+      // A read still in flight belongs to this session; nothing it brings is wanted now.
+      loads.current++;
       window.removeEventListener('bench:reconnected', again);
     };
   }, [sessionId]);
