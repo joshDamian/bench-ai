@@ -1,5 +1,5 @@
 // A Claude session: its transcript, what it is waiting on, and the box to talk to it.
-import { html, useEffect, useMemo, useRef, useState, recall, remember, isTouch, shortDir, formatCost, formatDuration } from '../lib.mjs';
+import { html, useEffect, useMemo, useRef, useState, recall, remember, isTouch, shortDir, formatCost, formatDuration, formatTokens } from '../lib.mjs';
 import { api, useStore, watchSession, outboxCount } from '../api.mjs';
 import { Markdown } from '../components/markdown.mjs';
 import { slashMatches } from '../format.mjs';
@@ -285,7 +285,7 @@ export function SessionPane({ sessionId, onArchived }) {
         >
           ${more ? html`<button class="btn sm ghost earlier" type="button" onClick=${earlier}>Load earlier</button>` : null}
           ${events.length === 0 && loaded ? html`<div class="transcript-empty muted">Say what you want done. Claude works in <code>${s.cwd}</code>.</div>` : null}
-          <${FilesContext.Provider} value=${filesCtx}><${Transcript} events=${events} /><//>
+          <${FilesContext.Provider} value=${filesCtx}><${Transcript} events=${events} sessionId=${s.id} /><//>
           ${stream.thinking && !stream.text ? html`<div class="msg-thinking live"><span class="muted">Thinking…</span></div>` : null}
           ${stream.text ? html`<div class="msg assistant streaming"><${Markdown} text=${stream.text} /></div>` : null}
           ${s.status === 'running' && !stream.text ? html`<div class="working"><span class="dot dot-running"></span> Working…</div>` : null}
@@ -425,7 +425,7 @@ const CHAT_MIN = 420;
 
 // -- the transcript ------------------------------------------------------------------------
 
-function Transcript({ events }) {
+function Transcript({ events, sessionId }) {
   // A tool call and its result are stored as two events; the call is drawn with its result.
   const results = useMemo(() => {
     const m = new Map();
@@ -452,10 +452,10 @@ function Transcript({ events }) {
     }
     return m;
   }, [events]);
-  return events.map((e) => html`<${Entry} key=${e.id} event=${e} results=${results} reply=${replies.get(e.id)} />`);
+  return events.map((e) => html`<${Entry} key=${e.id} event=${e} results=${results} reply=${replies.get(e.id)} sessionId=${sessionId} />`);
 }
 
-function Entry({ event: e, results, reply }) {
+function Entry({ event: e, results, reply, sessionId }) {
   const d = e.data;
   if (e.kind === 'user') {
     return html`<div class="msg user"><div class="bubble">
@@ -473,7 +473,7 @@ function Entry({ event: e, results, reply }) {
     return html`
       <div class="msg assistant ${sub ? 'subagent' : ''}">
         ${d.error ? html`<div class="notice notice-bad">API error: ${d.error}</div>` : null}
-        <${TurnContent} content=${d.content || []} results=${results} />
+        <${TurnContent} content=${d.content || []} results=${results} sessionId=${sessionId} eventId=${e.id} />
       </div>
     `;
   }
@@ -506,12 +506,25 @@ function Entry({ event: e, results, reply }) {
  * chrome between two paragraphs of prose; the prose is what the person is reading, and
  * the steps are what they open when they want them.
  */
-function TurnContent({ content, results }) {
+function TurnContent({ content, results, sessionId, eventId }) {
   const out = [];
   let run = [];
   const flush = (key) => {
     if (run.length) out.push(html`<${ToolRun} key=${`run-${key}`} calls=${run} results=${results} />`);
     run = [];
+  };
+  // The blocks behind this message's Thinking boxes, asked for once for the event and
+  // not before a box is opened. A message can carry several, so they share the one read.
+  const blocks = useRef(null);
+  const thinking = (index) => {
+    blocks.current ||= api
+      .eventThinking(sessionId, eventId)
+      .then((r) => new Map((r.blocks || []).map((b) => [b.index, b.thinking])))
+      .catch((e) => {
+        blocks.current = null;
+        throw e;
+      });
+    return blocks.current.then((m) => m.get(index) ?? '');
   };
   content.forEach((b, i) => {
     if (b.type === 'tool_use') {
@@ -522,11 +535,44 @@ function TurnContent({ content, results }) {
     if (b.type === 'text') {
       if (b.text.trim()) out.push(html`<${Markdown} key=${i} text=${b.text} />`);
     } else if (b.type === 'thinking') {
-      out.push(html`<details key=${i} class="msg-thinking"><summary>Thinking</summary><${Markdown} text=${b.thinking} /></details>`);
+      out.push(html`<${Thinking} key=${i} index=${i} block=${b} thinking=${thinking} />`);
     }
   });
   flush('end');
   return out;
+}
+
+/**
+ * One Thinking box. The reasoning is the largest part of a session by far and it is
+ * folded away almost every time - a whole transcript's worth of it is more than
+ * everything else in the transcript put together - so it is not in the transcript at
+ * all. What is there is a stub that says how much of it there is, and opening the box is
+ * what fetches the text and renders it. Nothing is built for a box nobody has opened,
+ * which is what kept every load of a long session busy with Markdown for text folded
+ * away behind a summary.
+ */
+function Thinking({ index, block, thinking }) {
+  const [open, setOpen] = useState(false);
+  // A block pushed over the socket arrives with its text; one from a fetch is a stub.
+  const [text, setText] = useState(() => (block.truncated ? null : block.thinking || ''));
+  const [failed, setFailed] = useState(false);
+  const show = () => {
+    setOpen(true);
+    if (text !== null || failed) return;
+    thinking(index).then(setText, () => setFailed(true));
+  };
+  const size = block.length ?? text?.length ?? 0;
+  return html`
+    <details class="msg-thinking" onToggle=${(/** @type {any} */ e) => e.currentTarget.open && show()}>
+      <summary>Thinking${size ? html`<span class="thinking-size">· ${formatTokens(size)} characters</span>` : null}</summary>
+      ${open
+        ? failed
+          ? html`<div class="thinking-body thinking-note">That reasoning could not be loaded.</div>`
+          : text === null
+            ? html`<div class="thinking-body thinking-note">Loading…</div>`
+            : html`<div class="thinking-body"><${Markdown} text=${text} /></div>`
+        : null}
+    </details>`;
 }
 
 /** A run of tool calls as one line: what it did, how much of it, and whether it broke. */

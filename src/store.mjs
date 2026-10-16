@@ -59,6 +59,25 @@ const SCHEMA = `
 export const hash = (/** @type {string} */ s) => crypto.createHash('sha256').update(s).digest('hex');
 const now = () => new Date().toISOString();
 
+/**
+ * A transcript listing carries a stub in place of each thinking block's text: how long
+ * the reasoning is, not the reasoning. It is by far the largest part of a session - more
+ * than half of a long transcript's bytes - and it is drawn folded away, so it is asked
+ * for one event at a time, when the box in front of it is opened. The signature goes with
+ * it: nothing reads one back, and it is stored where the text is.
+ * @param {any} data an event's data, as stored
+ */
+function stubThinking(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.content)) return data;
+  let stubbed = false;
+  const content = data.content.map((/** @type {any} */ b) => {
+    if (!b || b.type !== 'thinking' || typeof b.thinking !== 'string') return b;
+    stubbed = true;
+    return { type: 'thinking', length: b.thinking.length, truncated: true };
+  });
+  return stubbed ? { ...data, content } : data;
+}
+
 export class Store {
   /** @param {string} root the directory the database lives under, in `.bench/` */
   constructor(root = process.cwd()) {
@@ -403,7 +422,9 @@ export class Store {
   }
 
   /**
-   * The newest `limit` events, oldest first; with `before`, the window ending just before that id.
+   * The newest `limit` events, oldest first; with `before`, the window ending just before
+   * that id. Thinking blocks come back as stubs - see `stubThinking` - so what this hands
+   * a reader is not what is kept; `eventById` is where the text behind a stub lives.
    * @param {string} sessionId @param {{before?:number, limit?:number}} [o] @returns {SessionEvent[]}
    */
   listEvents(sessionId, o = {}) {
@@ -411,7 +432,14 @@ export class Store {
     const rows = o.before
       ? this.#all('SELECT * FROM session_events WHERE session_id=? AND id<? ORDER BY id DESC LIMIT ?', sessionId, o.before, limit)
       : this.#all('SELECT * FROM session_events WHERE session_id=? ORDER BY id DESC LIMIT ?', sessionId, limit);
-    return rows.reverse().map((r) => ({ ...r, data: JSON.parse(r.data) }));
+    return rows.reverse().map((r) => ({ ...r, data: stubThinking(JSON.parse(r.data)) }));
+  }
+
+  /** One event as it was stored, thinking text and all: what the stub in a listing stands in for.
+   * @param {string} sessionId @param {number} id @returns {SessionEvent|undefined} */
+  eventById(sessionId, id) {
+    const r = this.#one('SELECT * FROM session_events WHERE session_id=? AND id=?', sessionId, id);
+    return r && { ...r, data: JSON.parse(r.data) };
   }
 
   /** @param {string} sessionId */

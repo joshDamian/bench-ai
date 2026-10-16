@@ -6,6 +6,7 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import WebSocket from 'ws';
 import { tmp } from './tmp.mjs';
+import { Store } from '../src/store.mjs';
 
 // The server as a process: auth, pairing, the event socket and static files.
 
@@ -221,6 +222,36 @@ test('a session file opens inline in a sandbox, or downloads, and nothing outsid
     'shot.png': { path: path.join(dir, 'shot.png'), name: 'shot.png', mime: 'image/png', size: 8, open: true, kind: 'image', artifact: false },
     'out/kron-release.apk': { path: path.join(dir, 'out', 'kron-release.apk'), name: 'kron-release.apk', mime: 'application/vnd.android.package-archive', size: 2, open: false, kind: 'archive', artifact: true },
   });
+});
+
+// A transcript's thinking: the listing carries a stub, and one event's blocks are fetched
+// on their own, from the one route that hands them out.
+test('thinking is a stub in the transcript, and one event fetches its own blocks', async () => {
+  const dir = tmp('thinking');
+  const project = await req('POST', '/api/projects', { body: { path: dir, init: true } });
+  const session = await req('POST', '/api/sessions', { body: { projectId: project.json.id } });
+  const id = session.json.id;
+  // This server runs no sessions, so the transcript is planted in the database it reads.
+  const thought = `Let me work out what is being asked. ${'It is worth reading the code first. '.repeat(20)}`;
+  const store = new Store(root);
+  const e = store.addEvent(id, 'assistant', { id: 'msg_1', content: [{ type: 'thinking', thinking: thought, signature: 'sig' }, { type: 'text', text: 'Done.' }], parent: null, error: null, model: 'm' });
+  store.db.close();
+
+  const listing = await req('GET', `/api/sessions/${id}`);
+  const held = listing.json.events.find((/** @type {any} */ x) => x.id === e.id);
+  assert.deepEqual(held.data.content, [{ type: 'thinking', length: thought.length, truncated: true }, { type: 'text', text: 'Done.' }]);
+  assert.ok(!listing.text.includes('worth reading the code'), 'the text is not in the transcript at all');
+
+  const full = await req('GET', `/api/sessions/${id}/events/${e.id}/thinking`);
+  assert.equal(full.status, 200, full.text);
+  assert.deepEqual(full.json, { id: e.id, blocks: [{ index: 0, thinking: thought, signature: 'sig' }] });
+
+  const other = await req('POST', '/api/sessions', { body: { projectId: project.json.id } });
+  assert.equal((await req('GET', `/api/sessions/${other.json.id}/events/${e.id}/thinking`)).status, 404);
+  assert.equal((await req('GET', `/api/sessions/${id}/events/999999/thinking`)).status, 404);
+  assert.equal((await req('GET', '/api/sessions/nope/events/1/thinking')).status, 404);
+  // A device off this machine still needs its cookie for it.
+  assert.equal((await req('GET', `/api/sessions/${id}/events/${e.id}/thinking`, { host: REMOTE })).status, 401);
 });
 
 test('a restart is refused when no service manager would bring the server back', async () => {

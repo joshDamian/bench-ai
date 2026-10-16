@@ -606,6 +606,10 @@ route('GET', '/api/sessions/:id', ({ params }) => ({
 }));
 route('GET', '/api/sessions/:id/commands', ({ params }) => svc.runtime.listCommands(params[0]));
 route('GET', '/api/sessions/:id/events', ({ params, u }) => svc.events(params[0], { before: Number(u.searchParams.get('before')) || undefined, limit: Number(u.searchParams.get('limit')) || undefined }));
+// The reasoning behind one Thinking box in the transcript. The listing carries a stub in
+// its place, so this is the only way the text reaches the client, and only for the event
+// whose box was opened.
+route('GET', '/api/sessions/:id/events/:event/thinking', ({ params }) => svc.eventThinking(params[0], Number(params[1])));
 route('POST', '/api/sessions/:id/messages', ({ params, body }) => svc.send(params[0], body.text, { images: body.images, files: body.files, uploads: body.uploads }));
 route('GET', '/api/sessions/:id/files', ({ req, res, params, u }) => sendSessionFile(req, res, params[0], u));
 // Which of the paths a transcript mentions are files, and what each is. The client

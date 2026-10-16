@@ -8,13 +8,33 @@
 //   "new skill"            pushes a changed command list, as a skill found mid-session does
 //   anything else          replies "echo: <text>"
 //
-// Stop hooks in options.hooks run at the end of each turn; see below.
+// Every turn reasons first, in a thinking block of its own, before the reply - a real
+// transcript is mostly this. Stop hooks in options.hooks run at the end of each turn;
+// see below.
 //
 // Every call is recorded on `calls`, so a test can see the options a session started with.
 import fs from 'node:fs';
 import path from 'node:path';
 
 export const calls = [];
+
+// What the model reasons through before it answers. A real block is prose that runs to
+// thousands of characters; this is a couple of paragraphs, which is enough for a view
+// that folds it, counts it or fetches it to have something of the right shape.
+const THOUGHTS = [
+  'Let me work out what is actually being asked before I change anything.',
+  'There are a couple of readings of this and only one of them is worth acting on, so I want to look at how it works today first.',
+  'The code that matters is the branch that already fails; the rest of the file is not what this is about.',
+  'Once I have read it, the change is small - the shape is there and one case is missing from it.',
+  'I should run the check afterwards rather than assume, because the other cases are what a change like this breaks.',
+];
+
+/** The reasoning for one turn, ending at a length a real one often reaches. @param {string} text */
+function reasoning(text) {
+  let out = `They asked: ${text}\n`;
+  for (let i = 0; out.length < 1200; i++) out += `${THOUGHTS[i % THOUGHTS.length]}\n`;
+  return out;
+}
 
 /** What supportedCommands() answers, as Claude Code describes them. */
 export const COMMANDS = [
@@ -70,6 +90,10 @@ export function fakeQuery({ prompt, options }) {
         record.commands = [...COMMANDS, { name: 'deploy', description: 'Ship it', argumentHint: '<env>' }];
         emit({ type: 'system', subtype: 'commands_changed', commands: record.commands, session_id: sessionId });
       }
+      // Reasoning first, in a message of its own, the way it arrives: it is the largest
+      // part of a real transcript by a long way and the transcript view folds it away, so
+      // every turn here has some for the views that fold it to fold.
+      emit({ type: 'assistant', parent_tool_use_id: null, message: { id: `${id}t`, content: [{ type: 'thinking', thinking: reasoning(text), signature: 'sig' }] } });
       emit({ type: 'assistant', parent_tool_use_id: null, message: { id: `${id}b`, content: [{ type: 'text', text: reply }] } });
       // Stop hooks, as Claude Code runs them: a block sends the model back to work with
       // the reason. This model answers each one by changing a file, which is what a real

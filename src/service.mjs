@@ -691,6 +691,25 @@ export class Service extends EventEmitter {
     return this.store.listEvents(id, o);
   }
 
+  /**
+   * One event's thinking blocks, as they were stored. A transcript listing carries a stub
+   * where each of these sits, so this is what the box in front of one asks for when it is
+   * opened: its own event's blocks, identified by their place in the message's content.
+   * @param {string} id @param {number} eventId
+   */
+  eventThinking(id, eventId) {
+    this.session(id);
+    const e = this.store.eventById(id, eventId);
+    if (!e) throw fail('No such event', 404);
+    /** @type {{index:number, thinking:string, signature:string|null}[]} */
+    const blocks = [];
+    const content = Array.isArray(e.data?.content) ? e.data.content : [];
+    content.forEach((/** @type {any} */ b, /** @type {number} */ index) => {
+      if (b?.type === 'thinking' && typeof b.thinking === 'string') blocks.push({ index, thinking: b.thinking, signature: b.signature ?? null });
+    });
+    return { id: e.id, blocks };
+  }
+
   // -- providers --------------------------------------------------------------------
 
   providers() {

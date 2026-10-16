@@ -155,6 +155,8 @@ export const api = {
   session: (/** @type {string} */ id) => get(`/api/sessions/${id}`),
   sessionCommands: (/** @type {string} */ id) => get(`/api/sessions/${id}/commands`),
   events: (/** @type {string} */ id, /** @type {number} */ before) => get(`/api/sessions/${id}/events?before=${before}`),
+  // The thinking blocks of one event, which the transcript carries as stubs.
+  eventThinking: (/** @type {string} */ id, /** @type {number} */ eventId) => get(`/api/sessions/${id}/events/${eventId}/thinking`),
   send: sendMessage,
   upload,
   fileStat: (/** @type {string} */ id, /** @type {string[]} */ paths) => post(`/api/sessions/${enc(id)}/files/stat`, { paths }),

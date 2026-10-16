@@ -819,7 +819,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .msg.subagent{margin-left:var(--space-5);padding-left:var(--space-3);border-left:2px solid var(--line);font-size:var(--text-sm)}
 .msg.streaming{opacity:.85}
 .msg-thinking{font-size:var(--text-sm);color:var(--muted)}
-.msg-thinking summary{cursor:pointer}
+/* Folded away, the summary is the whole of the box and the only thing there is to tap:
+   one line of 12.5px text is a word with a marker beside it, not a target. The padding is
+   what makes it one, and it is the same whichever theme and width it is drawn at. */
+.msg-thinking summary{cursor:pointer;padding-block:var(--space-1)}
+/* How much reasoning the box holds, before opening it costs a read. The summary keeps its
+   own disclosure marker, so this is set inline rather than by a flex row. */
+.thinking-size{font-size:var(--text-xs);margin-left:var(--space-1)}
+/* The text arrives when the box is opened; the rule is the subagent rule, because the
+   reasoning stands to the side of the reply the same way. */
+.thinking-body{margin-top:var(--space-2);border-left:2px solid var(--line);padding-left:var(--space-3)}
+.thinking-note{font-size:var(--text-sm)}
 .working{display:flex;align-items:center;gap:var(--space-2);color:var(--muted);font-size:var(--text-sm)}
 .turn-end{font-size:var(--text-xs);color:var(--muted);display:flex;justify-content:flex-end;align-items:center;gap:var(--space-2)}
 .turn-end .turn-copy{font-size:var(--text-xs)}

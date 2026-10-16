@@ -47,6 +47,21 @@ function setup() {
   return { svc, dir, project, root, config };
 }
 
+/**
+ * What a session replied, from its transcript. A turn's reasoning is an assistant event of
+ * its own - a thinking-only block, as Claude Code sends it - so what it said is the text
+ * blocks, not every block.
+ * @param {Service} svc @param {string} id
+ */
+function replies(svc, id) {
+  return svc
+    .events(id)
+    .filter((e) => e.kind === 'assistant')
+    .flatMap((e) => e.data.content || [])
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text);
+}
+
 /** Resolves once `fn` is true, checking as the service changes. */
 async function until(fn, ms = 3000) {
   const end = Date.now() + ms;
@@ -75,7 +90,8 @@ test('a session turn is stored, priced and titled from its first message', async
   svc.send(s.id, 'hello there\nmore');
   await until(() => svc.session(s.id).status === 'idle' && svc.events(s.id).some((e) => e.kind === 'result'));
   const kinds = svc.events(s.id).map((e) => e.kind);
-  assert.deepEqual(kinds, ['user', 'init', 'assistant', 'result']);
+  // The turn: what was sent, the init, the reasoning behind the reply, the reply, the result.
+  assert.deepEqual(kinds, ['user', 'init', 'assistant', 'assistant', 'result']);
   const after = svc.session(s.id);
   assert.equal(after.title, 'hello there');
   assert.ok(after.claude_session_id?.startsWith('claude-'));
@@ -85,6 +101,39 @@ test('a session turn is stored, priced and titled from its first message', async
   assert.deepEqual(opts.settingSources, ['project', 'local'], 'user settings are never loaded');
   assert.deepEqual(opts.plugins, [{ type: 'local', path: PACK }], "every session gets Bench's own plugin");
   assert.equal(opts.env.ANTHROPIC_BASE_URL, undefined);
+  svc.shutdown();
+});
+
+// A transcript is mostly reasoning, and it is drawn folded away: a listing carries a stub
+// in place of the text, and the text is read one event at a time, by the box that was
+// opened. What is stored is never touched.
+test('a transcript carries thinking as a stub, and one event fetches its blocks in full', async () => {
+  const { svc, project } = setup();
+  const s = svc.createSession({ projectId: project.id });
+  svc.send(s.id, 'hello there');
+  await until(() => svc.events(s.id).some((e) => e.kind === 'result'));
+
+  const reasoning = svc.events(s.id).find((e) => e.kind === 'assistant' && e.data.content.some((b) => b.type === 'thinking'));
+  assert.ok(reasoning, 'the turn reasoned before it replied');
+  const stored = svc.store.eventById(s.id, reasoning.id).data.content[0];
+  const full = stored.thinking;
+  assert.ok(full.length > 200, 'the stub is worth having');
+  // The stub says how much is there, and the signature does not ride along with it.
+  assert.deepEqual(reasoning.data.content[0], { type: 'thinking', length: full.length, truncated: true });
+  assert.equal('signature' in reasoning.data.content[0], false);
+  // Not in the listing at all, in any form: that is the bytes this is about.
+  assert.ok(!JSON.stringify(svc.events(s.id)).includes(full.slice(0, 60)), 'no thinking text is sent with a transcript');
+  assert.equal(svc.store.eventById(s.id, reasoning.id).data.content[0].thinking, full, 'what was stored is unchanged');
+
+  // The one event's blocks, by the place they hold in the message.
+  assert.deepEqual(svc.eventThinking(s.id, reasoning.id), { id: reasoning.id, blocks: [{ index: 0, thinking: full, signature: 'sig' }] });
+  // An event of another session, and one that does not exist, are both not this session's.
+  const other = svc.createSession({ projectId: project.id });
+  assert.throws(() => svc.eventThinking(other.id, reasoning.id), /No such event/);
+  assert.throws(() => svc.eventThinking(s.id, 999999), /No such event/);
+  // An event with no reasoning has none to give, which is not an error.
+  const reply = svc.events(s.id).find((e) => e.kind === 'assistant' && e.data.content.some((b) => b.type === 'text'));
+  assert.deepEqual(svc.eventThinking(s.id, reply.id).blocks, []);
   svc.shutdown();
 });
 
@@ -354,7 +403,7 @@ test('attached files are saved where the session can read them, and named in the
   assert.deepEqual(user.data.files.map((f) => f.name), ['notes.md', 'spec.pdf']);
   assert.equal(user.data.text, 'summarise these', 'the stored message is what the person typed');
   // The fake echoes what it was sent, so the reply shows the paths reached Claude.
-  const reply = svc.events(s.id).find((e) => e.kind === 'assistant').data.content[0].text;
+  const [reply] = replies(svc, s.id);
   assert.match(reply, new RegExp(`Attached files.*\\n- ${dir}/.*notes\\.md`, 's'));
 
   assert.throws(() => svc.send(s.id, '', { files: [{ name: 'big.bin', data: Buffer.alloc(61 * 1024 * 1024).toString('base64') }] }), /over 60 MB/);
@@ -380,7 +429,7 @@ test('a large file is streamed to disk and attached by name, an APK included', a
   await until(() => svc.session(s.id).status === 'idle');
   const user = svc.events(s.id).find((e) => e.kind === 'user');
   assert.deepEqual(user.data.files, [{ name: 'app-release.apk', size: apk.length, type: 'application/vnd.android.package-archive' }]);
-  const reply = svc.events(s.id).find((e) => e.kind === 'assistant').data.content[0].text;
+  const [reply] = replies(svc, s.id);
   assert.match(reply, /app-release\.apk/);
   assert.match(reply, /zip archive/, 'Claude is told how to open an APK');
 
