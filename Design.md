@@ -21,19 +21,30 @@ A component reads `var(--name)`, never a value. A value the source lacks is adde
 | raised / hover | `--surface-2` | `#171c23` | `#f5f5f5` |
 | sunken (code, inputs) | `--surface-sunken` | `#090b0e` | `#eff1f4` |
 | ink | `--text` | `#edf2f7` | `#1f2228` |
-| secondary ink | `--muted` | `#8e9aaa` | `#696e7d` |
+| secondary ink | `--muted` | `#8e9aaa` | `#5f6371` |
 | primary action | `--accent` / `--on-accent` | `#9fb9ff` / `#0b0d10` | `#5a6882` / `#ffffff` |
 | divider | `--line` / `--line-strong` | `#29313c` / `#39424f` | `#e1e3e8` / `#cdd0d9` |
+| success | `--good` | `#6fe0a1` | `#1b7145` |
+| warning | `--warn` | `#ffd37a` | `#865b00` |
 | danger | `--bad` / `--bad-bg` / `--bad-line` | `#ff8585` | `#b3362c` |
+| info (what Bench is waiting on) | `--info` | `#9fb9ff` | `#56647d` |
 | radius | `--radius` / `--radius-sm` | 10px / 6px | 10px / 6px (8-18px across themes) |
 
-**Contrast.** On every surface it can sit on: `--text` at 7:1 or better; `--muted`, `--accent` and the four tones at 4.5:1 or better; `--on-accent` on `--accent` at 4.5:1. `tests/themes.test.mjs` computes these for every theme.
+**Contrast.** On every surface it can sit on - `--bg`, `--surface-rail`, `--surface-0/1/2/3` and `--surface-sunken` - and on the translucent tints and the wash laid over each of them: `--text` at 7:1 or better; `--muted`, `--accent` and the four tones at 4.5:1 or better; `--on-accent` on `--accent` at 4.5:1. `tests/themes.test.mjs` computes all of it for all eleven themes and fails the build, so a theme cannot ship unreadable.
+
+*How much room there is:* the tightest any theme gets anywhere is **4.51:1** - Notebook's `--accent` on the wash over `--surface-sunken`. That is a rounding above the line, not a margin, so the numbers are computed by a test rather than held by care; the next theme to be nudged is checked against it rather than eyeballed.
+
+`--surface-sunken` and the tints are on the list because the diff view paints its file pane on the sunken surface and lays the added and deleted tints on top of that, which is the darkest ground a tone is ever read against. Leaving either off is how a tone that passes everywhere else still fails where it is actually used - which is exactly what happened here, and what adding `--surface-sunken` to the sweep caught.
+
+*Turned-down text.* De-emphasis is a token, not an opacity. A 0.6 opacity on a label composites it towards whatever is behind it, and the result is unreadable however good the token was - `.dv-ln`, `.toast-close`, `.dv-range`, `.task-tab.archived` and `.dv-strip-item.viewed` all did this and all now say what they mean with `--muted`, a struck-through name, or a `--line-strong` rule. `design-check` measures an element's own opacity and its ancestors' and blends the ink into the backdrop before finding the ratio, so the next one is caught rather than shipped.
 
 ## Type
 
 Six steps, `--text-xs` 11 · `--text-sm` 12.5 · `--text-md` 14 · `--text-lg` 16 · `--text-xl` 20 · `--text-2xl` 28. Body is 14px at line-height 1.5. Weights: 400 for prose, 600 for labels and small buttons, 650 for headings and buttons.
 
 *Why:* Bench is a dense tool, read for hours on a laptop and on a phone. The scale is tight between 11 and 14px, where the chrome lives (labels, counts, table heads), and open above, where only titles sit. A 16px body would halve what fits on a phone's transcript. This is a deliberate departure from the 16px body minimum `design-check` assumes; its `type` findings on 14px body text are known and accepted.
+
+*What the gate is told.* `.bench/design-check.json` sets `bodyPx` to **11**, the bottom step of the scale, and that number is this decision read back rather than an exemption bought: 11px is `--text-xs`, chrome that is meant to be small (counts, badges, timestamps), so the floor is the scale's own bottom and the `type` findings it still catches are the off-scale 10px and 12px literals that belong to no step. Setting it to 14 to silence the whole scale would be the papering-over this avoids; setting it to 16 would have the gate report every count in the app and be turned off within a day.
 
 Titles take the theme's `--font-title` (a serif stack, the UI face, or the mono face in capitals), so a theme's character comes through in its headings and nowhere else.
 

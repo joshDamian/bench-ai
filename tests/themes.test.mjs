@@ -81,6 +81,35 @@ for (const [id, t] of themes) {
   });
 }
 
+test('design-tokens.json records what the stylesheets say, not what they used to say', () => {
+  // The record is what the design skills read and what design-check's token layer is built
+  // from, so a value that has drifted from the stylesheet is worse than no record: the gate
+  // starts treating a colour nobody uses as a token. This is the drift that had Quiet
+  // Temple's --muted at #696e7d long after the theme had darkened it.
+  const record = JSON.parse(fs.readFileSync(new URL('../design-tokens.json', import.meta.url), 'utf8'));
+  // The block is commented as it goes - each palette entry carries the rule it was picked
+  // by - so the comments come out before the declarations are read.
+  const classicBlock = (/^:root\{([\s\S]*?)\n\}/m.exec(fs.readFileSync(new URL('../web/app.css', import.meta.url), 'utf8'))?.[1] || '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const classic = Object.fromEntries([...classicBlock.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((d) => [d[1], d[2].trim()]));
+  /** design-tokens.json's key for each custom property, as its `$names` says. */
+  const KEY = {
+    bg: '--bg', surface: '--surface-1', 'surface-raised': '--surface-2', 'surface-sunken': '--surface-sunken',
+    'surface-rail': '--surface-rail', text: '--text', 'text-muted': '--muted', primary: '--accent',
+    'on-primary': '--on-accent', border: '--line', 'border-strong': '--line-strong', danger: '--bad',
+    'danger-bg': '--bad-bg', 'danger-line': '--bad-line', success: '--good', warning: '--warn', info: '--info',
+    wash: '--wash', scrim: '--scrim', 'well-bg': '--well-bg', 'well-text': '--well-text',
+  };
+  const check = (/** @type {Record<string,string>} */ said, /** @type {Record<string,string>} */ truth, /** @type {string} */ which) => {
+    for (const [key, prop] of Object.entries(KEY)) {
+      const declared = truth[prop];
+      if (declared == null) continue; // Classic declares no --well-*; its code sits on --surface-sunken
+      assert.equal(said[key], declared, `${which}: ${key} is recorded as ${said[key]} and the stylesheet says ${declared}`);
+    }
+  };
+  check(record.color.dark, classic, 'Classic (color.dark)');
+  check(record.color.light, themes.get('quiet-temple'), 'Quiet Temple (color.light)');
+});
+
 test('the picker offers exactly the themes the stylesheet defines, with their colours', () => {
   const offered = THEMES.filter((t) => t.id !== 'classic');
   assert.deepEqual(offered.map((t) => t.id).sort(), [...themes.keys()].sort());
