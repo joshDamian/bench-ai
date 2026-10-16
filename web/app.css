@@ -816,6 +816,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .bubble{background:var(--surface-2);border:1px solid var(--line);border-radius:14px 14px 4px 14px;padding:var(--space-2) var(--space-3);max-width:85%;overflow-wrap:anywhere}
 .bubble .md p:last-child{margin-bottom:0}
 .msg.assistant{display:grid;gap:var(--space-2);overflow-wrap:anywhere}
+/* A grid item only shrinks to the column if it is allowed to. Without this, one unbreakable
+   line in a reply - a long command in a fenced block, whose `pre` is `white-space:pre` -
+   set the whole message's width: the reply grew past the column, and the transcript, whose
+   overflow-y:auto makes it scroll sideways too, slid under it and cut the prose off on the
+   left. On a phone that is most of the text. Now the `pre` scrolls in its own box. */
+.msg.assistant>*{min-width:0}
 .msg.subagent{margin-left:var(--space-5);padding-left:var(--space-3);border-left:2px solid var(--line);font-size:var(--text-sm)}
 .msg.streaming{opacity:.85}
 .msg-thinking{font-size:var(--text-sm);color:var(--muted)}
