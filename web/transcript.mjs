@@ -12,11 +12,22 @@ const FINISHING = new Set(['assistant', 'result', 'error']);
  * arrived while it was in flight and are kept; held events older than its first id that
  * it lacks are dropped too, so the cached tail drawn on open gives way to the server's.
  * Ordered by id.
+ *
+ * `suffix` says the snapshot is a read of what came after the held events - `?after=`, for
+ * a pane holding the tail - rather than a window with a start of its own. Nothing held
+ * gives way to it then: it only has ids the pane is missing (the socket may have brought
+ * some of them already), and everything held stays where it is.
  * @param {{id:number}[]} held
  * @param {{id:number}[]} fetched
+ * @param {{suffix?:boolean}} [o]
  */
-export function mergeEvents(held, fetched) {
+export function mergeEvents(held, fetched, o = {}) {
   if (!fetched.length) return held.slice();
+  if (o.suffix) {
+    const have = new Set(held.map((e) => e.id));
+    const add = fetched.filter((e) => !have.has(e.id));
+    return add.length ? [...held, ...add].sort((a, b) => a.id - b.id) : held.slice();
+  }
   const last = fetched[fetched.length - 1].id;
   const newer = held.filter((e) => e.id > last);
   return [...fetched, ...newer].sort((a, b) => a.id - b.id);

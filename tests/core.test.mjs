@@ -918,3 +918,35 @@ test('the composer matches commands by name, after a plugin prefix, then anywher
   assert.deepEqual(names('/compact now'), [], 'a space means the command is chosen');
   assert.deepEqual(names('hello'), []);
 });
+
+test("a session's events after an id come oldest first, capped, and only that session's", () => {
+  const store = new Store(tmp('after'));
+  const ids = [];
+  for (let i = 0; i < 6; i++) {
+    ids.push(store.addEvent('a', 'user', { i }).id);
+    store.addEvent('b', 'user', { i });
+  }
+  const after = (o) => store.listEvents('a', o).map((e) => e.data.i);
+  assert.deepEqual(after({ after: ids[2] }), [3, 4, 5]);
+  assert.deepEqual(after({ after: ids[0], limit: 2 }), [1, 2], 'a full page starts just after the id, not at the newest');
+  assert.deepEqual(after({ after: ids[5] }), [], 'nothing new is an empty list');
+  assert.deepEqual(after({ limit: 2 }), [4, 5], 'without after, still the newest window');
+  store.db.close();
+});
+
+// Both doors into a listing stub the thinking, the incremental one included: a pane that
+// read its new events this way and was handed the text would hold as much of it as the
+// whole-transcript read it replaced.
+test('reasoning is a stub whichever way a listing is read', () => {
+  const store = new Store(tmp('stub-after'));
+  const thought = `Reading the code first. ${'The branch that fails is the one that matters. '.repeat(10)}`;
+  const a = store.addEvent('a', 'assistant', { id: 'm1', content: [{ type: 'thinking', thinking: thought, signature: 'sig' }, { type: 'text', text: 'Done.' }] });
+  const stub = { type: 'thinking', length: thought.length, truncated: true };
+  for (const o of [{}, { before: a.id + 1 }, { after: a.id - 1 }]) {
+    const [held] = store.listEvents('a', o);
+    assert.deepEqual(held.data.content, [stub, { type: 'text', text: 'Done.' }], JSON.stringify(o));
+    assert.ok(!JSON.stringify(held).includes(thought.slice(0, 40)), 'no text, whichever way it was asked for');
+  }
+  assert.equal(store.eventById('a', a.id).data.content[0].thinking, thought, 'what was stored is unchanged');
+  store.db.close();
+});

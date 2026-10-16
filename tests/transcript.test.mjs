@@ -56,3 +56,30 @@ test('a read ends the stream only when it holds a newer finished reply', () => {
   // An older snapshot than the list is never the end of what streams now.
   assert.equal(finishesStream([...held, ev(5, 'assistant'), ev(6, 'tool_result')], [ev(3, 'tool_result'), ev(4, 'assistant')]), false);
 });
+
+test('a read of what is after the held events adds to them and takes nothing away', () => {
+  // The pane holds the tail; the read asked for `after=5` and came back with the three
+  // after it. Nothing behind it gives way: there is no window here to be the truth for.
+  const held = [ev(3), ev(4), ev(5)];
+  const fetched = [ev(6, 'assistant'), ev(7, 'tool_result'), ev(8)];
+  assert.deepEqual(ids(mergeEvents(held, fetched, { suffix: true })), [3, 4, 5, 6, 7, 8]);
+  // Without the suffix the same fetch would read as a window starting at 6 and drop the
+  // whole held transcript, which is why the read says which it is.
+  assert.deepEqual(ids(mergeEvents(held, fetched)), [6, 7, 8]);
+});
+
+test('a read of what is after the held events adds each id once', () => {
+  // The socket brought 6 while the read was on its way and the read brought it again: the
+  // same event, so the one already on screen stands, and 7 comes in behind it.
+  const held = [ev(5), ev(6, 'notice', 'from the socket')];
+  const merged = mergeEvents(held, [ev(6, 'notice', 'from the read'), ev(7)], { suffix: true });
+  assert.deepEqual(ids(merged), [5, 6, 7]);
+  assert.equal(merged[1].data.text, 'from the socket');
+});
+
+test('a read of what is after the held events leaves the ids it does not cover alone', () => {
+  const held = [ev(4, 'notice', 'stale'), ev(5)];
+  const merged = mergeEvents(held, [ev(6), ev(7)], { suffix: true });
+  assert.deepEqual(ids(merged), [4, 5, 6, 7]);
+  assert.equal(merged[0].data.text, 'stale', 'nothing behind the read gives way to it');
+});

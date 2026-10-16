@@ -224,6 +224,32 @@ test('a session file opens inline in a sandbox, or downloads, and nothing outsid
   });
 });
 
+// A pane that already holds a session's events asks for only the newer ones.
+test("a session's events can be read after an id, alone or with the session", async () => {
+  const project = await req('POST', '/api/projects', { body: { path: tmp('after'), init: true } });
+  assert.equal(project.status, 200, project.text);
+  const session = await req('POST', '/api/sessions', { body: { projectId: project.json.id } });
+  const id = session.json.id;
+  // Written beside the server, as a turn would: it reads the same database.
+  const store = new Store(root);
+  const ids = [1, 2, 3, 4].map((n) => store.addEvent(id, 'user', { text: `m${n}` }).id);
+  store.db.close();
+  const texts = (r) => r.map((e) => e.data.text);
+
+  const whole = await req('GET', `/api/sessions/${id}`);
+  assert.deepEqual(texts(whole.json.events), ['m1', 'm2', 'm3', 'm4']);
+  const since = await req('GET', `/api/sessions/${id}?after=${ids[1]}`);
+  assert.equal(since.status, 200, since.text);
+  assert.deepEqual(texts(since.json.events), ['m3', 'm4']);
+  assert.equal(since.json.session.id, id, 'the session comes back with them');
+  assert.ok(Array.isArray(since.json.approvals) && 'commands' in since.json);
+
+  assert.deepEqual(texts((await req('GET', `/api/sessions/${id}/events?after=${ids[0]}`)).json), ['m2', 'm3', 'm4']);
+  assert.deepEqual(texts((await req('GET', `/api/sessions/${id}/events?after=${ids[0]}&limit=2`)).json), ['m2', 'm3'], 'capped from just after the id');
+  assert.deepEqual((await req('GET', `/api/sessions/${id}/events?after=${ids[3]}`)).json, []);
+  assert.deepEqual(texts((await req('GET', `/api/sessions/${id}/events?before=${ids[2]}`)).json), ['m1', 'm2'], 'before still reads back');
+});
+
 // A transcript's thinking: the listing carries a stub, and one event's blocks are fetched
 // on their own, from the one route that hands them out.
 test('thinking is a stub in the transcript, and one event fetches its own blocks', async () => {
