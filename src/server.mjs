@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { execFile } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import QRCode from 'qrcode';
@@ -248,10 +249,50 @@ svc.on('git', (projectId) => broadcast({ type: 'git', project_id: projectId }));
 
 // -- helpers ----------------------------------------------------------------------------
 
-/** @param {http.ServerResponse} res @param {unknown} body @param {number} [status] */
-function json(res, body, status = 200) {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-  res.end(JSON.stringify(body ?? null));
+// Under this a gzip header and the deflate work cost more than the bytes they save. The
+// answers that matter - a long session's transcript - are hundreds of times this.
+const GZIP_MIN = 1024;
+
+/**
+ * Whether this client takes gzip. Gzip is the only encoding offered, so the rest of the
+ * header is only in the way of that answer.
+ * @param {string|undefined} header
+ */
+function acceptsGzip(header) {
+  // A named gzip wins over `*`, whatever order they come in: `gzip;q=0, *` is a refusal.
+  let star = false;
+  for (const part of String(header ?? '').split(',')) {
+    const [name, ...params] = part.trim().toLowerCase().split(';');
+    const q = params.map((p) => p.trim()).find((p) => p.startsWith('q='));
+    const weight = q ? Number(q.slice(2)) : 1;
+    if (name === 'gzip' || name === 'x-gzip') return weight > 0;
+    if (name === '*' && weight > 0) star = true;
+  }
+  return star;
+}
+
+/**
+ * Send JSON. A body over the threshold goes gzipped when the client says it takes gzip,
+ * which is most of the wait when a phone reopens a long session. Nothing that streams
+ * comes through here - a file download writes its own headers - so nothing else changes.
+ * @param {http.IncomingMessage} req @param {http.ServerResponse} res @param {unknown} body @param {number} [status]
+ */
+function json(req, res, body, status = 200) {
+  const raw = Buffer.from(JSON.stringify(body ?? null));
+  /** @type {Record<string, string>} */
+  const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
+  // A small body is sent as it is: there is no second representation to choose between,
+  // so it needs no Vary either.
+  if (raw.length > GZIP_MIN) {
+    headers.vary = 'accept-encoding';
+    if (acceptsGzip(req.headers['accept-encoding'])) {
+      const gz = gzipSync(raw);
+      // The length of what actually goes on the wire, so the client is not left guessing.
+      return res.writeHead(status, { ...headers, 'content-encoding': 'gzip', 'content-length': String(gz.length) }).end(gz);
+    }
+  }
+  res.writeHead(status, headers);
+  res.end(raw);
 }
 
 // Room for 60 MB of attachments, base64-encoded (a third bigger), and the message.
@@ -476,7 +517,7 @@ function byteRange(h, size) {
 /** @param {http.IncomingMessage} req @param {http.ServerResponse} res @param {string} sessionId @param {URL} u */
 function sendSessionFile(req, res, sessionId, u) {
   const f = sessionFile(sessionId, u.searchParams.get('path') || '');
-  if (!f) return json(res, { error: 'Not found' }, 404);
+  if (!f) return json(req, res, { error: 'Not found' }, 404);
   const inline = f.open && u.searchParams.get('download') !== '1';
   /** @type {Record<string, string|number>} */
   const headers = { 'content-type': f.mime, 'x-content-type-options': 'nosniff', 'cache-control': 'private, no-cache', 'accept-ranges': 'bytes' };
@@ -737,35 +778,35 @@ route('POST', '/api/server/shutdown', ({ auth }) => {
 async function pair(req, res, u) {
   const addr = req.socket.remoteAddress || '?';
   const f = pairFailures.get(addr) || { n: 0, at: 0 };
-  if (f.n >= 10 && Date.now() - f.at < 15 * 60 * 1000) return json(res, { error: 'Too many attempts; try again later' }, 429);
+  if (f.n >= 10 && Date.now() - f.at < 15 * 60 * 1000) return json(req, res, { error: 'Too many attempts; try again later' }, 429);
   const body = await readBody(req);
   if (!svc.store.usePairing(String(body.code || ''))) {
     pairFailures.set(addr, { n: f.n + 1, at: Date.now() });
-    return json(res, { error: 'That pairing code is wrong or has expired' }, 401);
+    return json(req, res, { error: 'That pairing code is wrong or has expired' }, 401);
   }
   pairFailures.delete(addr);
   const token = crypto.randomBytes(32).toString('base64url');
   const device = svc.store.addDevice(String(body.name || 'Device').slice(0, 60), token);
   const secure = u.protocol === 'https:' || req.headers['x-forwarded-proto'] === 'https' || /\.ts\.net(:\d+)?$/.test(req.headers.host || '');
   res.setHeader('set-cookie', `bench=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000${secure ? '; Secure' : ''}`);
-  json(res, { device });
+  json(req, res, { device });
 }
 
 /** @param {http.IncomingMessage} req @param {http.ServerResponse} res @param {URL} u @param {string} sessionId */
 async function receiveUpload(req, res, u, sessionId) {
-  if (!/^application\/octet-stream/.test(req.headers['content-type'] || '')) return json(res, { error: 'Send the file as application/octet-stream' }, 415);
+  if (!/^application\/octet-stream/.test(req.headers['content-type'] || '')) return json(req, res, { error: 'Send the file as application/octet-stream' }, 415);
   const declared = Number(req.headers['content-length']);
   if (declared > MAX_UPLOAD) {
-    json(res, { error: `Files over ${MAX_UPLOAD / 1024 / 1024} MB cannot be attached` }, 413);
+    json(req, res, { error: `Files over ${MAX_UPLOAD / 1024 / 1024} MB cannot be attached` }, 413);
     return req.destroy();
   }
   try {
     svc.session(sessionId);
     const out = await svc.runtime.receiveFile(sessionId, u.searchParams.get('name') || 'file', u.searchParams.get('type') || '', req);
-    json(res, out);
+    json(req, res, out);
   } catch (e) {
     const err = /** @type {any} */ (e);
-    if (!res.headersSent) json(res, { error: err.message }, err.status || 400);
+    if (!res.headersSent) json(req, res, { error: err.message }, err.status || 400);
     req.destroy();
   }
 }
@@ -775,15 +816,15 @@ async function handle(req, res) {
   const u = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   if (!u.pathname.startsWith('/api/')) return serveStatic(req, res, u);
   if (u.pathname === '/api/pair' && req.method === 'POST') return pair(req, res, u);
-  if (u.pathname === '/api/ping') return json(res, { ok: true, paired: !!who(req) });
+  if (u.pathname === '/api/ping') return json(req, res, { ok: true, paired: !!who(req) });
   const auth = who(req);
-  if (!auth) return json(res, { error: 'unauthorized' }, 401);
+  if (!auth) return json(req, res, { error: 'unauthorized' }, 401);
   // A file upload is the raw bytes. application/octet-stream, like JSON, cannot be sent
   // cross-site without a preflight, which this server never answers.
   const upload = req.method === 'POST' && /^\/api\/sessions\/([^/]+)\/uploads$/.exec(u.pathname);
   if (upload) return receiveUpload(req, res, u, decodeURIComponent(upload[1]));
   // A write must be JSON, which a cross-site form cannot send without a preflight.
-  if (req.method !== 'GET' && req.method !== 'DELETE' && !/^application\/json/.test(req.headers['content-type'] || '')) return json(res, { error: 'Send JSON' }, 415);
+  if (req.method !== 'GET' && req.method !== 'DELETE' && !/^application\/json/.test(req.headers['content-type'] || '')) return json(req, res, { error: 'Send JSON' }, 415);
   for (const [method, re, fn] of routes) {
     if (method !== req.method) continue;
     const m = re.exec(u.pathname);
@@ -791,19 +832,19 @@ async function handle(req, res) {
     try {
       const body = req.method === 'GET' || req.method === 'DELETE' ? {} : await readBody(req);
       const out = await fn({ req, res, u, params: m.slice(1).map(decodeURIComponent), body, auth });
-      if (!res.headersSent) json(res, out);
+      if (!res.headersSent) json(req, res, out);
     } catch (e) {
       const err = /** @type {any} */ (e);
-      if (!res.headersSent) json(res, { error: err.message, code: err.code, conflicts: err.conflicts, dirty: err.dirty }, err.status || 400);
+      if (!res.headersSent) json(req, res, { error: err.message, code: err.code, conflicts: err.conflicts, dirty: err.dirty }, err.status || 400);
     }
     return;
   }
-  json(res, { error: 'Not found' }, 404);
+  json(req, res, { error: 'Not found' }, 404);
 }
 
 const server = http.createServer((req, res) => {
   handle(req, res).catch((e) => {
-    if (!res.headersSent) json(res, { error: e.message }, 500);
+    if (!res.headersSent) json(req, res, { error: e.message }, 500);
   });
 });
 
