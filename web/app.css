@@ -1221,7 +1221,11 @@ button.side-settings{width:100%;text-align:left}
 .session-chip{display:none;align-items:center;gap:var(--space-2);max-width:62%;padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:999px;background:var(--surface-1);color:var(--text);font-size:var(--text-xs);font-weight:650}
 .session-chip-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .session-chip-mode{color:var(--muted);border-left:1px solid var(--line);padding-left:var(--space-2);white-space:nowrap}
-.session-chip .ic{color:var(--muted)}
+/* The chevron goes to the pill's far edge, where the thing that opens something belongs.
+   Left beside the mode it sat wherever the model name happened to end - 61px short of the
+   edge for "Anthropic (Claude login)", further for a shorter one - so a control that
+   spans the line looked like a row with its affordance stranded in the middle of it. */
+.session-chip .ic{color:var(--muted);margin-left:auto}
 
 /* A dialog that rises from the bottom, where a thumb is and where the keyboard is not. */
 .sheet-scrim{position:fixed;inset:0;z-index:200;background:var(--scrim);display:flex;flex-direction:column;justify-content:flex-end;animation:fade-in .12s ease}
