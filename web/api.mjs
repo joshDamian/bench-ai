@@ -234,7 +234,7 @@ export function terminalUrl(q) {
  * once rather than the word "Connecting" for a second or two; refresh() replaces all of
  * it with the server's own answer, so nothing stale survives the first round trip.
  * @typedef {{
- *   ready: boolean, unauthorized: boolean, connected: boolean, error: string|null,
+ *   ready: boolean, unauthorized: boolean, connected: boolean, dropped: boolean, error: string|null,
  *   projects: Project[], tasks: Task[], sessions: Session[], approvals: Approval[],
  *   providers: any[], defaults: {providerId:string, modelId:string|null, mode:string, effort:string|null, projectsDir:string},
  *   me: {local:boolean, device:{id:string,name:string}|null} | null, push: string|null,
@@ -252,6 +252,11 @@ let state = {
   ready: !!cached,
   unauthorized: false,
   connected: false,
+  // A socket is closed until it opens, on every load. Only a socket that *was* open and
+  // then closed, or that closed after an attempt, is a line that has dropped: the shell
+  // paints before the first handshake has answered, and calling that "offline" is telling
+  // the person the server is gone when the server is the thing still being dialled.
+  dropped: false,
   error: null,
   projects: cached?.projects || [],
   tasks: cached?.tasks || [],
@@ -389,7 +394,7 @@ export function connect() {
   ws.onopen = () => {
     if (socket !== ws) return;
     retry = 0;
-    set({ connected: true });
+    set({ connected: true, dropped: false });
     sendWatch();
     // Whatever happened while disconnected is read fresh, and open panes reload.
     refresh();
@@ -411,7 +416,7 @@ export function connect() {
     if (socket !== ws) return;
     clearTimeout(probe);
     probe = undefined;
-    set({ connected: false });
+    set({ connected: false, dropped: true });
     if (state.unauthorized) return;
     retry = Math.min(retry + 1, 4);
     timer = setTimeout(connect, 500 * 2 ** retry);

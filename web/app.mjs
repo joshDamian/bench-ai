@@ -71,7 +71,9 @@ function Sidebar({ route, onNavigate, onAdd }) {
   const tasks = useStore((s) => s.tasks);
   const sessions = useStore((s) => s.sessions);
   const approvals = useStore((s) => s.approvals);
-  const connected = useStore((s) => s.connected);
+  // The badge is for a line that has dropped, not for one still being dialled: a socket is
+  // closed until it opens, and the shell paints first. See `dropped` in api.mjs.
+  const dropped = useStore((s) => s.dropped);
   const [folded, setFolded] = useState(() => recall('bench:folded', {}));
   const fold = (id) => {
     const next = { ...folded, [id]: !folded[id] };
@@ -83,7 +85,7 @@ function Sidebar({ route, onNavigate, onAdd }) {
     <nav class="sidebar" aria-label="Projects">
       <div class="side-top">
         <a class="logo" href="#/" onClick=${onNavigate}><img class="logo-mark" src="/icons/favicon.svg" width="26" height="26" alt="" /> Bench</a>
-        ${!connected ? html`<span class="badge badge-warn" title="Reconnecting to the server">offline</span>` : null}
+        ${dropped ? html`<span class="badge badge-warn" title="Reconnecting to the server">offline</span>` : null}
         <${ThemeTrigger} align="end" />
       </div>
       ${approvals.length ? html`<a class="side-waiting" href="#/inbox" onClick=${onNavigate}><${Dot} status="waiting" /> ${approvals.length} waiting on you</a>` : null}
