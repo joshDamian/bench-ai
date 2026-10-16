@@ -1311,10 +1311,12 @@ button.side-settings{width:100%;text-align:left}
 /* Four tiles are always four: this grid counts its own columns instead of filling, because
    an auto-filled grid of a fixed four strands the last one on a second row as soon as the
    columns fall below four - which they do at 1280, where the content is 956px. A counted
-   grid cannot orphan anything, and says the same thing at every width. */
+   grid cannot orphan anything, and says the same thing at every width: one column on a
+   phone, a block of two, and the row of four once the page has the width for it - at 1100,
+   the width the page itself is built to, where each tile is 185px. */
 .metric-grid{display:grid;grid-template-columns:1fr;gap:var(--space-3)}
 @media(min-width:650px){.metric-grid{grid-template-columns:repeat(2,1fr)}}
-@media(min-width:1024px){.metric-grid{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:1100px){.metric-grid{grid-template-columns:repeat(4,1fr)}}
 
 /* A meter is a ratio against a limit, so it is one hue with a severity, not a chart. The
    track takes the tone's own wash, so the state reads across the whole bar rather than
