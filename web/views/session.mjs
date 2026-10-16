@@ -4,6 +4,7 @@ import { api, useStore, watchSession, outboxCount } from '../api.mjs';
 import { readTranscript, saveTranscript } from '../transcript-cache.mjs';
 import { Markdown } from '../components/markdown.mjs';
 import { slashMatches } from '../format.mjs';
+import { mergeEvents, finishesStream } from '../transcript.mjs';
 import { MoreMenu } from '../components/menu.mjs';
 import { CopyButton } from '../components/copy.mjs';
 import { showToast } from '../components/toast.mjs';
@@ -18,6 +19,8 @@ const toast = (e) => showToast(e.message || String(e), 'error');
 // at once. Events that stream in are kept too, but gathered: at most one write in this
 // long, and whatever is pending when the page is hidden or the pane closes.
 const CACHE_EVERY = 5000;
+// What the server sends at most per read; an `after` read this full may not reach the newest.
+const EVENTS_PAGE = 400;
 
 // The shell can sit beside the conversation instead of over it. Whether it docks is one
 // choice for every session; whether it is open is per session, so going back to one
@@ -118,24 +121,57 @@ export function SessionPane({ sessionId, onArchived }) {
   // An archived session is read, not returned to; it is not kept.
   useCachedTranscript(sessionId, events, !!session?.archived_at);
 
-  const load = () =>
-    api
-      .session(sessionId)
+  // Each read is numbered, and only the newest one for the session on screen is used: a
+  // reconnect can start a second read while the first is still coming, and the pane can
+  // move to another session before either lands.
+  const loads = useRef(0);
+  const shown = useRef(sessionId);
+  shown.current = sessionId;
+  // The events on screen, for a read asked for later: the reconnect listener is registered
+  // once, so it cannot close over the ones a render holds.
+  const held = useRef(events);
+  held.current = events;
+
+  // Reads the session. `have` is what the pane already holds: with any of it, only the
+  // events after its last are asked for, and only those it is missing are merged in; a
+  // full page of them may leave a gap behind it, so the newest window is read whole
+  // instead. `finished` is called when the read holds the end of the reply now streaming,
+  // which only a read after a dropped line can: on open, the socket brings that end itself.
+  const load = (have = [], finished) => {
+    const n = ++loads.current;
+    const id = sessionId;
+    const current = () => n === loads.current && id === shown.current;
+    const from = have[have.length - 1]?.id;
+    return api
+      .session(id, { after: from })
       .then((r) => {
+        if (!current()) return;
+        if (from && r.events.length >= EVENTS_PAGE) return load(undefined, finished);
         setLoaded(r);
         if (r.commands?.length) setCommands(r.commands);
-        setEvents(r.events);
-        setMore(r.events.length >= 400);
-        setStream({ text: '', thinking: '' });
+        // Where the read's copy goes into the cached one: what the pane shows is what is
+        // cached, a moment later and trimmed (see useCachedTranscript).
+        setEvents((list) => {
+          if (finished && finishesStream(list, r.events)) finished();
+          return mergeEvents(list, r.events, { suffix: Boolean(from) });
+        });
+        // What is behind the pane is not what a read of what is new says.
+        if (!from) setMore(r.events.length >= EVENTS_PAGE);
       })
-      .catch(toast);
+      .catch((e) => current() && toast(e));
+  };
 
   useEffect(() => {
     setLoaded(null);
     setEvents(readTranscript(sessionId));
+    setStream({ text: '', thinking: '' });
     setSuggestion('');
     setCommands([]);
     pinned.current = true;
+    // Whole, not `after` the cache: the cached copy is a trimmed one, and a read of only
+    // what is newer would leave the thinking and the tool output it dropped off the screen
+    // for as long as the pane is open. Read whole, the server's copy of those same ids
+    // replaces it (mergeEvents), so the trimmed tail is only what is drawn until it lands.
     load();
     api.sessionCommands(sessionId).then(setCommands).catch(() => {});
     // Streaming text is gathered and drawn at most once a frame: re-rendering the
@@ -171,14 +207,17 @@ export function SessionPane({ sessionId, onArchived }) {
         if (!frame) frame = requestAnimationFrame(flush);
       }
     });
-    const again = () => {
-      drop();
-      load();
-    };
+    const again = () =>
+      load(held.current, () => {
+        drop();
+        setStream({ text: '', thinking: '' });
+      });
     window.addEventListener('bench:reconnected', again);
     return () => {
       off();
       drop();
+      // A read still in flight belongs to this session; nothing it brings is wanted now.
+      loads.current++;
       window.removeEventListener('bench:reconnected', again);
     };
   }, [sessionId]);
@@ -203,9 +242,9 @@ export function SessionPane({ sessionId, onArchived }) {
   const earlier = async () => {
     const before = events[0]?.id;
     if (!before) return;
-    const older = await api.events(sessionId, before).catch(toast);
+    const older = await api.events(sessionId, { before }).catch(toast);
     if (!older) return;
-    setMore(older.length >= 400);
+    setMore(older.length >= EVENTS_PAGE);
     const el = scroller.current;
     const from = el ? el.scrollHeight - el.scrollTop : 0;
     pinned.current = false;

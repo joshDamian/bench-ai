@@ -3,6 +3,7 @@
 // with a quota, counted in characters as browsers count it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mergeEvents } from '../web/transcript.mjs';
 import {
   slimEvent,
   trimTranscript,
@@ -155,6 +156,39 @@ test('an archived or deleted session is removed and not written back until unarc
   assert.equal(saveTranscript('gone', events, { store }), true);
   forgetTranscript('gone', { store });
   assert.equal(store.getItem(eventsKey('gone')), null);
+});
+
+test('a trimmed cache drawn on open gives way to the read that follows it', () => {
+  // What the pane shows on open is the cached copy; the whole read that lands a moment
+  // later is merged over it, and the server's own events for those ids are what stay.
+  const server = [
+    ev('user', { text: 'do it' }),
+    ev('assistant', { content: [{ type: 'thinking', thinking: big(40_000) }, { type: 'text', text: 'done' }] }),
+    ev('tool_result', { results: [{ tool_use_id: 't1', content: big(9_000) }] }),
+  ];
+  const store = fakeStore();
+  saveTranscript('s', server, { store });
+  const cached = readTranscript('s', { store });
+  // The draw at once has no thinking and a cut result...
+  assert.equal(cached[1].data.content.length, 1);
+  assert.equal(cached[2].data.results[0].content.length, CLIP + 1);
+  // ...and the read puts them back, because it covers those ids.
+  const merged = mergeEvents(cached, server);
+  assert.deepEqual(merged, server);
+});
+
+test('a read of what is new is cached as the merged tail, still slimmed', () => {
+  const store = fakeStore();
+  const first = [ev('user', { text: 'one' }), ev('assistant', { content: [{ type: 'text', text: 'two' }] })];
+  saveTranscript('s', first, { store });
+  const held = readTranscript('s', { store });
+  const newer = [ev('assistant', { content: [{ type: 'thinking', thinking: big(40_000) }, { type: 'text', text: 'three' }] })];
+  const merged = mergeEvents(held, newer, { suffix: true });
+  assert.equal(saveTranscript('s', merged, { store }), true);
+  const back = readTranscript('s', { store });
+  assert.deepEqual(back.map((e) => e.id), merged.map((e) => e.id));
+  assert.equal(back[2].data.content.length, 1); // the thinking is not in the cache
+  assert.ok(JSON.stringify(back).length <= 50_000);
 });
 
 test('no storage at all is not an error', () => {

@@ -403,11 +403,16 @@ export class Store {
   }
 
   /**
-   * The newest `limit` events, oldest first; with `before`, the window ending just before that id.
-   * @param {string} sessionId @param {{before?:number, limit?:number}} [o] @returns {SessionEvent[]}
+   * The newest `limit` events, oldest first; with `before`, the window ending just before that id;
+   * with `after`, the first `limit` events after that id, so a reader holding the tail asks for
+   * only what is new. A full `after` page means there may be more beyond it.
+   * @param {string} sessionId @param {{before?:number, after?:number, limit?:number}} [o] @returns {SessionEvent[]}
    */
   listEvents(sessionId, o = {}) {
     const limit = Math.min(o.limit || 400, 2000);
+    if (o.after) {
+      return this.#all('SELECT * FROM session_events WHERE session_id=? AND id>? ORDER BY id LIMIT ?', sessionId, o.after, limit).map((r) => ({ ...r, data: JSON.parse(r.data) }));
+    }
     const rows = o.before
       ? this.#all('SELECT * FROM session_events WHERE session_id=? AND id<? ORDER BY id DESC LIMIT ?', sessionId, o.before, limit)
       : this.#all('SELECT * FROM session_events WHERE session_id=? ORDER BY id DESC LIMIT ?', sessionId, limit);

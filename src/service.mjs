@@ -685,7 +685,7 @@ export class Service extends EventEmitter {
     return { ok: true };
   }
 
-  /** @param {string} id @param {{before?:number, limit?:number}} [o] */
+  /** @param {string} id @param {{before?:number, after?:number, limit?:number}} [o] */
   events(id, o) {
     this.session(id);
     return this.store.listEvents(id, o);
