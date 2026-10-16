@@ -117,6 +117,9 @@ test('a planted defect is caught for every rule the gate keeps', looking, async 
     // A widget's own stylesheet counts as the page's until the widget is ignored: this is
     // the finding that has to disappear once `.widget` is on the ignore list below.
     ['tokens', '.widget-ink', /is a colour written out/],
+    // The same widget, from a stylesheet linked in the head instead of written inside it:
+    // nothing in the DOM says whose it is, so it is judged until the config names it.
+    ['tokens', '.widget-ink', /\(vendor\.css\)/],
     ['motion', 'div.spin', /still moving/],
   ];
   for (const [rule, selector, detail] of planted) {
@@ -162,7 +165,7 @@ test('a design review gets both themes and the clicked state, and no picture of 
 test('a config file in the project is read, and what it ignores is left alone', looking, async () => {
   const dir = copy('bad');
   fs.mkdirSync(path.join(dir, '.bench'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.bench', 'design-check.json'), JSON.stringify({ themes: ['light'], ignore: ['.spin', '.wide', '.widget'] }));
+  fs.writeFileSync(path.join(dir, '.bench', 'design-check.json'), JSON.stringify({ themes: ['light'], ignore: ['.spin', '.wide', '.widget', 'vendor.css'] }));
   const { url } = /** @type {any} */ (served.get('bad'));
   const { code, out } = await gate(dir, ['--url', url, '--json']);
   assert.equal(code, 1, `the rest of the page is still a defect, got:\n${out}`);
@@ -173,6 +176,10 @@ test('a config file in the project is read, and what it ignores is left alone', 
   assert.ok(
     !report.findings.some((/** @type {any} */ f) => f.selector.includes('widget')),
     'an ignored widget is left alone whole, stylesheet included',
+  );
+  assert.ok(
+    !report.findings.some((/** @type {any} */ f) => /vendor\.css/.test(f.detail)),
+    'and a vendored stylesheet the config names is left alone too, linked or not',
   );
   assert.ok(report.findings.some((/** @type {any} */ f) => f.rule === 'tokens' && f.selector.includes('hardcoded')), 'the page\'s own written-out colour is still reported');
   assert.ok(rules.has('target') && rules.has('contrast'), 'and the rest is still judged');

@@ -1,0 +1,5 @@
+/* A library's stylesheet, linked from the head rather than written inside the widget it
+   belongs to - so the gate cannot see it by looking in the widget's subtree. */
+.widget-ink {
+  color: #00cc00;
+}

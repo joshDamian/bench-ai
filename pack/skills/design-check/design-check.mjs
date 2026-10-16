@@ -314,10 +314,16 @@ function pageDeclared(opts) {
   };
 
   for (const sheet of Array.from(document.styleSheets)) {
-    if (opts.tokens && String(sheet.href || '').split('/').pop() === opts.tokens) continue;
-    // A widget that carries its own stylesheet carries it in its own subtree, and a
-    // widget left alone is left alone whole: an emulator ignored for its markup must not
-    // then be reported for the palette it writes for itself.
+    const name = String(sheet.href || '').split('/').pop();
+    if (opts.tokens && name === opts.tokens) continue;
+    // A vendored widget's stylesheet is linked from the head, not written inside the
+    // widget, so the subtree test below can never see it - and the emulator's is injected
+    // from script, so it is not even there when the page first loads. Naming the file in
+    // the ignore list is how a widget left alone is left alone whole on both counts.
+    if (name && opts.ignore?.includes(name)) continue;
+    // A widget that does carry its own stylesheet inside itself carries it in its own
+    // subtree: an emulator ignored for its markup must not then be reported for the
+    // palette it writes for itself.
     const owner = /** @type {any} */ (sheet.ownerNode);
     if (owner && opts.ignore?.length && opts.ignore.some((/** @type {string} */ sel) => {
       try {

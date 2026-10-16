@@ -185,7 +185,9 @@ function GitBar({ projectId, git, reload }) {
         ${git.hasRemote ? html`<button class="btn sm secondary" disabled=${!!busy} type="button" onClick=${() => run('fetch', () => api.fetch(projectId))}>${busy === 'fetch' ? 'Fetching…' : 'Fetch'}</button>` : null}
         ${git.upstream && git.behind ? html`<button class="btn sm secondary" disabled=${!!busy} type="button" onClick=${() => run('pull', () => api.pull(projectId))}>${busy === 'pull' ? 'Pulling…' : `Pull ${git.behind}`}</button>` : null}
         ${git.hasRemote && git.branch && (git.ahead || !git.upstream) ? html`<button class="btn sm secondary" disabled=${!!busy} type="button" onClick=${() => run('push', () => api.push(projectId))}>${busy === 'push' ? 'Pushing…' : 'Push'}</button>` : null}
-        ${git.dirty.length ? html`<button class="btn sm" disabled=${!!busy} type="button" onClick=${() => setDialog('commit')}>Commit</button>` : null}
+        ${/* Secondary, like the Fetch/Pull/Push beside it: committing is what happens to
+              work that already exists, and the page's one filled button is Start task. */ ''}
+        ${git.dirty.length ? html`<button class="btn sm secondary" disabled=${!!busy} type="button" onClick=${() => setDialog('commit')}>Commit</button>` : null}
       </div>
       ${dialog === 'branch' ? html`<${SwitchBranch} projectId=${projectId} git=${git} onClose=${() => setDialog(null)} onDone=${reload} />` : null}
       ${dialog === 'commit' ? html`<${CommitDialog} title="Commit in the checkout" files=${git.dirty} onClose=${() => setDialog(null)} onCommit=${(m) => api.commit(projectId, m).then(reload)} onDiff=${() => setDialog('diff')} />` : null}
