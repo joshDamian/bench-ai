@@ -737,7 +737,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .list-row-main>div{min-width:0}
 .list-row-side{display:flex;align-items:center;gap:var(--space-3);flex:0 0 auto;font-size:var(--text-sm)}
 .row-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
-.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--space-3)}
+/* The grid fills whatever it is given, and wraps when a project does not fit - the count is
+   the person's. The floor is 220px rather than 240 so that the four projects a full screen
+   usually holds share the one row: at 1280 the content is 956px wide inside the rail, and
+   four 240px columns plus their gaps need 996. See Design-brief.md. */
+.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:var(--space-3)}
 .project-card{display:grid;gap:var(--space-1);color:inherit;text-decoration:none}
 .project-card:hover{border-color:var(--accent-dim)}
 .project-card-head{display:flex;align-items:center;gap:var(--space-2)}
@@ -1034,11 +1038,21 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
    flex item that shrinks and ellipsises, and the chip is not allowed to. */
 .seg button{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:var(--space-1);overflow:hidden;padding:var(--space-2) var(--space-3);border-radius:4px;color:var(--muted);font-size:var(--text-sm);font-weight:600;white-space:nowrap}
 .seg button>span:not(.count){min-width:0;overflow:hidden;text-overflow:ellipsis}
-.seg button.on{background:var(--surface-3);color:var(--text)}
+.seg button.on{background:var(--surface-3);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-strong)}
+/* A page's filter is a control, not a toolbar: it is as wide as its own segments and sits
+   under the title, and only a phone stretches it, where sharing the width is what makes
+   each segment a whole thumb. Sizing it to its words means the buttons size to their words
+   too, so the equal share is turned off here and kept in the dialog, whose tabs do fill it. */
+.page>.seg{width:max-content;max-width:100%}
+.page>.seg button{flex:0 1 auto}
 /* Three segments share a phone's width, and 12px of side padding each is the difference
    between "Needs you" and "Needs yo…" at 390. The 4px comes back as air around the control,
    which nobody reads as a loss. */
 @media(max-width:860px){.seg button{padding:var(--space-2)}}
+@media(max-width:650px){
+  .page>.seg{width:100%}
+  .page>.seg button{flex:1}
+}
 .dest{display:flex;align-items:center;gap:var(--space-2)}
 .dest-path{flex:1;min-width:0;overflow-wrap:anywhere;font-size:var(--text-sm);padding:var(--space-2) var(--space-2);background:var(--surface-0);border:1px solid var(--line);border-radius:var(--radius-sm)}
 .picker-box{display:grid;gap:var(--space-2);margin-top:var(--space-2)}
@@ -1280,6 +1294,13 @@ button.side-settings{width:100%;text-align:left}
 .metric-label{font-size:var(--text-sm);font-weight:600;color:var(--muted)}
 .metric-value{font-size:var(--text-2xl);font-weight:650;line-height:1.1}
 .metric-sub,.metric-foot{font-size:var(--text-xs);color:var(--muted)}
+/* Four tiles are always four: this grid counts its own columns instead of filling, because
+   an auto-filled grid of a fixed four strands the last one on a second row as soon as the
+   columns fall below four - which they do at 1280, where the content is 956px. A counted
+   grid cannot orphan anything, and says the same thing at every width. */
+.metric-grid{display:grid;grid-template-columns:1fr;gap:var(--space-3)}
+@media(min-width:650px){.metric-grid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1024px){.metric-grid{grid-template-columns:repeat(4,1fr)}}
 
 /* A meter is a ratio against a limit, so it is one hue with a severity, not a chart. The
    track takes the tone's own wash, so the state reads across the whole bar rather than

@@ -49,13 +49,14 @@
 - **Error:** a failed git or GitHub read is a toast with the message, because the grid is already drawn and there is nothing in it to replace. A failure to add a project keeps the dialog open with what was typed and says what failed.
 - **Happy path:** three or four projects, one with an active task and a checkout session, one item waiting.
 
-**Layout - desktop (1280):** `.page` (1100px max) → header → the attention list as a `--surface-1` `.list` with hairline dividers (not cards) → a `.project-grid` of `minmax(240px,1fr)` columns, 12px apart. Cards sit on `--surface-1` with the small radius; the whole card is the link.
+**Layout - desktop (1280):** `.page` (1100px max) → header → the attention list as a `--surface-1` `.list` with hairline dividers (not cards) → a `.project-grid` of `minmax(220px,1fr)` columns, 12px apart. Cards sit on `--surface-1` with the small radius; the whole card is the link.
 **Layout - phone (390):** padding 16px, the title 16px. The grid falls to one column by itself; the attention list rows stack their title over their where-and-when at 650px. Card meta ellipsises rather than wrapping to a second line.
 **Avoid:** the create action as a "+" tile inside the grid; a card per project carrying its tasks, its sessions and its last commit; a "waiting" banner that repeats what the Inbox badge already says; counts styled as prominently as the names.
 **Chosen, not asked:**
 - *A project card is not a dashboard.* It shows a name, a directory and two counts and stops. The work in a project belongs to the project's own view, and a card that summarised it would have to be read rather than scanned.
 - *Waiting stays on Home even though Inbox exists.* A phone opened to Bench should show what needs a person before it shows where things live; the list is capped and each row links into the same conversation the Inbox links to.
 - *No skeleton for the grid.* The store paints from a cached snapshot before the socket answers, so a skeleton would replace real, slightly-stale content with a placeholder - worse than the staleness it hides.
+- *The grid's floor is 220px, not 240.* A card is a name, a place and a count, and 220px holds all three. The narrower floor is what lets the four projects a full screen usually has sit across the content rather than leaving the fourth alone under three: at 1280 the content is 956px wide inside the rail, and four 240px columns need 996. A fifth card wraps, which is what a grid does; three across is what four cards looked like before.
 
 ## View: Inbox (`#/inbox`)
 
@@ -89,7 +90,7 @@
 **Primary action:** **Open** - the first segment of the filter. There is no filled button on this screen on purpose: its job is choosing which session to read, and the reading happens one tap away. The segments (Open · Needs you · All) are the only controls, and each shows its count only when it is not zero.
 **Hierarchy:**
 1. `Sessions` (20px).
-2. The filter segments (12.5px, the current one in `--text` on a `--surface-3` fill).
+2. The filter segments (12.5px, the current one in `--text` on a `--surface-3` fill edged with a `--line-strong` hairline).
 3. Each row: a status dot, the session's title (550), an optional one-line error in `--bad` at 11px, then the status badge and the relative time in `--muted` with tabular figures.
 4. The status badge is the row's emphasis - Working, Needs you, Error, Idle - and it is a word as well as a colour.
 
@@ -99,13 +100,15 @@
 - **Error:** a session that failed says so in its own row, one line, ellipsised, in `--bad` - the list is not replaced by an error page because the other sessions are fine.
 - **Happy path:** one Working, one Needs you, one Error with its message, and four Idle - with the counts on the segments matching.
 
-**Layout - desktop (1280):** `.page` → header → a segmented control on `--surface-0` → a `.list` on `--surface-1` with hairline dividers. One row per session, 16px between the title block and the badge-and-time block.
-**Layout - phone (390):** the segments span the width and ellipsise their labels rather than scrolling. Under 650px a row becomes two lines - the title with its error on the first, the badge and the time on the second - so a long title is never clipped by its own row.
+**Layout - desktop (1280):** `.page` → header → a segmented control on `--surface-0`, as wide as its three segments and no wider → a `.list` on `--surface-1` with hairline dividers. One row per session, 16px between the title block and the badge-and-time block.
+**Layout - phone (390):** under 650px the segments stretch to the full width and ellipsise their labels rather than scrolling. Under 650px a row becomes two lines - the title with its error on the first, the badge and the time on the second - so a long title is never clipped by its own row.
 **Avoid:** a card per session; a filled "New session" button competing with the list; showing the project path on every row when the project is one tap away; a colour-only status.
 **Chosen, not asked:**
 - *Sort is waiting, then working, then the rest, each newest first.* The order a phone should be read in is "what needs me", and a pure timestamp sort buries a decision under an idle session that happened to update later.
 - *One empty state for both the filter and the first run.* With the filter always visible above it, the person can see which they are in; a second, differently-worded empty for the filtered case would be a distinction the screen already makes.
 - *No filled action.* The pattern wants one primary action per view; this view's is choosing, and manufacturing a button here would compete with the rows, which are the actions.
+- *The filter is a control, not a toolbar.* On a desk it is the width of its three segments and sits under the title like the control it is; stretched across 956px it reads as furniture, and three 315px segments for two-word labels is a lot of empty pill for the words it holds. Only a phone spans the width, where sharing it is what makes each segment a full thumb's target.
+- *The current segment carries a hairline, not just its fill.* `--surface-3` is the most raised surface and the strip is `--surface-0`, and in the light themes those two are near enough that the selected segment's fill is a couple of steps off its ground - visible as a shape in the dark themes, invisible where it matters most. The fill stays; the `--line-strong` edge is what says which one is current, which is the same hairline a dialog or a menu uses to say "this is raised".
 
 ## View: Dashboard (`#/dashboard`)
 
@@ -124,10 +127,11 @@
 - **Error:** the message in a `.notice-bad` above the body. A reading that fails after good readings keeps the last one on screen under the notice, because a stale figure with its timestamp is more use than a blank page.
 - **Happy path:** four tiles with real figures, one with its meter into `--warn`, five process rows of which two link to sessions, and three storage rows.
 
-**Layout - desktop (1280):** `.page` → header → four tiles in a `minmax(240px,1fr)` grid, 12px apart → the two sections, 20px apart, each a `.list` on `--surface-1`. The memory and disk tiles carry an 8px meter whose fill and track are the same tone, so the severity reads across the whole bar; the tone is `--good`, `--warn` or `--bad` at 75% and 90%, and it is never the only signal - the number is always beside it.
+**Layout - desktop (1280):** `.page` → header → four tiles across one row, 12px apart, on a grid that counts its own columns (`1fr` to 650px, `repeat(2,1fr)` from 650px, `repeat(4,1fr)` from 1024px) → the two sections, 20px apart, each a `.list` on `--surface-1`. The memory and disk tiles carry an 8px meter whose fill and track are the same tone, so the severity reads across the whole bar; the tone is `--good`, `--warn` or `--bad` at 75% and 90%, and it is never the only signal - the number is always beside it.
 **Layout - phone (390):** the tiles fall to one column; the process rows drop the "open" link, because the whole row is the link at that width, and their figures drop to 11px so all three still fit on one line.
 **Avoid:** a wall of equal stat cards; a chart of four points; colour alone saying a resource is in trouble; a figure with no period or comparison; a dashboard that acts on what it shows; polling when nobody is looking.
 **Chosen, not asked:**
+- *The four tiles are a fixed set, so the grid counts its own columns.* Home's project grid fills whatever it is given, because the number of projects is the person's and its rows are meant to wrap. These four are always four, and an auto-filled 240px grid of a fixed four puts **Load average** alone on a second row wherever the columns fall below four - which at 1280 they do, three 310px columns and no fourth. A counted grid cannot orphan anything and says the same thing at every width: a row of four, a block of two, or one column on a phone.
 - *Polled, not pushed.* The server samples nothing while this page is closed, so opening it is what turns the measurement on. On a small machine, looking at the dashboard should not itself be the load - and a phone that wakes refreshes at once rather than waiting out the interval.
 - *No primary action.* The pattern asks what the person does next and warns against inventing an "Export". Here the answer is genuinely "go and look at the conversation", and that is the row's link, not a button.
 - *The two footnotes under the process list are kept.* Whether the memory figure comes from the service's cgroup or from summing the process tree changes what the number means, and a number whose meaning is unstated is worse than no number.

@@ -110,7 +110,7 @@ function Body({ m, sessions }) {
   };
 
   return html`
-    <div class="project-grid">
+    <div class="metric-grid">
       <${Tile} label="Bench memory" value=${formatBytes(m.bench.memCurrent)} sub=${`of ${formatBytes(m.machine.memTotal)}`} pct=${memPct} tone=${tone(memPct)} foot=${m.bench.memPeak ? `peak ${formatBytes(m.bench.memPeak)} · ${m.bench.pids ?? m.bench.procs} pids` : `${m.bench.procs} processes`} />
       <${Tile} label="Bench processes" value=${String(m.bench.procs)} sub=${`${claude} session${claude === 1 ? '' : 's'} · ${shells} terminal${shells === 1 ? '' : 's'}`} />
       <${Tile} label="Disk free" value=${formatBytes(m.machine.diskFree)} sub=${`of ${formatBytes(m.machine.diskTotal)}`} pct=${diskPct} tone=${tone(diskPct)} foot=${diskUsed != null ? `${formatBytes(diskUsed)} used` : ''} />
