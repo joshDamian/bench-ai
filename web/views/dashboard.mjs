@@ -59,7 +59,7 @@ export function Dashboard() {
           <h1>Dashboard</h1>
           ${m ? html`<div class="muted">${m.host.hostname} · up ${formatDuration(m.host.uptimeMs)} · ${m.host.cpus} cores</div>` : null}
         </div>
-        ${m ? html`<span class="muted mono-sm" title="Refreshed every ${POLL_MS / 1000}s">${new Date(m.at).toLocaleTimeString()}</span>` : null}
+        ${m ? html`<span class="muted mono-sm" title="The reading is taken again every ${POLL_MS / 1000}s">${new Date(m.at).toLocaleTimeString()} · refreshing every ${POLL_MS / 1000}s</span>` : null}
       </header>
       ${err ? html`<div class="notice notice-bad">${err}</div>` : null}
       ${!m ? html`<div class="card empty-card"><p class="muted">Reading the machine…</p></div>` : html`<${Body} m=${m} sessions=${sessions} />`}
@@ -74,6 +74,10 @@ function Body({ m, sessions }) {
   const diskPct = diskUsed != null ? pctOf(diskUsed, m.machine.diskTotal) : 0;
   const claude = m.procs.filter((p) => p.kind === 'claude').length;
   const shells = m.procs.filter((p) => p.kind === 'terminal').length;
+  // The CPU the rows below are using, so the tile that counts Bench's processes also says
+  // what they are doing: the section under it is "Memory & CPU by process", and a tile that
+  // stops a line short of the three beside it reads as one that failed to load.
+  const cpu = m.procs.reduce((n, p) => n + (p.pcpu || 0), 0);
   const statusOf = (/** @type {string|null} */ id) => sessions.find((s) => s.id === id)?.status || 'idle';
 
   /** Where a row leads: the session that owns it, else its task, else its project. @param {import('../../src/contract.d.mts').MetricProcess} p */
@@ -112,7 +116,7 @@ function Body({ m, sessions }) {
   return html`
     <div class="metric-grid">
       <${Tile} label="Bench memory" value=${formatBytes(m.bench.memCurrent)} sub=${`of ${formatBytes(m.machine.memTotal)}`} pct=${memPct} tone=${tone(memPct)} foot=${m.bench.memPeak ? `peak ${formatBytes(m.bench.memPeak)} · ${m.bench.pids ?? m.bench.procs} pids` : `${m.bench.procs} processes`} />
-      <${Tile} label="Bench processes" value=${String(m.bench.procs)} sub=${`${claude} session${claude === 1 ? '' : 's'} · ${shells} terminal${shells === 1 ? '' : 's'}`} />
+      <${Tile} label="Bench processes" value=${String(m.bench.procs)} sub=${`${claude} session${claude === 1 ? '' : 's'} · ${shells} terminal${shells === 1 ? '' : 's'}`} foot=${`${cpu.toFixed(1)}% CPU`} />
       <${Tile} label="Disk free" value=${formatBytes(m.machine.diskFree)} sub=${`of ${formatBytes(m.machine.diskTotal)}`} pct=${diskPct} tone=${tone(diskPct)} foot=${diskUsed != null ? `${formatBytes(diskUsed)} used` : ''} />
       <${Tile} label="Load average" value=${(m.host.loadavg[0] ?? 0).toFixed(2)} sub=${`${(m.host.loadavg[1] ?? 0).toFixed(2)} · ${(m.host.loadavg[2] ?? 0).toFixed(2)}`} foot="1m · 5m · 15m" />
     </div>

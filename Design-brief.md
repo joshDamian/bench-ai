@@ -117,7 +117,7 @@
 **Primary action:** **none, and that is the decision.** This is an observe-only screen: nothing here kills, cleans or stops anything. Every row that belongs to a session is a link to that session, which is where stopping it lives. A dashboard action that acted on what it was showing would make the reading and the acting the same gesture.
 **Hierarchy:**
 1. `Dashboard` (20px) with one muted line of host - hostname, uptime, cores - and the time of the reading on the right, marked as refreshing every 4s.
-2. Four tiles: **Bench memory**, **Bench processes**, **Disk free**, **Load average**. Each is a label (12.5px, `--muted`, 600), a figure (28px `--text-2xl`, 650), and the context it is read against - "of 8.0 GB", "3 sessions · 1 terminal". A figure is never alone.
+2. Four tiles: **Bench memory**, **Bench processes**, **Disk free**, **Load average**. Each is a label (12.5px, `--muted`, 600), a figure (28px `--text-2xl`, 650), and the context it is read against - "of 8.0 GB", "3 sessions · 1 terminal". A figure is never alone, and the four bottom out together: every tile carries a third line - the memory and disk tiles a meter, the processes tile the CPU its processes are using, the load tile the other two averages - so no tile is a line shorter than the three beside it. Memory, CPU, disk and load are the four axes, and each tile answers for its own.
 3. **Memory & CPU by process** (16px) with a neutral count badge, then one row per process: name, kind chip, and right-aligned mono figures for memory, CPU and elapsed time.
 4. **Storage** - a bar for the machine's disk and one row per storage area, each with its path in mono under its name.
 

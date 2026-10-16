@@ -1290,7 +1290,12 @@ button.side-settings{width:100%;text-align:left}
    What Bench is costing the machine. Four numbers across the top, then the processes
    holding them. A tile is a label, a figure and the context it is read against - never a
    figure on its own, because "2.1 GB" means nothing without "of 8.0 GB" beside it. */
-.metric{display:grid;gap:var(--space-1);align-content:start}
+.metric{display:flex;flex-direction:column;gap:var(--space-1)}
+/* The four tiles are peers, so they finish on one line: the foot takes whatever room the row
+   left in the card - which is what puts all four feet on the same baseline where the row
+   stretches them to the tallest - and on a phone, where a card is only as tall as itself,
+   there is no room to take and the line sits where it was written. */
+.metric-foot{margin-top:auto}
 .metric-label{font-size:var(--text-sm);font-weight:600;color:var(--muted)}
 .metric-value{font-size:var(--text-2xl);font-weight:650;line-height:1.1}
 .metric-sub,.metric-foot{font-size:var(--text-xs);color:var(--muted)}
