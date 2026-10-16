@@ -1016,8 +1016,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .composer.dragging{outline:2px dashed var(--accent-dim);outline-offset:-6px}
 /* Adding a project: tabs, the destination, the repository list. */
 .seg{display:flex;gap:var(--space-half);padding:var(--space-half);background:var(--surface-0);border:1px solid var(--line);border-radius:var(--radius-sm);overflow-x:auto}
-.seg button{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;padding:var(--space-2) var(--space-3);border-radius:4px;color:var(--muted);font-size:var(--text-sm);font-weight:600;white-space:nowrap}
+/* A segment's label is the part that gives way, never the count beside it. On a phone the
+   three segments share the width equally, and a label that is a hair too long for its share
+   takes the count chip with it - and what a cut-off chip draws is an ellipsis *inside* the
+   pill ("Needs you …"), which says less than a shortened word does. So the label is the
+   flex item that shrinks and ellipsises, and the chip is not allowed to. */
+.seg button{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:var(--space-1);overflow:hidden;padding:var(--space-2) var(--space-3);border-radius:4px;color:var(--muted);font-size:var(--text-sm);font-weight:600;white-space:nowrap}
+.seg button>span:not(.count){min-width:0;overflow:hidden;text-overflow:ellipsis}
 .seg button.on{background:var(--surface-3);color:var(--text)}
+/* Three segments share a phone's width, and 12px of side padding each is the difference
+   between "Needs you" and "Needs yo…" at 390. The 4px comes back as air around the control,
+   which nobody reads as a loss. */
+@media(max-width:860px){.seg button{padding:var(--space-2)}}
 .dest{display:flex;align-items:center;gap:var(--space-2)}
 .dest-path{flex:1;min-width:0;overflow-wrap:anywhere;font-size:var(--text-sm);padding:var(--space-2) var(--space-2);background:var(--surface-0);border:1px solid var(--line);border-radius:var(--radius-sm)}
 .picker-box{display:grid;gap:var(--space-2);margin-top:var(--space-2)}
@@ -1142,7 +1152,7 @@ button.side-settings{width:100%;text-align:left}
 .inbox-where-tag{font-weight:500;font-size:var(--text-xs);margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---- the flat session list ---- */
-.seg .count{background:var(--surface-2);border-radius:999px;padding:0 var(--space-1);font-size:var(--text-xs);font-weight:650}
+.seg .count{flex:none;background:var(--surface-2);border-radius:999px;padding:0 var(--space-1);font-size:var(--text-xs);font-weight:650}
 .seg button[aria-selected="true"] .count{background:var(--surface-0)}
 .session-error{font-size:var(--text-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:42ch}
 .list>.list-row.attention-bad{border-color:var(--line);background:linear-gradient(90deg,var(--bad-bg),transparent 55%);box-shadow:inset 2px 0 0 var(--bad)}

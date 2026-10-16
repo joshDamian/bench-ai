@@ -39,8 +39,11 @@ export function SessionsList() {
       <header class="page-header"><h1>Sessions</h1></header>
       <div class="seg" role="tablist">
         ${FILTERS.map(
+          /* The label is its own span, and the count is not: on a narrow screen the label
+             is the one that gives way. A bare word here is a word the segment can only
+             cut, and cutting the line at the count chip leaves a pill with "…" in it. */
           (f) => html`<button type="button" role="tab" aria-selected=${filter === f.id} class=${filter === f.id ? 'on' : ''} onClick=${() => setFilter(f.id)}>
-            ${f.label}${counts[f.id] ? html` <span class="count">${counts[f.id]}</span>` : null}
+            <span>${f.label}</span>${counts[f.id] ? html`<span class="count">${counts[f.id]}</span>` : null}
           </button>`
         )}
       </div>

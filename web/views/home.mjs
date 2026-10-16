@@ -115,7 +115,7 @@ export function AddProject({ onClose }) {
   return html`
     <${Dialog} wide title="Add a project" onClose=${onClose} actions=${html`<button class="btn ghost" type="button" onClick=${onClose}>Cancel</button>${action}`}>
       <div class="seg" role="tablist">
-        ${TABS.map((t) => html`<button type="button" role="tab" aria-selected=${tab === t.id} class=${tab === t.id ? 'on' : ''} onClick=${() => setTab(t.id)}>${t.label}</button>`)}
+        ${TABS.map((t) => html`<button type="button" role="tab" aria-selected=${tab === t.id} class=${tab === t.id ? 'on' : ''} onClick=${() => setTab(t.id)}><span>${t.label}</span></button>`)}
       </div>
 
       ${tab === 'clone' ? html`<${RepoPicker} value=${repo} onChange=${setRepo} />` : null}
