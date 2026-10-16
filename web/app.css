@@ -1260,6 +1260,13 @@ button.side-settings{width:100%;text-align:left}
 .quick-chip{padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:999px;background:var(--surface-1);color:var(--text);font-size:var(--text-sm);font-weight:600;white-space:nowrap}
 .quick-chip:hover{border-color:var(--accent-dim);color:var(--accent)}
 @media(pointer:coarse){.quick-chip{padding:var(--space-2) var(--space-4)}}
+/* Putting the suggestions away is a phone's business: there they stand three lines deep
+   above the box the person is reaching for, and the next suggestion the model sends brings
+   them back. On a desk the same row is one line with room around it, so the control is
+   written out of the layout above 650px rather than merely hidden - a desktop keeps the row
+   it has. `.btn.icon-only` sets `display`, so this selector has to match its weight. */
+.btn.quick-dismiss{display:none}
+@media(max-width:650px){.btn.quick-dismiss{display:inline-flex;border-radius:50%}}
 
 /* Dictation in flight. */
 .btn.listening{color:var(--bad);background:var(--bad-bg)}

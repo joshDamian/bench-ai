@@ -6,6 +6,8 @@
 //   "slow"                 holds the turn open until interrupted
 //   "fail"                 ends the turn as an error
 //   "new skill"            pushes a changed command list, as a skill found mid-session does
+//   "suggest <text>"       sends that text as the turn's prompt suggestion, as a real
+//                          model does when it has a guess at what comes next
 //   anything else          replies "echo: <text>"
 //
 // Every turn reasons first, in a thinking block of its own, before the reply - a real
@@ -65,6 +67,7 @@ export function fakeQuery({ prompt, options }) {
       emit({ type: 'stream_event', parent_tool_use_id: null, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'thinking about it' } } });
       let reply = `echo: ${text}`;
       let isError = false;
+      let suggestion = '';
       if (text.startsWith('write ')) {
         const [, file, ...rest] = text.split(' ');
         const input = { file_path: path.join(options.cwd, file), content: rest.join(' ') };
@@ -86,6 +89,7 @@ export function fakeQuery({ prompt, options }) {
         reply = 'interrupted';
         isError = true;
       } else if (text === 'fail') isError = true;
+      else if (text.startsWith('suggest ')) suggestion = text.slice('suggest '.length).trim();
       else if (text === 'new skill') {
         record.commands = [...COMMANDS, { name: 'deploy', description: 'Ship it', argumentHint: '<env>' }];
         emit({ type: 'system', subtype: 'commands_changed', commands: record.commands, session_id: sessionId });
@@ -111,6 +115,10 @@ export function fakeQuery({ prompt, options }) {
         fs.writeFileSync(path.join(options.cwd, `fix-${round}.txt`), blocked.slice(0, 40));
         emit({ type: 'assistant', parent_tool_use_id: null, message: { id: `${id}r${round}`, content: [{ type: 'text', text: `fixing (round ${round})` }] } });
       }
+      // Last, after every block this turn put in the transcript: the client drops the
+      // suggestion it holds when the next turn's own text arrives, so one sent before the
+      // reply would be wiped by the reply.
+      if (suggestion) emit({ type: 'prompt_suggestion', suggestion });
       total += 0.01;
       emit({
         type: 'result',

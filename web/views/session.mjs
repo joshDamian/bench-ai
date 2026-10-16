@@ -89,6 +89,11 @@ export function SessionPane({ sessionId, onArchived }) {
   const [events, setEvents] = useState([]);
   const [stream, setStream] = useState({ text: '', thinking: '' });
   const [suggestion, setSuggestion] = useState('');
+  // The suggestion row put away for now. It is not a preference - the next suggestion the
+  // model sends brings the row back, which is the only thing it can say that this row
+  // does not already offer. Keeping it across a reload would be a way of losing the
+  // shortcuts with no way to ask for them again.
+  const [quickOff, setQuickOff] = useState(false);
   // The slash commands the composer suggests. Asked for on open, so a session that has
   // never run has them too, and replaced when the session's Claude Code says they changed.
   const [commands, setCommands] = useState([]);
@@ -166,6 +171,7 @@ export function SessionPane({ sessionId, onArchived }) {
     setEvents(readTranscript(sessionId));
     setStream({ text: '', thinking: '' });
     setSuggestion('');
+    setQuickOff(false);
     setCommands([]);
     pinned.current = true;
     // Whole, not `after` the cache: the cached copy is a trimmed one, and a read of only
@@ -190,7 +196,12 @@ export function SessionPane({ sessionId, onArchived }) {
       pending = { text: '', thinking: '' };
     };
     const off = watchSession(sessionId, (m) => {
-      if (m.type === 'suggestion') setSuggestion(m.text);
+      // A suggestion is the one thing that earns the row its way back after it was put
+      // away: the four standing chips are always sayable, this one is about this session.
+      if (m.type === 'suggestion') {
+        setSuggestion(m.text);
+        setQuickOff(false);
+      }
       else if (m.type === 'commands') setCommands(m.commands);
       else if (m.type === 'event') {
         // A new turn makes the last prediction stale.
@@ -359,7 +370,7 @@ export function SessionPane({ sessionId, onArchived }) {
                 ? html`<span>This task is ${taskState}. Its sessions are kept as a record.</span>`
                 : html`<span>Archived. <button class="link-btn" type="button" onClick=${() => api.archiveSession(s.id, false).catch(toast)}>Unarchive</button> to continue.</span>`}
             </div>`
-          : html`<${Composer} session=${s} commands=${commands} quick=${showQuick ? QUICK : null} />`}
+          : html`<${Composer} session=${s} commands=${commands} quick=${showQuick && !quickOff ? QUICK : null} onDismissQuick=${() => setQuickOff(true)} />`}
       </div>
       ${inDock
         ? html`<${DockSplit} width=${dockWidth} container=${sectionRef} onChange=${setDockWidth} onDone=${(w) => remember(DOCK_WIDTH_KEY, w)} />
@@ -869,7 +880,7 @@ function readImage(file) {
 
 let attachSeq = 0;
 
-function Composer({ session: s, commands, quick }) {
+function Composer({ session: s, commands, quick, onDismissQuick }) {
   const key = `bench:draft:${s.id}`;
   const [text, setText] = useState(() => recall(key, ''));
   // Each attachment: {key, name, size, inline, url?, media_type, data?} for an inline
@@ -942,6 +953,13 @@ function Composer({ session: s, commands, quick }) {
   const choose = (/** @type {{name:string}} */ c) => {
     setText(`/${c.name} `);
     box.current?.focus();
+  };
+  // A chip fills the box, and on a desk the caret goes in with it: the chip was the whole
+  // prompt, so what a person wants next is Enter. A finger gets no keyboard - it would come
+  // up over the row the tap just came from, and the chip put nothing there to correct.
+  const pickQuick = (q) => {
+    setText(q);
+    if (!isTouch()) box.current?.focus();
   };
   const uploading = items.some((it) => !it.inline && !it.upload);
   const empty = !text.trim() && !items.length;
@@ -1082,7 +1100,10 @@ function Composer({ session: s, commands, quick }) {
           </div>`
         : null}
       ${quick && !text.trim() && !items.length
-        ? html`<div class="quick-replies">${quick.map((q) => html`<button class="quick-chip" type="button" key=${q} onClick=${() => setText(q)}>${q}</button>`)}</div>`
+        ? html`<div class="quick-replies">
+            ${quick.map((q) => html`<button class="quick-chip" type="button" key=${q} onClick=${() => pickQuick(q)}>${q}</button>`)}
+            <button class="btn ghost icon-only quick-dismiss" type="button" aria-label="Hide prompt suggestions" title="Hide suggestions" onClick=${onDismissQuick}><${Icon} name="x" size=${14} /></button>
+          </div>`
         : null}
       ${queued ? html`<div class="queued-note"><span class="dot dot-waiting"></span>${queued} message${queued === 1 ? '' : 's'} waiting for the connection</div>` : null}
       <div class="composer-box">
