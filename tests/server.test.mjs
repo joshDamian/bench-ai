@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { gunzipSync } from 'node:zlib';
 import WebSocket from 'ws';
 import { tmp } from './tmp.mjs';
 
@@ -34,19 +35,25 @@ before(async () => {
 
 after(() => child?.kill());
 
-/** A request with whatever Host the test claims, which fetch cannot set. */
-function req(method, p, { host = `localhost:${port}`, body, cookie, origin, type = 'application/json' } = {}) {
+/**
+ * A request with whatever Host the test claims, which fetch cannot set. `accept` is the
+ * Accept-Encoding to ask with; undefined means http.request's default, which is none.
+ */
+function req(method, p, { host = `localhost:${port}`, body, cookie, origin, accept, type = 'application/json' } = {}) {
   return new Promise((resolve, reject) => {
-    const headers = { host, ...(cookie ? { cookie } : {}), ...(origin ? { origin } : {}), ...(body !== undefined ? { 'content-type': type } : {}) };
+    const headers = { host, ...(cookie ? { cookie } : {}), ...(origin ? { origin } : {}), ...(body !== undefined ? { 'content-type': type } : {}), ...(accept !== undefined ? { 'accept-encoding': accept } : {}) };
     const r = http.request({ host: '127.0.0.1', port, method, path: p, headers }, (res) => {
-      let text = '';
-      res.on('data', (d) => (text += d));
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
       res.on('end', () => {
+        // raw is what came off the wire, which is compressed when the client asked for it.
+        const raw = Buffer.concat(chunks);
+        const text = raw.toString('utf8');
         let json = null;
         try {
           json = JSON.parse(text);
         } catch {}
-        resolve({ status: res.statusCode, headers: res.headers, json, text });
+        resolve({ status: res.statusCode, headers: res.headers, json, text, raw });
       });
     });
     r.on('error', reject);
@@ -104,6 +111,48 @@ test('a device can change what it is notified about, and only for an endpoint it
 
 test('writes must be JSON', async () => {  const r = await req('POST', '/api/projects', { host: REMOTE, cookie, body: 'path=/tmp', type: 'application/x-www-form-urlencoded' });
   assert.equal(r.status, 415);
+});
+
+// A long response - a session's transcript most of all - is most of what a phone waits
+// for, so it goes down the wire gzipped when the client says it takes that.
+test('a large response is gzipped for a client that asks, and is the same JSON once decoded', async () => {
+  const plain = await req('GET', '/api/state');
+  assert.equal(plain.headers['content-encoding'], undefined);
+  assert.ok(plain.raw.length > 1024, `the fixture must be over the threshold to be worth compressing, but is ${plain.raw.length} bytes`);
+  // A body that is offered in two encodings says so even when this client got the plain
+  // one, or a cache would hand the gzipped copy to the next caller that cannot read it.
+  assert.equal(plain.headers['vary'], 'accept-encoding');
+
+  const gz = await req('GET', '/api/state', { accept: 'gzip, deflate, br' });
+  assert.equal(gz.headers['content-encoding'], 'gzip');
+  assert.equal(gz.headers['vary'], 'accept-encoding');
+  assert.equal(gz.headers['content-type'], 'application/json; charset=utf-8');
+  // The length is of what actually went on the wire, not of the JSON.
+  assert.equal(gz.headers['content-length'], String(gz.raw.length));
+  assert.ok(gz.raw.length < plain.raw.length / 2, `${plain.raw.length} bytes went out as ${gz.raw.length}`);
+  assert.deepEqual(JSON.parse(gunzipSync(gz.raw).toString('utf8')), plain.json);
+  // `*` takes in gzip too, and x-gzip is the same encoding under an older name.
+  assert.equal((await req('GET', '/api/state', { accept: '*' })).headers['content-encoding'], 'gzip');
+  assert.equal((await req('GET', '/api/state', { accept: 'x-gzip' })).headers['content-encoding'], 'gzip');
+});
+
+test('a body the client did not ask to have gzipped, or one too small to be worth it, is sent as it is', async () => {
+  const expect = (await req('GET', '/api/state')).json;
+  for (const accept of ['identity', 'gzip;q=0', '*;q=0', 'br, deflate', '']) {
+    const r = await req('GET', '/api/state', { accept });
+    assert.equal(r.headers['content-encoding'], undefined, `Accept-Encoding: ${accept}`);
+    // Still offered in two encodings as far as any cache is concerned, even when this
+    // client got the plain one: the same URL compressed for the next one.
+    assert.equal(r.headers['vary'], 'accept-encoding', `Accept-Encoding: ${accept}`);
+    assert.deepEqual(r.json, expect);
+  }
+  // Asked for even so: below the threshold it is cheaper to send than to deflate, and
+  // the bytes are the ones it always sent.
+  const plainPing = await req('GET', '/api/ping');
+  const ping = await req('GET', '/api/ping', { accept: 'gzip' });
+  assert.equal(ping.headers['content-encoding'], undefined);
+  assert.equal(ping.headers['vary'], undefined, 'no second encoding to vary on below the threshold');
+  assert.deepEqual(ping.raw, plainPing.raw);
 });
 
 test('a file upload must be raw bytes, and comes from a paired device', async () => {
@@ -203,6 +252,15 @@ test('a session file opens inline in a sandbox, or downloads, and nothing outsid
   assert.equal(ranged.status, 206);
   assert.equal(ranged.headers['content-range'], 'bytes 2-5/8');
   assert.deepEqual([...ranged.body], [0x4e, 0x47, 1, 2]);
+
+  // A file download streams, so it is never gzipped however big it is or whatever the
+  // client says it takes: the bytes on the wire are the file's own.
+  const big = 'x'.repeat(200 * 1024);
+  fs.writeFileSync(path.join(dir, 'big.log'), big);
+  const streamed = await req('GET', url('big.log'), { accept: 'gzip' });
+  assert.equal(streamed.headers['content-encoding'], undefined);
+  assert.equal(streamed.headers['content-length'], String(big.length));
+  assert.equal(streamed.raw.length, big.length);
 
   for (const p of ['../../etc/passwd', '/etc/passwd', 'leak.txt', 'out', 'missing.png', '']) assert.equal((await req('GET', url(p))).status, 404, p);
   assert.equal((await req('GET', `/api/sessions/nope/files?path=shot.png`)).status, 404);
