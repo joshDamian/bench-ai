@@ -1322,7 +1322,7 @@ button.side-settings{width:100%;text-align:left}
    tokens of whatever theme is on, so picking one restyles the panel with the page and
    the preview is the app itself. The cards are the exception: each paints its own
    theme's page, card, ink and accent from the custom properties it is given. */
-.tp-trigger{display:inline-flex;align-items:center;gap:var(--space-2);min-width:0;padding:var(--space-1) var(--space-3) var(--space-1) var(--space-2);border:1px solid var(--line);border-radius:999px;background:var(--surface-1);color:var(--text);font:600 var(--text-sm)/1.2 var(--font-ui);cursor:pointer;transition:border-color var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease)}
+.tp-trigger{display:inline-flex;align-items:center;gap:var(--space-2);min-width:0;min-height:26px;padding:var(--space-1) var(--space-3) var(--space-1) var(--space-2);border:1px solid var(--line);border-radius:999px;background:var(--surface-1);color:var(--text);font:600 var(--text-sm)/1.2 var(--font-ui);cursor:pointer;transition:border-color var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease)}
 .tp-trigger:hover,.tp-trigger[aria-expanded="true"]{border-color:var(--line-strong);background:var(--surface-2)}
 .tp-dots{position:relative;flex:0 0 auto;width:22px;height:12px}
 .tp-dots span{position:absolute;top:1px;width:10px;height:10px;border-radius:50%}
@@ -1356,9 +1356,17 @@ button.side-settings{width:100%;text-align:left}
    stays whole and the colour dots stand down: the name is what the pill is for - which look
    is on - and the sidebar the pill sits on is already painted in it. Cut instead, "Quiet
    Temple" - the light default - read "Quiet T…" on every screen. Settings' own pill, which
-   has the room, keeps its dots. */
+   has the room, keeps its dots.
+
+   When the connection drops, the header carries a third thing - the offline badge - and the
+   row is 219px for 89 + 66 + 145. This time the name gives, and only here: the badge is what
+   the person needs to read in that moment and the theme is not. The pill becomes its dots,
+   which still open the picker, because a pill squeezed to its first letter ("Q…") reads as a
+   fault where a swatch reads as an icon. */
 .side-top .tp-trigger{flex:0 1 auto}
 .side-top .tp-dots{display:none}
+.side-top:has(.badge-warn) .tp-dots{display:block}
+.side-top:has(.badge-warn) .tp-current{display:none}
 
 /* A task's bar for done, and a check run in the transcript. */
 .task-bar{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;padding:0 var(--space-5) var(--space-2);font-size:var(--text-sm)}

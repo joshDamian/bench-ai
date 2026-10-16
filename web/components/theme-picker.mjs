@@ -67,6 +67,8 @@ export function ThemePickerHost() {
   const [a, setA] = useState(anchor);
   const theme = useTheme();
   const panel = useRef(null);
+  /** A place() pass on demand: the panel's geometry is read from the pill at every render. */
+  const [, replace] = useState(0);
 
   useEffect(() => {
     listeners.add(setA);
@@ -92,15 +94,20 @@ export function ThemePickerHost() {
     };
     // The page moving under the panel would leave it pointing at nothing.
     const onMove = () => close(false);
+    // A resize is not the page moving, it is the window being a different shape: the pill is
+    // still there, so the panel is put back under it - place() re-reads the pill's rect on
+    // every render - rather than dismissed. Anything else loses the person's picker to a
+    // rotation, a window edge, or the browser growing the page to photograph it.
+    const onResize = () => replace((n) => n + 1);
     document.addEventListener('pointerdown', onDown, true);
     document.addEventListener('keydown', onKey, true);
-    window.addEventListener('resize', onMove);
+    window.addEventListener('resize', onResize);
     window.addEventListener('hashchange', onMove);
     panel.current?.querySelector('.tp-card[aria-pressed="true"]')?.focus();
     return () => {
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('resize', onMove);
+      window.removeEventListener('resize', onResize);
       window.removeEventListener('hashchange', onMove);
     };
   }, [a]);

@@ -17,7 +17,7 @@
 **The shell owns, and the views may rely on:** the 260px sidebar on `--surface-rail`; the bottom tab bar under 860px; the mobile topbar with its menu and back controls; the toast stack; the confirm dialog and the generic `Dialog`; the theme picker; and the `.page` column - `max-width:1100px`, padding `24px 32px 32px` on desktop and 16px on the phone.
 **States:**
 - **Loading:** the shell renders at once, with its real navigation, and only the content area is briefly empty while the store hydrates. A `Connecting…` gate covers the whole app only before the first paint of the shell, as `page-shell` asks.
-- **Offline:** the connection is the shell's business, so the shell says so - a `--warn` `offline` badge beside the mark in the sidebar. A view does not repeat it.
+- **Offline:** the connection is the shell's business, so the shell says so - a `--warn` `offline` badge beside the mark in the sidebar, between it and the theme pill. A view does not repeat it. The badge is the third thing in a header row that is 219px for 89 + 66 + 145, so in this state, and only in it, the theme pill gives up its name and becomes its colour dots - which still open the picker. A pill squeezed to "Q…" reads as a fault; a swatch reads as an icon, and the theme is not what a person needs to read while the socket is down.
 - **Store error:** one `.notice-bad` above the view, inside the content area, so the navigation stays usable.
 - **Happy path:** three or four projects, one with active tasks and a checkout session, a session running, one item waiting.
 
@@ -30,6 +30,7 @@
 - *Emphasis in the sidebar is a fill plus an accent rule, never bold alone.* A folded project still reports on its sessions through a status dot, so folding is not the same as forgetting.
 - *A button's label is one line.* A button is a thing you aim at, and one whose label wraps changes height as the text around it changes width, so the same control is 29px tall where the heading is short and 48px where it is long - which is how **New session** came to sit two lines tall on a phone with its plus stranded beside the lone word "New". Which element gives when two will not fit is settled by the box the button is in, never by the label.
 - *The sidebar's theme pill names the theme; it does not preview it.* The header row is 219px of room for an 89px mark and this pill, and the longest theme Bench ships asks the pill for 145px. The name is what the pill is for, so it stays whole and the three colour dots stand down there - the sidebar they would sit on is already painted in the theme. Cut instead, `Quiet Temple`, the light default, read "Quiet T…" on every screen. Settings' own pill has the room and keeps its dots.
+- *The picker's open panel follows its pill through a resize; it is not dismissed by one.* A window changing shape is not the person closing the picker. The panel is anchored to a pill that is still there, and it re-reads that pill's rectangle on render, so it is put back under it - on a rotation, on a dragged window edge, and when the browser grows the page to photograph it, which is what was losing it. A destination change is different: that moves the page out from under the panel and closes it.
 
 ## View: Home - projects (`#/`)
 
