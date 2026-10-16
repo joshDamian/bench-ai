@@ -1089,17 +1089,32 @@ button.side-settings{width:100%;text-align:left}
   .task-meta .mono-sm{font-size:var(--text-xs)}
   /* Every destination stays whole and stays on screen. Nothing here scrolls - a tab you
      have to scroll to reach is a tab you cannot see - so the width comes from the session
-     tabs: a name gives up its room first and completely (shrink 100 against the others'
-     1), which is what keeps "Changes", "Log" and "Terminal" whole at every phone width.
-     They are the view's fixed vocabulary; the session's name is repeated in the head
-     above. An equal share of the strip cut Terminal to "Term" instead. The tabs also give
-     back their side padding before they give up a letter - at 280px that is the difference
-     between "Log" and "Lo…". */
-  .task-tab{flex:0 1 auto;min-width:0;overflow:hidden;min-height:38px;padding:0 var(--space-2)}
-  .task-tab.named{flex-shrink:100}
+     tabs: a name gives up its room first and completely, and it is the only tab allowed
+     under its own content (`min-width:0` on it alone). Both halves of that matter. Given
+     an equal share of the strip, the labels were cut to "Chang…", "L…" and "Termi…". Given
+     a disproportionate share but still `min-width:0` all round, each destination lost a
+     fraction of a pixel in the shrink pass - and a tenth of a pixel is enough for a
+     `text-overflow:ellipsis` to take a whole letter with it ("Changes" asks for 54.375 and
+     was handed 53.828, so it drew "Chang…"). A tab that cannot be shrunk is a tab whose
+     label cannot be cut. The fixed three are the view's vocabulary; the session's name is
+     repeated in the head above. */
+  .task-tab{flex:0 0 auto;overflow:hidden;min-height:38px;padding:0 var(--space-2)}
+  .task-tab.named{flex:0 100 auto;min-width:0}
   .session-head{padding-top:var(--space-1);padding-bottom:var(--space-1)}
   .session-controls .select-trigger{min-height:34px}
 }
+
+/* 320px is as narrow as a phone has ever been, and the gate looks at 280 to be sure. No
+   tab may be cut there either, so at and below the old phone width the strip gives back
+   its air - 4px of side padding instead of 8 - which is a cost paid in space and not in
+   letters. The session tab gains by it too: with less padding to spend, more of the name
+   survives. */
+@media(max-width:320px){.task-tab{padding:0 var(--space-1)}}
+/* Below 300px there is no longer room for even the start of the session's name, and the
+   five pixels left over drew a single letter - "R" - which reads as a glitch rather than
+   a name. The tab keeps its dot, which is the part that is actually saying something:
+   which session this is, and whether it is working. */
+@media(max-width:300px){.task-tab.named>span:not(.dot){display:none}}
 
 /* ==== phase 1: the phone's own navigation ====
    Four destinations pinned to the bottom, where a thumb already is, so moving between
