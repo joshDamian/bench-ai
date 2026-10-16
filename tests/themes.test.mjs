@@ -29,7 +29,23 @@ const ratio = (a, b) => {
 };
 
 const themes = parse(css);
-const SURFACES = ['--bg', '--surface-rail', '--surface-0', '--surface-1', '--surface-2', '--surface-3'];
+// Every opaque surface an ink can land on. --surface-sunken belongs here: the diff view
+// paints its file pane on the sunken surface and then lays the added and deleted tints on
+// top of that, which is the darkest ground a status ink is ever read against.
+const SURFACES = ['--bg', '--surface-rail', '--surface-0', '--surface-1', '--surface-2', '--surface-3', '--surface-sunken'];
+const TONES = ['good', 'warn', 'bad', 'info'];
+
+/** A translucent token as red, green, blue and alpha. @param {string} v */
+const rgba = (v) => {
+  const n = (v.match(/-?[\d.]+/g) || []).map(Number);
+  return [n[0], n[1], n[2], n[3] ?? 1];
+};
+/** The colour a person sees where a translucent token sits on an opaque one.
+ *  @param {string} fg @param {string} bg */
+const over = (fg, bg) => {
+  const f = rgba(fg);
+  return '#' + rgb(bg).map((v, i) => Math.round(f[i] * f[3] + v * (1 - f[3])).toString(16).padStart(2, '0')).join('');
+};
 
 test('the stylesheet defines the ten themes', () => {
   assert.equal(themes.size, 10);
@@ -44,6 +60,24 @@ for (const [id, t] of themes) {
     }
     assert.ok(ratio(t['--on-accent'], t['--accent']) >= 4.5, `${id} button label`);
     assert.ok(ratio(t['--well-text'], t['--well-bg']) >= 7, `${id} code well`);
+  });
+
+  // A status badge, a diff row and a hunk header all draw an ink on a translucent tint of
+  // itself. Measured against the plain surface only, a tint costs a few hundredths of a
+  // ratio and every theme looked fine while the badge was under the line on screen.
+  test(`${id} is readable on the tints it draws on`, () => {
+    for (const s of SURFACES) {
+      for (const tone of TONES) {
+        const tinted = over(t[`--${tone}-bg`], t[s]);
+        assert.ok(ratio(t[`--${tone}`], tinted) >= 4.5, `${id} --${tone} on --${tone}-bg over ${s} ${ratio(t[`--${tone}`], tinted).toFixed(2)}`);
+        assert.ok(ratio(t['--muted'], tinted) >= 4.5, `${id} --muted on --${tone}-bg over ${s} ${ratio(t['--muted'], tinted).toFixed(2)}`);
+        // A highlighted diff row keeps the code's own colour on the added or deleted tint.
+        assert.ok(ratio(t['--text'], tinted) >= 4.5, `${id} --text on --${tone}-bg over ${s} ${ratio(t['--text'], tinted).toFixed(2)}`);
+      }
+      const washed = over(t['--wash'], t[s]);
+      assert.ok(ratio(t['--accent'], washed) >= 4.5, `${id} --accent on --wash over ${s} ${ratio(t['--accent'], washed).toFixed(2)}`);
+      assert.ok(ratio(t['--muted'], washed) >= 4.5, `${id} --muted on --wash over ${s} ${ratio(t['--muted'], washed).toFixed(2)}`);
+    }
   });
 }
 

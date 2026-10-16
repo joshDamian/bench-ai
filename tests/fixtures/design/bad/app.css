@@ -18,6 +18,8 @@ a:focus-visible { outline: none; } /* focus, again */
 .card { background-color: var(--bg); }
 .card p { color: #1f2937; } /* contrast: ink for a white page, on midnight too - and, tokens: written out */
 .wide { width: 500px; height: 24px; background-color: var(--line); } /* overflow: 500px in a 280px viewport */
+.veil { opacity: 0.4; } /* contrast: the ink is fine, the parent shows it at 40% */
+button:disabled { opacity: 0.35; } /* contrast: off, so its label is none of the gate's business */
 .spin { width: 40px; height: 40px; background-color: var(--brand); animation: pulse 2s infinite; } /* motion: spins regardless */
 @keyframes pulse { from { opacity: 1 } to { opacity: 0.4 } }
 /* semantics: the div with onclick in index.html - a click target that is not a button */

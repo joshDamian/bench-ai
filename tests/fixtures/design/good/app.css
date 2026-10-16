@@ -13,3 +13,10 @@ a:focus-visible { outline: 3px solid var(--focus); }
 .box { border: 1px solid var(--line); }
 .box:focus-within { border-color: var(--focus); }
 textarea { display: block; width: 100%; min-height: 40px; border: 0; outline: none; background-color: var(--bg); color: var(--ink); font-size: 16px; }
+/* A row title clamped to one line: the note inside it is drawn away short, which is the
+   clamp working, not a page wider than the screen. */
+.clamp { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* Turned down, but not so far that the words stop being readable. */
+.dim { opacity: 0.85; }
+/* A control that is off is not asked to be readable - the gate must leave its label alone. */
+button:disabled { opacity: 0.3; }

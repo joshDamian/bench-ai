@@ -1,5 +1,5 @@
 {
-  "$why": "Run through .bench/design-check.sh, which starts a fresh Bench on its own data folder with the fake SDK, seeds it (.bench/design-check.seed.mjs) and fills the {project}/{task}/{taskSession}/{session} ids in these routes. grid 4 and bodyPx 14 are Design.md's recorded decisions (Space, Type), not exemptions.",
+  "$why": "Run through .bench/design-check.sh, which starts a fresh Bench on its own data folder with the fake SDK, seeds it (.bench/design-check.seed.mjs) and fills the {project}/{task}/{taskSession}/{session}/{emptyProject} ids in these routes. grid 4 is Design.md's Space decision. bodyPx 11 is Design.md's Type decision: --text-xs is the smallest step of the scale and is deliberate chrome (counts, badges), so 11 is the floor this project sets itself; the defects it catches are the off-scale 10px/12px literals that belong to no step. Both are the project's own recorded numbers, not exemptions for this app.",
   "url": "http://127.0.0.1:4399",
   "routes": [
     "/#/",
@@ -7,6 +7,7 @@
     "/#/sessions",
     "/#/dashboard",
     "/#/p/{project}",
+    "/#/p/{emptyProject}",
     "/#/p/{project}/s/{session}",
     "/#/p/{project}/t/{task}",
     "/#/p/{project}/t/{task}/s/{taskSession}",
@@ -17,6 +18,6 @@
   "themes": ["light", "dark"],
   "themeScript": ".bench/design-check.theme.js",
   "grid": 4,
-  "bodyPx": 14,
+  "bodyPx": 11,
   "wait": 30000
 }

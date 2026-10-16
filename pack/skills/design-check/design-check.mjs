@@ -102,6 +102,24 @@ function pageAudit(opts) {
   /** @param {any} el */
   const words = (el) => String(el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
 
+  /**
+   * Whether an on-purpose clamp is cutting this element off. A single-line box with an
+   * ellipsis - a name and its note, a path, a title - keeps its children and its inline
+   * boxes at their full width and draws them away short; the boxes stick out of the clamp
+   * by design, and none of it is the page being wider than the screen.
+   * @param {any} el
+   */
+  const clamped = (el) => {
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (cs.overflowX === 'visible') continue;
+      if (cs.textOverflow !== 'ellipsis') return false;
+      const r = n.getBoundingClientRect();
+      return r.left >= -1 && r.right <= clientWidth + 1;
+    }
+    return false;
+  };
+
   /** A computed colour as red, green, blue and alpha. @param {string} v */
   const rgba = (v) => {
     const n = (String(v).match(/-?[\d.]+/g) || []).map(Number);
@@ -136,6 +154,23 @@ function pageAudit(opts) {
     return { color: `rgb(${out.map((v) => Math.round(v)).join(', ')})`, image };
   };
 
+  /**
+   * How much of this element the screen actually shows, 0 to 1. An ancestor at `opacity:
+   * .6` fades its whole subtree onto whatever is behind it, so its words are read as a
+   * blend of their own colour and the backdrop - quieter than the colour says. Measuring
+   * the declared colour alone calls faded text readable when it is not.
+   * @param {any} el
+   */
+  const faded = (el) => {
+    let k = 1;
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const o = parseFloat(getComputedStyle(n).opacity);
+      if (Number.isFinite(o)) k *= o;
+      if (k === 0) break;
+    }
+    return k;
+  };
+
   /** @type {any[]} */ const texts = [];
   /** @type {any[]} */ const targets = [];
   /** @type {any[]} */ const clickables = [];
@@ -155,7 +190,7 @@ function pageAudit(opts) {
     const on = shown(el);
 
     if (on && (rect.right > clientWidth + 1 || rect.left < -1)) {
-      (skip ? overflowIgnored : overflow).push({ selector: where(el), text: words(el), right: Math.round(rect.right), left: Math.round(rect.left), width: Math.round(rect.width) });
+      (skip ? overflowIgnored : overflow).push({ selector: where(el), text: words(el), right: Math.round(rect.right), left: Math.round(rect.left), width: Math.round(rect.width), clamped: clamped(el) });
     }
     if (skip) continue;
     if (on && ((cs.animationName !== 'none' && parseFloat(cs.animationDuration) > 0.05) || parseFloat(cs.transitionDuration) > 0.2)) {
@@ -220,8 +255,12 @@ function pageAudit(opts) {
         color: cs.color,
         bg: bg.color,
         bgImage: bg.image,
+        fade: faded(el),
         heading: /^h[1-6]$/.test(el.tagName.toLowerCase()) || el.getAttribute('role') === 'heading',
         interactive: !!el.closest(INTERACTIVE),
+        // A control that cannot be used is out of the contrast rules' reach, so a turned-down
+        // button is not reported as unreadable text - only a live label that was faded.
+        disabled: !!el.closest(':disabled, [aria-disabled="true"]'),
       });
     }
   }
@@ -339,13 +378,16 @@ function sameColor(value) {
   return c ? `${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${Math.round(c[3] * 100) / 100}` : null;
 }
 
-/** How readable one colour is on another, 1 to 21. @param {string} fg @param {string} bg */
-function contrast(fg, bg) {
+/** How readable one colour is on another, 1 to 21.
+ *  @param {string} fg @param {string} bg @param {number} [fade] how much of the text is
+ *  shown, when an ancestor is partly transparent - it is read blended into the backdrop. */
+function contrast(fg, bg, fade = 1) {
   const a = color(fg);
   const b = color(bg);
   if (!a || !b) return null;
   // Text with alpha sits on the background, so blend it before measuring.
-  const mix = (/** @type {number} */ i) => a[i] * a[3] + b[i] * (1 - a[3]);
+  const alpha = a[3] * fade;
+  const mix = (/** @type {number} */ i) => a[i] * alpha + b[i] * (1 - alpha);
   /** @param {number[]} c */
   const lum = (c) => {
     const f = (/** @type {number} */ v) => {
@@ -459,10 +501,11 @@ function contrastFindings(o) {
   const out = [];
   for (const t of o.texts) {
     if (o.interactiveOnly && !t.interactive) continue;
+    if (t.disabled) continue; // an inactive control is not held to a reading it cannot be asked to do
     if (t.bgImage) continue; // a picture or a gradient behind the words: any ratio would be a guess
     const big = t.size >= 24 || (t.size >= 18.66 && t.weight >= 700);
     const want = t.heading && big ? 3 : 4.5;
-    const ratio = contrast(t.color, t.bg);
+    const ratio = contrast(t.color, t.bg, t.fade ?? 1);
     if (ratio === null || ratio + 0.005 >= want) continue;
     out.push({
       rule: 'contrast',
@@ -471,7 +514,9 @@ function contrastFindings(o) {
       state: o.state,
       viewport: '',
       selector: t.selector,
-      detail: `${ratio.toFixed(2)}:1, under the ${want}:1 ${t.heading && big ? 'large heading' : 'text'} is allowed - "${t.text}" ${t.color} on ${t.bg}`,
+      detail: `${ratio.toFixed(2)}:1, under the ${want}:1 ${t.heading && big ? 'large heading' : 'text'} is allowed - "${t.text}" ${t.color} on ${t.bg}${
+        t.fade != null && t.fade < 1 ? ` (shown at ${Math.round(t.fade * 100)}%)` : ''
+      }`,
     });
   }
   return out;
@@ -540,7 +585,7 @@ function focusFindings(plain, focused, route, theme) {
  * @param {any} seen @param {string} route @param {string} theme @param {number} width
  */
 function overflowFindings(seen, route, theme, width) {
-  const over = (/** @type {any} */ e) => e.right > seen.viewport.clientWidth + 1 || e.left < -1;
+  const over = (/** @type {any} */ e) => !e.clamped && (e.right > seen.viewport.clientWidth + 1 || e.left < -1);
   const worst = seen.overflow.filter(over).slice(0, 3);
   if (!worst.length) {
     if (seen.viewport.scrollWidth <= seen.viewport.clientWidth + 1) return [];

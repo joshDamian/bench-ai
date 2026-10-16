@@ -253,6 +253,8 @@ export class Browser {
   /** Init scripts that are swapped rather than added to, by name. @type {Map<string, string>} */ #named = new Map();
   /** The size the page is being shown at, so a full-page shot can put it back. */ #viewport = { width: 1280, height: 900 };
   /** @type {string[]} */ #notes = [];
+  /** The document root this page is being read through, until it navigates. @type {number} */
+  #rootId = 0;
 
   /** @param {import('node:child_process').ChildProcess} proc @param {Cdp} cdp @param {string} session @param {string} profile */
   constructor(proc, cdp, session, profile) {
@@ -403,6 +405,8 @@ export class Browser {
    * @returns {Promise<Nav>}
    */
   async goto(url, timeoutMs = 20000) {
+    // A new document: whatever the last one's root was, its nodeIds are gone with it.
+    this.#rootId = 0;
     /** @type {Nav} */
     const nav = { ok: false, status: null, error: null };
     const offs = [
@@ -473,14 +477,28 @@ export class Browser {
   }
 
   /**
+   * The document's root node, looked up once per page. Asking for it again hands back a
+   * fresh root and quietly makes every nodeId already handed out stale, and a forced
+   * state on a stale node is dropped without a word - a button then reads as unfocused
+   * whether or not it has a focus style.
+   * @returns {Promise<number>}
+   */
+  async #root() {
+    if (!this.#rootId) {
+      const { root } = await this.#cdp.send('DOM.getDocument', { depth: 0 }, this.#session);
+      this.#rootId = root.nodeId;
+    }
+    return this.#rootId;
+  }
+
+  /**
    * The elements matching a selector, in document order, with their ids on the page.
    * @param {string} selector
    * @returns {Promise<Array<{nodeId:number, id:string}>>}
    */
   async nodes(selector) {
-    const { root } = await this.#cdp.send('DOM.getDocument', { depth: 0 }, this.#session);
     /** @type {number[]} */
-    const nodeIds = (await this.#cdp.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector }, this.#session)).nodeIds || [];
+    const nodeIds = (await this.#cdp.send('DOM.querySelectorAll', { nodeId: await this.#root(), selector }, this.#session)).nodeIds || [];
     if (!nodeIds.length) return [];
     /** @type {string[]} */
     const ids = await this.evaluate(`Array.from(document.querySelectorAll(${JSON.stringify(selector)}), (e) => e.getAttribute('data-bc-id') || '')`);

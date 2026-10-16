@@ -113,6 +113,7 @@ test('a planted defect is caught for every rule the gate keeps', looking, async 
     ['semantics', 'div.submit', /not a <button> or a link/],
     ['focus', 'button', /nothing about it changes when it is focused/],
     ['overflow', 'div.wide', /scrolls sideways at 280px/],
+    ['contrast', 'p.veiled', /shown at 40%/],
     ['motion', 'div.spin', /still moving/],
   ];
   for (const [rule, selector, detail] of planted) {

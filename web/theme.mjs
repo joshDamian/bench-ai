@@ -12,16 +12,16 @@
  * drawn in. `chrome` is the browser's own bar (theme-color) while the theme is on. */
 export const THEMES = [
   { id: 'classic', name: 'Classic', dark: true, bg: '#0a0c10', surface: '#11151b', accent: '#9fb9ff', ink: '#8e9aaa', chrome: '#0a0c10' },
-  { id: 'quiet-temple', name: 'Quiet Temple', dark: false, bg: '#f7f8fb', surface: '#ffffff', accent: '#5a6882', ink: '#696e7d', chrome: '#f2f3f6' },
-  { id: 'coastal', name: 'Coastal', dark: false, bg: '#e9f6fb', surface: '#f9fdff', accent: '#0e7398', ink: '#4f6f7b', chrome: '#e4f1f6' },
-  { id: 'notebook', name: 'Notebook', dark: false, bg: '#fbf6ea', surface: '#fffdf7', accent: '#2f6bb2', ink: '#645f52', chrome: '#f6f1e5' },
+  { id: 'quiet-temple', name: 'Quiet Temple', dark: false, bg: '#f7f8fb', surface: '#ffffff', accent: '#5a6882', ink: '#5f6371', chrome: '#f2f3f6' },
+  { id: 'coastal', name: 'Coastal', dark: false, bg: '#e9f6fb', surface: '#f9fdff', accent: '#0d6889', ink: '#486570', chrome: '#e4f1f6' },
+  { id: 'notebook', name: 'Notebook', dark: false, bg: '#fbf6ea', surface: '#fffdf7', accent: '#2f6ab0', ink: '#645f52', chrome: '#f6f1e5' },
   { id: 'garden', name: 'Garden', dark: false, bg: '#f1efe4', surface: '#fdfbf2', accent: '#2f5a42', ink: '#4a5e50', chrome: '#eceadf' },
-  { id: 'solarpunk', name: 'Solarpunk', dark: false, bg: '#edf7e8', surface: '#f8fff5', accent: '#257a4a', ink: '#547152', chrome: '#e8f2e3' },
-  { id: 'soft-clay', name: 'Soft Clay', dark: false, bg: '#ede9ff', surface: '#f8f6ff', accent: '#694fdb', ink: '#6b6186', chrome: '#e8e4fa' },
+  { id: 'solarpunk', name: 'Solarpunk', dark: false, bg: '#edf7e8', surface: '#f8fff5', accent: '#247547', ink: '#4d674b', chrome: '#e8f2e3' },
+  { id: 'soft-clay', name: 'Soft Clay', dark: false, bg: '#ede9ff', surface: '#f8f6ff', accent: '#5e46c3', ink: '#605779', chrome: '#e8e4fa' },
   { id: 'chronicle', name: 'Chronicle', dark: false, bg: '#efe3c3', surface: '#f6edd2', accent: '#9f1d20', ink: '#6a5329', chrome: '#eadebf' },
-  { id: 'chrome', name: 'Chrome', dark: true, bg: '#07090f', surface: '#2d313c', accent: '#6ee7ff', ink: '#acb4cd', chrome: '#12151d' },
+  { id: 'chrome', name: 'Chrome', dark: true, bg: '#07090f', surface: '#2d313c', accent: '#6ee7ff', ink: '#c8cdde', chrome: '#12151d' },
   { id: 'neon-grid', name: 'Neon Grid', dark: true, bg: '#050812', surface: '#0c1326', accent: '#2afadf', ink: '#8eb9c6', chrome: '#070b18' },
-  { id: 'deco-noir', name: 'Deco Noir', dark: true, bg: '#0e0e11', surface: '#161619', accent: '#dfc07a', ink: '#b5a681', chrome: '#101013' },
+  { id: 'deco-noir', name: 'Deco Noir', dark: true, bg: '#0e0e11', surface: '#161619', accent: '#dfc07a', ink: '#b8aa87', chrome: '#101013' },
 ];
 
 export const THEME_KEY = 'bench:theme';

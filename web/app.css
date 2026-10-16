@@ -246,7 +246,7 @@ button{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:poin
    they opened. It is a container rather than a control, and a ring around the whole
    panel would read as a control that had been selected. */
 
-.input{width:100%;background:var(--surface-0);color:var(--text);border:1px solid var(--line);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);outline:none}
+.input{width:100%;min-width:0;background:var(--surface-0);color:var(--text);border:1px solid var(--line);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);outline:none}
 .input:focus{border-color:var(--accent-dim)}
 /* One focus ring for the whole app, drawn only for keyboard navigation. Until this
    existed the only focus-visible rules in the file were on chart elements, so every
@@ -254,7 +254,7 @@ button{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:poin
 button:focus-visible,.tab:focus-visible,a:focus-visible,.link-btn:focus-visible{outline:2px solid var(--accent-dim);outline-offset:2px;border-radius:var(--radius-sm)}
 .tab:focus-visible{outline-offset:-2px}
 .input:focus-visible{outline:2px solid var(--accent-dim);outline-offset:1px}
-.field{display:grid;gap:var(--space-2)}
+.field{display:grid;gap:var(--space-2);min-width:0}
 .field-label{font-size:var(--text-sm);color:var(--muted);font-weight:600}
 /* An identifier shown inline - a UUID, a model id, a repository path - is set in
    the mono face, because it is read character by character rather than as a word,
@@ -344,8 +344,8 @@ a.list-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .toast-text{flex:1;min-width:0;overflow-wrap:anywhere}
 /* An error that covers the thing it is about is in the way, and a toast that
    outlives its usefulness is litter. It gets a way out that is not waiting. */
-.toast-close{flex:0 0 auto;width:20px;height:20px;display:grid;place-items:center;border-radius:var(--radius-sm);color:inherit;opacity:.6;font-size:var(--text-sm);line-height:1}
-.toast-close:hover{opacity:1;background:var(--wash)}
+.toast-close{flex:0 0 auto;width:20px;height:20px;display:grid;place-items:center;border-radius:var(--radius-sm);color:var(--muted);font-size:var(--text-sm);line-height:1}
+.toast-close:hover{color:var(--text);background:var(--wash)}
 @keyframes toast-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.toast{animation:none}}
 
@@ -545,7 +545,7 @@ a.list-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
    indentation; `anywhere` covers an unbroken run - a minified bundle, a long path. */
 .dv-txt{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;padding:1px var(--space-3) 1px 0}
 .dv-row{display:grid;grid-template-columns:44px 44px 16px minmax(0,1fr)}
-.dv-ln{padding:1px var(--space-2) 1px 0;text-align:right;color:var(--muted);opacity:.7;user-select:none}
+.dv-ln{padding:1px var(--space-2) 1px 0;text-align:right;color:var(--muted);user-select:none}
 .dv-sign{padding:1px 0;text-align:center;user-select:none}
 .dv-row.add{background:var(--good-bg);color:var(--good);box-shadow:inset 3px 0 0 var(--good)}
 .dv-row.del{background:var(--bad-bg);color:var(--bad);box-shadow:inset 3px 0 0 var(--bad)}
@@ -553,7 +553,7 @@ a.list-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .dv-hunk{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-1) var(--space-3);background:var(--info-bg);color:var(--info);font-size:var(--text-xs);border-block:1px solid var(--line)}
 .dv-hunk:first-child{border-top:0}
 .dv-fn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
-.dv-range{margin-left:auto;white-space:nowrap;color:var(--muted);opacity:.8}
+.dv-range{margin-left:auto;white-space:nowrap;color:var(--muted)}
 .dv-note{display:flex;gap:var(--space-2);padding:var(--space-3);color:var(--muted);font:var(--text-sm)/1.5 var(--font-ui)}
 .dv-large{display:block;width:100%;padding:var(--space-3);border:0;background:var(--wash);color:var(--accent);font:var(--text-sm)/1.5 var(--font-ui);text-align:left;cursor:pointer}
 .dv-large:hover{background:var(--surface-2)}
@@ -820,7 +820,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .todos .completed{color:var(--muted);text-decoration:line-through}
 .todos .in_progress{color:var(--info)}
 
-.approval{border:1px solid var(--warn-line);background:linear-gradient(var(--warn-bg),var(--warn-bg)),var(--surface-1);border-radius:var(--radius);padding:var(--space-3) var(--space-4);display:grid;gap:var(--space-3)}
+.approval{border:1px solid var(--warn-line);background:linear-gradient(var(--warn-bg),var(--warn-bg)),var(--surface-1);border-radius:var(--radius);padding:var(--space-3) var(--space-4);display:grid;gap:var(--space-3);min-width:0;overflow-wrap:anywhere}
 .approval.plan,.approval.question{border-color:var(--info-line);background:linear-gradient(var(--info-bg),var(--info-bg)),var(--surface-1)}
 .approval-head{font-weight:650}
 .approval-reason{font-size:var(--text-sm)}
@@ -878,7 +878,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .task-tab span:not(.count):not(.badge){overflow:hidden;text-overflow:ellipsis}
 .task-tab:hover{color:var(--text)}
 .task-tab.active{color:var(--text);border-bottom-color:var(--accent)}
-.task-tab.archived{opacity:.6}
+/* Archived reads as quiet the same way a viewed file does - a struck name, not a faded
+   one - so its label still clears the contrast its neighbours do. */
+.task-tab.archived{text-decoration:line-through;text-decoration-color:var(--line-strong)}
 .task-tab .count{background:var(--surface-2);border-radius:999px;padding:0 var(--space-1);font-size:var(--text-xs)}
 .tab-gap{flex:1}
 .task-body{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -901,11 +903,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .set-nav-item:hover{color:var(--text);background:var(--surface-2)}
 .set-nav-item.on{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);font-weight:600}
 .set-nav-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.set-groups{display:grid;gap:calc(var(--space-6) * 2);min-width:0}
-.set-group{scroll-margin-top:var(--space-4)}
-.set-head{display:grid;gap:var(--space-1)}
+.set-groups{display:grid;grid-template-columns:minmax(0,1fr);gap:calc(var(--space-6) * 2);min-width:0}
+.set-group{scroll-margin-top:var(--space-4);min-width:0}
+.set-head{display:grid;gap:var(--space-1);min-width:0}
 .set-head h2{margin:0;font-size:var(--text-xl);font-family:var(--font-title,var(--font-ui));text-transform:var(--title-transform,none);letter-spacing:var(--title-spacing,normal)}
-.set-desc{color:var(--muted)}
+.set-desc{color:var(--muted);overflow-wrap:anywhere}
 .set-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:var(--space-6);row-gap:var(--space-3);padding:var(--space-4) 0}
 .set-row+.set-row{border-top:1px solid var(--line)}
 /* What a row carries under it - a model list, a pairing link, a note - spans the row. */
@@ -923,7 +925,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .set-value,.set-strong{color:var(--text)}
 .set-saved{font-size:var(--text-sm);color:var(--good);white-space:nowrap}
 .set-error{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2);font-size:var(--text-sm);color:var(--bad)}
-.set-note{font-size:var(--text-sm);color:var(--muted)}
+.set-note{font-size:var(--text-sm);color:var(--muted);overflow-wrap:anywhere}
 .set-rows>.set-note{padding-top:var(--space-2)}
 .skeleton{display:block;height:14px;border-radius:var(--radius-sm);background:linear-gradient(90deg,var(--line) 25%,var(--line-strong) 50%,var(--line) 75%);background-size:200% 100%;animation:shimmer 1.6s linear infinite}
 .skeleton.sm{height:11px}
@@ -943,6 +945,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 @media(max-width:1100px){.set-layout{grid-template-columns:minmax(0,680px)}.set-nav{display:none}}
 /* A select or a field takes the width under its label; a switch or a button stays right. */
 @media(max-width:650px){
+  /* A row stacks: what it is on the first line, the small print under it, full width.
+     Side by side, a long session title or a where-and-when ran out of the row and was
+     clipped by the list. */
+  .list-row{flex-wrap:wrap;align-items:flex-start}
+  .list-row-main,.list-row-side{flex:1 1 100%;min-width:0}
+  .list-row-side{overflow-wrap:anywhere}
   .set-row.stack{grid-template-columns:minmax(0,1fr)}
   .set-row.stack>.set-control{justify-self:stretch}
   .set-row.stack>.set-control>.select-field,.set-row.stack>.set-control>.picker{width:100%}
@@ -992,7 +1000,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .composer.dragging{outline:2px dashed var(--accent-dim);outline-offset:-6px}
 /* Adding a project: tabs, the destination, the repository list. */
 .seg{display:flex;gap:var(--space-half);padding:var(--space-half);background:var(--surface-0);border:1px solid var(--line);border-radius:var(--radius-sm);overflow-x:auto}
-.seg button{flex:1;padding:var(--space-2) var(--space-3);border-radius:4px;color:var(--muted);font-size:var(--text-sm);font-weight:600;white-space:nowrap}
+.seg button{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;padding:var(--space-2) var(--space-3);border-radius:4px;color:var(--muted);font-size:var(--text-sm);font-weight:600;white-space:nowrap}
 .seg button.on{background:var(--surface-3);color:var(--text)}
 .dest{display:flex;align-items:center;gap:var(--space-2)}
 .dest-path{flex:1;min-width:0;overflow-wrap:anywhere;font-size:var(--text-sm);padding:var(--space-2) var(--space-2);background:var(--surface-0);border:1px solid var(--line);border-radius:var(--radius-sm)}
@@ -1059,8 +1067,13 @@ button.side-settings{width:100%;text-align:left}
   .task-actions{grid-column:2;grid-row:1 / span 2;flex-wrap:nowrap}
   .task-actions .btn{min-height:36px;padding:var(--space-1) var(--space-3)}
   .task-meta{grid-column:1;grid-row:2;font-size:var(--text-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* The branch names are the one unbreakable thing on this line: each takes what is left
+     and ellipsises, so the line stays one line and stays inside the page. */
+  .task-meta code.mono-sm{display:inline-block;vertical-align:bottom;max-width:calc(50% - var(--space-6));overflow:hidden;text-overflow:ellipsis}
   .task-meta .mono-sm{font-size:var(--text-xs)}
-  .task-tab{min-height:38px;padding-top:0;padding-bottom:0}
+  /* Every destination stays on screen: the tabs share the strip, and a name too long for
+     its share ellipsises rather than pushing the rest off the edge. */
+  .task-tab{flex:1 1 0;min-width:0;overflow:hidden;min-height:38px;padding-top:0;padding-bottom:0}
   .session-head{padding-top:var(--space-1);padding-bottom:var(--space-1)}
   .session-controls .select-trigger{min-height:34px}
 }
@@ -1084,7 +1097,8 @@ button.side-settings{width:100%;text-align:left}
 
 /* ---- inbox ---- */
 .inbox-list{display:grid;gap:var(--space-3)}
-.inbox-item{display:grid;gap:var(--space-2)}
+.inbox-item{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-2)}
+.inbox-item>*{min-width:0}
 .inbox-where{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-1) 0;color:inherit;text-decoration:none;font-weight:650;font-size:var(--text-sm);min-width:0}
 .inbox-where:hover{color:var(--accent)}
 .inbox-where-tag{font-weight:500;font-size:var(--text-xs);margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1178,7 +1192,8 @@ button.side-settings{width:100%;text-align:left}
 .dv-strip{display:flex;gap:var(--space-2);overflow-x:auto;padding-bottom:var(--space-2);-webkit-overflow-scrolling:touch;scrollbar-width:thin}
 .dv-strip-item{display:inline-flex;align-items:center;gap:var(--space-2);flex:0 0 auto;max-width:70vw;padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:999px;background:var(--surface-1);color:var(--text);cursor:pointer}
 .dv-strip-item.on{border-color:var(--accent-dim);background:var(--surface-2)}
-.dv-strip-item.viewed{opacity:.6}
+.dv-strip-item.viewed{color:var(--muted)}
+.dv-strip-item.viewed .dv-strip-name{text-decoration:line-through;text-decoration-color:var(--line-strong)}
 .dv-strip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);font-size:var(--text-xs)}
 .dv-strip-item .dv-nav-count{font-size:var(--text-xs)}
 
