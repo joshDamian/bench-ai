@@ -1,6 +1,7 @@
 // A Claude session: its transcript, what it is waiting on, and the box to talk to it.
 import { html, useEffect, useMemo, useRef, useState, recall, remember, isTouch, shortDir, formatCost, formatDuration } from '../lib.mjs';
 import { api, useStore, watchSession, outboxCount } from '../api.mjs';
+import { readTranscript, saveTranscript } from '../transcript-cache.mjs';
 import { Markdown } from '../components/markdown.mjs';
 import { slashMatches } from '../format.mjs';
 import { MoreMenu } from '../components/menu.mjs';
@@ -13,13 +14,10 @@ import { StatusBadge, ModelPicker, ModePicker, EffortPicker, MODES, Dialog, Shee
 
 const toast = (e) => showToast(e.message || String(e), 'error');
 
-// The transcript as it was when it was last read, kept per session so reopening one - the
-// common case on a phone, where a session is left and returned to all day - draws its
-// history at once instead of an empty pane and a spinner. Bounded to the tail: that is
-// what a person comes back to, and a whole conversation of tool output is more than the
-// small storage a browser grants will hold. The fetch replaces it either way.
-const eventsKey = (id) => `bench:events:${id}`;
-const EVENTS_CACHED = 150;
+// The transcript is cached per session (see transcript-cache.mjs) so reopening one draws
+// at once. Events that stream in are kept too, but gathered: at most one write in this
+// long, and whatever is pending when the page is hidden or the pane closes.
+const CACHE_EVERY = 5000;
 
 // The shell can sit beside the conversation instead of over it. Whether it docks is one
 // choice for every session; whether it is open is per session, so going back to one
@@ -45,6 +43,36 @@ function useMedia(query) {
     return () => mq.removeEventListener('change', change);
   }, [query]);
   return on;
+}
+
+// Keeps the cached transcript as current as the pane: what a full load brings and what
+// arrives live, written on a timer rather than per event, and flushed when the page is
+// hidden or the pane closes, which is when the person leaves.
+function useCachedTranscript(sessionId, events, archived) {
+  const pending = useRef(null);
+  const timer = useRef(0);
+  const flush = () => {
+    clearTimeout(timer.current);
+    timer.current = 0;
+    const p = pending.current;
+    pending.current = null;
+    if (p) saveTranscript(p.id, p.events);
+  };
+  useEffect(() => {
+    if (!events.length || archived) return;
+    pending.current = { id: sessionId, events };
+    if (!timer.current) timer.current = setTimeout(flush, CACHE_EVERY);
+  }, [events, archived]);
+  useEffect(() => {
+    const hidden = () => document.visibilityState === 'hidden' && flush();
+    document.addEventListener('visibilitychange', hidden);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', hidden);
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [sessionId]);
 }
 
 export function SessionPane({ sessionId, onArchived }) {
@@ -87,6 +115,8 @@ export function SessionPane({ sessionId, onArchived }) {
   const files = useSessionFiles(sessionId, events);
   const [viewing, view, closeViewer] = useViewer();
   const filesCtx = useMemo(() => ({ sessionId, files, view }), [sessionId, files]);
+  // An archived session is read, not returned to; it is not kept.
+  useCachedTranscript(sessionId, events, !!session?.archived_at);
 
   const load = () =>
     api
@@ -97,13 +127,12 @@ export function SessionPane({ sessionId, onArchived }) {
         setEvents(r.events);
         setMore(r.events.length >= 400);
         setStream({ text: '', thinking: '' });
-        remember(eventsKey(sessionId), r.events.slice(-EVENTS_CACHED));
       })
       .catch(toast);
 
   useEffect(() => {
     setLoaded(null);
-    setEvents(recall(eventsKey(sessionId), []));
+    setEvents(readTranscript(sessionId));
     setSuggestion('');
     setCommands([]);
     pinned.current = true;
