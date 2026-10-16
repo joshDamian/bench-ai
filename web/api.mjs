@@ -152,9 +152,10 @@ export const api = {
   reopenTask: (/** @type {string} */ id) => post(`/api/tasks/${id}/reopen`),
 
   createSession: (/** @type {any} */ b) => post('/api/sessions', b),
-  session: (/** @type {string} */ id) => get(`/api/sessions/${id}`),
+  session: (/** @type {string} */ id, /** @type {{after?:number}} */ o = {}) => get(`/api/sessions/${id}${o.after ? `?after=${o.after}` : ''}`),
   sessionCommands: (/** @type {string} */ id) => get(`/api/sessions/${id}/commands`),
-  events: (/** @type {string} */ id, /** @type {number} */ before) => get(`/api/sessions/${id}/events?before=${before}`),
+  events: (/** @type {string} */ id, /** @type {{before?:number, after?:number}} */ o) =>
+    get(`/api/sessions/${id}/events?${o.after ? `after=${o.after}` : `before=${o.before}`}`),
   send: sendMessage,
   upload,
   fileStat: (/** @type {string} */ id, /** @type {string[]} */ paths) => post(`/api/sessions/${enc(id)}/files/stat`, { paths }),

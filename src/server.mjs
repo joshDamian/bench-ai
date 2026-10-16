@@ -597,15 +597,23 @@ route('GET', '/api/sessions', ({ u }) =>
   svc.sessions({ projectId: u.searchParams.get('projectId') || undefined, taskId: u.searchParams.get('taskId') || undefined, archived: u.searchParams.get('archived') === '1' })
 );
 route('POST', '/api/sessions', ({ body }) => svc.createSession(body));
-route('GET', '/api/sessions/:id', ({ params }) => ({
+// With `after`, only the events since the last one the client holds come back, with the
+// session's metadata, approvals and commands as before.
+route('GET', '/api/sessions/:id', ({ params, u }) => ({
   session: svc.session(params[0]),
-  events: svc.events(params[0]),
+  events: svc.events(params[0], { after: Number(u.searchParams.get('after')) || undefined }),
   approvals: svc.runtime.pending(params[0]),
   live: svc.runtime.isLive(params[0]),
   commands: svc.runtime.commands(params[0]),
 }));
 route('GET', '/api/sessions/:id/commands', ({ params }) => svc.runtime.listCommands(params[0]));
-route('GET', '/api/sessions/:id/events', ({ params, u }) => svc.events(params[0], { before: Number(u.searchParams.get('before')) || undefined, limit: Number(u.searchParams.get('limit')) || undefined }));
+route('GET', '/api/sessions/:id/events', ({ params, u }) =>
+  svc.events(params[0], {
+    before: Number(u.searchParams.get('before')) || undefined,
+    after: Number(u.searchParams.get('after')) || undefined,
+    limit: Number(u.searchParams.get('limit')) || undefined,
+  })
+);
 route('POST', '/api/sessions/:id/messages', ({ params, body }) => svc.send(params[0], body.text, { images: body.images, files: body.files, uploads: body.uploads }));
 route('GET', '/api/sessions/:id/files', ({ req, res, params, u }) => sendSessionFile(req, res, params[0], u));
 // Which of the paths a transcript mentions are files, and what each is. The client

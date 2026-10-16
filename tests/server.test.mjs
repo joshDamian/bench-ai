@@ -6,6 +6,7 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import WebSocket from 'ws';
 import { tmp } from './tmp.mjs';
+import { Store } from '../src/store.mjs';
 
 // The server as a process: auth, pairing, the event socket and static files.
 
@@ -221,6 +222,32 @@ test('a session file opens inline in a sandbox, or downloads, and nothing outsid
     'shot.png': { path: path.join(dir, 'shot.png'), name: 'shot.png', mime: 'image/png', size: 8, open: true, kind: 'image', artifact: false },
     'out/kron-release.apk': { path: path.join(dir, 'out', 'kron-release.apk'), name: 'kron-release.apk', mime: 'application/vnd.android.package-archive', size: 2, open: false, kind: 'archive', artifact: true },
   });
+});
+
+// A pane that already holds a session's events asks for only the newer ones.
+test("a session's events can be read after an id, alone or with the session", async () => {
+  const project = await req('POST', '/api/projects', { body: { path: tmp('after'), init: true } });
+  assert.equal(project.status, 200, project.text);
+  const session = await req('POST', '/api/sessions', { body: { projectId: project.json.id } });
+  const id = session.json.id;
+  // Written beside the server, as a turn would: it reads the same database.
+  const store = new Store(root);
+  const ids = [1, 2, 3, 4].map((n) => store.addEvent(id, 'user', { text: `m${n}` }).id);
+  store.db.close();
+  const texts = (r) => r.map((e) => e.data.text);
+
+  const whole = await req('GET', `/api/sessions/${id}`);
+  assert.deepEqual(texts(whole.json.events), ['m1', 'm2', 'm3', 'm4']);
+  const since = await req('GET', `/api/sessions/${id}?after=${ids[1]}`);
+  assert.equal(since.status, 200, since.text);
+  assert.deepEqual(texts(since.json.events), ['m3', 'm4']);
+  assert.equal(since.json.session.id, id, 'the session comes back with them');
+  assert.ok(Array.isArray(since.json.approvals) && 'commands' in since.json);
+
+  assert.deepEqual(texts((await req('GET', `/api/sessions/${id}/events?after=${ids[0]}`)).json), ['m2', 'm3', 'm4']);
+  assert.deepEqual(texts((await req('GET', `/api/sessions/${id}/events?after=${ids[0]}&limit=2`)).json), ['m2', 'm3'], 'capped from just after the id');
+  assert.deepEqual((await req('GET', `/api/sessions/${id}/events?after=${ids[3]}`)).json, []);
+  assert.deepEqual(texts((await req('GET', `/api/sessions/${id}/events?before=${ids[2]}`)).json), ['m1', 'm2'], 'before still reads back');
 });
 
 test('a restart is refused when no service manager would bring the server back', async () => {

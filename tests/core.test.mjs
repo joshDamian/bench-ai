@@ -869,3 +869,18 @@ test('the composer matches commands by name, after a plugin prefix, then anywher
   assert.deepEqual(names('/compact now'), [], 'a space means the command is chosen');
   assert.deepEqual(names('hello'), []);
 });
+
+test("a session's events after an id come oldest first, capped, and only that session's", () => {
+  const store = new Store(tmp('after'));
+  const ids = [];
+  for (let i = 0; i < 6; i++) {
+    ids.push(store.addEvent('a', 'user', { i }).id);
+    store.addEvent('b', 'user', { i });
+  }
+  const after = (o) => store.listEvents('a', o).map((e) => e.data.i);
+  assert.deepEqual(after({ after: ids[2] }), [3, 4, 5]);
+  assert.deepEqual(after({ after: ids[0], limit: 2 }), [1, 2], 'a full page starts just after the id, not at the newest');
+  assert.deepEqual(after({ after: ids[5] }), [], 'nothing new is an empty list');
+  assert.deepEqual(after({ limit: 2 }), [4, 5], 'without after, still the newest window');
+  store.db.close();
+});

@@ -20,6 +20,15 @@ const toast = (e) => showToast(e.message || String(e), 'error');
 // small storage a browser grants will hold. The fetch replaces it either way.
 const eventsKey = (id) => `bench:events:${id}`;
 const EVENTS_CACHED = 150;
+// What the server sends at most per read; an `after` read this full may not reach the newest.
+const EVENTS_PAGE = 400;
+
+/** `fresh` added to `list`, less any it already holds (the socket may have brought them), in id order. */
+const append = (list, fresh) => {
+  const have = new Set(list.map((e) => e.id));
+  const add = fresh.filter((e) => !have.has(e.id));
+  return add.length ? [...list, ...add].sort((a, b) => a.id - b.id) : list;
+};
 
 // The shell can sit beside the conversation instead of over it. Whether it docks is one
 // choice for every session; whether it is open is per session, so going back to one
@@ -88,26 +97,51 @@ export function SessionPane({ sessionId, onArchived }) {
   const [viewing, view, closeViewer] = useViewer();
   const filesCtx = useMemo(() => ({ sessionId, files, view }), [sessionId, files]);
 
-  const load = () =>
-    api
-      .session(sessionId)
+  // The session the pane shows now, so a reply for one it has left is dropped.
+  const shown = useRef(sessionId);
+  shown.current = sessionId;
+  const held = useRef(events);
+  held.current = events;
+
+  // Reads the session. With events already in the pane - the cached tail drawn on open, or
+  // what it held before a reconnect - only those after its last are asked for and added;
+  // a full page of them means there may be a gap, so the newest window is read whole.
+  const load = (have = []) => {
+    const id = sessionId;
+    const after = have[have.length - 1]?.id;
+    return api
+      .session(id, { after })
       .then((r) => {
+        if (shown.current !== id) return;
+        if (after && r.events.length >= EVENTS_PAGE) return load();
         setLoaded(r);
         if (r.commands?.length) setCommands(r.commands);
-        setEvents(r.events);
-        setMore(r.events.length >= 400);
         setStream({ text: '', thinking: '' });
-        remember(eventsKey(sessionId), r.events.slice(-EVENTS_CACHED));
+        if (after) {
+          setEvents((list) => {
+            const next = append(list, r.events);
+            remember(eventsKey(id), next.slice(-EVENTS_CACHED));
+            return next;
+          });
+        } else {
+          setEvents(r.events);
+          setMore(r.events.length >= EVENTS_PAGE);
+          remember(eventsKey(id), r.events.slice(-EVENTS_CACHED));
+        }
       })
       .catch(toast);
+  };
 
   useEffect(() => {
     setLoaded(null);
-    setEvents(recall(eventsKey(sessionId), []));
+    const cached = recall(eventsKey(sessionId), []);
+    setEvents(cached);
+    // The cache keeps only the tail, so a full one may have more before it.
+    setMore(cached.length >= EVENTS_CACHED);
     setSuggestion('');
     setCommands([]);
     pinned.current = true;
-    load();
+    load(cached);
     api.sessionCommands(sessionId).then(setCommands).catch(() => {});
     // Streaming text is gathered and drawn at most once a frame: re-rendering the
     // Markdown for every few characters is what made a long reply crawl on a phone.
@@ -144,7 +178,7 @@ export function SessionPane({ sessionId, onArchived }) {
     });
     const again = () => {
       drop();
-      load();
+      load(held.current);
     };
     window.addEventListener('bench:reconnected', again);
     return () => {
@@ -174,9 +208,9 @@ export function SessionPane({ sessionId, onArchived }) {
   const earlier = async () => {
     const before = events[0]?.id;
     if (!before) return;
-    const older = await api.events(sessionId, before).catch(toast);
+    const older = await api.events(sessionId, { before }).catch(toast);
     if (!older) return;
-    setMore(older.length >= 400);
+    setMore(older.length >= EVENTS_PAGE);
     const el = scroller.current;
     const from = el ? el.scrollHeight - el.scrollTop : 0;
     pinned.current = false;
