@@ -730,6 +730,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
    its own width and the title beside it gives up the room, which is the one of the two
    that can be read somewhere else. */
 .page-header>.mono-sm{flex:none;white-space:nowrap}
+/* The dashboard's stamp is two things where every other page's is one: when the reading was
+   taken, and how often it is taken again. That needs 241px, and this header's other half is
+   a host line as long again, so below ~560 the row wraps: the title keeps the full width,
+   the host line stops being folded into what is left of it, and the stamp sits under the two
+   of them, held right by its own auto margin. The time is never split - a clock broken over
+   two lines ("2:04:29" over "PM") is the one thing that rule was written for - and the
+   cadence never comes off. */
+.dashboard .page-header{flex-wrap:wrap}
+.dashboard .page-header>.mono-sm{margin-left:auto}
 .section-hint{margin:0 0 var(--space-2);font-size:var(--text-sm)}
 .section-toggle{color:var(--muted);font-weight:600}
 .empty-line{padding:var(--space-3) 0}
