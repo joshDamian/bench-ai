@@ -42,7 +42,8 @@ if (folder === '--pick') {
   // a substitution of `undefined` - and the gate then reports a page nobody asked for as
   // clean, which is the one thing a gate must never do.
   const empty = s.projects.find((/** @type {any} */ p) => !s.tasks.some((/** @type {any} */ t) => t.project_id === p.id) && !s.sessions.some((/** @type {any} */ x) => x.project_id === p.id));
-  const ids = { project, task: task?.id, taskSession: s.sessions.find((/** @type {any} */ x) => x.task_id === task?.id)?.id, session: checkout?.id, emptyProject: empty?.id };
+  const ask = s.sessions.find((/** @type {any} */ x) => !x.project_id);
+  const ids = { project, task: task?.id, taskSession: s.sessions.find((/** @type {any} */ x) => x.task_id === task?.id)?.id, session: checkout?.id, emptyProject: empty?.id, ask: ask?.id };
   const missing = Object.entries(ids).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) {
     console.error(`The running Bench has no ${missing.join(', ')} to gate. Stop it and let the gate start a seeded one.`);
@@ -123,7 +124,7 @@ const projects = [
   { name: 'infra', files: { 'README.md': '# infra\n\nTerraform for the VPS and the backups.\n' }, tasks: [], checkout: [] },
 ];
 
-const ids = { project: '', task: '', taskSession: '', session: '', emptyProject: '' };
+const ids = { project: '', task: '', taskSession: '', session: '', emptyProject: '', ask: '' };
 for (const p of projects) {
   const project = await call('POST', '/api/projects', { path: repo(p.name, p.files), name: p.name });
   if (!ids.project) ids.project = project.id;
@@ -150,6 +151,12 @@ for (const p of projects) {
     await say(s.id, 'Thanks - can you also say which job is slowest?');
     if (!ids.session) ids.session = s.id;
   }
+}
+// Ask Bench: two conversations about the whole machine, in no project.
+for (const prompt of ["What's running, and what has it cost today?", 'Which provider is failing?']) {
+  const s = await call('POST', '/api/sessions', { prompt });
+  await settle(s.id);
+  if (!ids.ask) ids.ask = s.id;
 }
 await sleep(300);
 console.log(JSON.stringify(ids));

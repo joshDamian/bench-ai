@@ -12,7 +12,7 @@
 1. The page title (20px `--text-xl`, 650, the theme's `--font-title`) in `.page-header`, with at most one muted line under it - a path, a hostname, a "from *branch*".
 2. The view's content, left-aligned to the title.
 3. The sidebar: the product mark and `Bench` (16px, 700) with the theme pill in the same row, the "N waiting on you" link when there is anything, then one row per project with its active tasks and checkout sessions nested under it.
-4. The sidebar's footer - Dashboard, Add project, Settings - in `--muted`, marked with `--accent` and a `--surface-2` fill when current.
+4. The sidebar's footer - Ask Bench, Dashboard, Add project, Settings - in `--muted`, marked with `--accent` and a `--surface-2` fill when current.
 
 **The shell owns, and the views may rely on:** the 260px sidebar on `--surface-rail`; the bottom tab bar under 860px; the mobile topbar with its menu and back controls; the toast stack; the confirm dialog and the generic `Dialog`; the theme picker; and the `.page` column - `max-width:1100px`, padding `24px 32px 32px` on desktop and 16px on the phone.
 **States:**
@@ -26,7 +26,7 @@
 **Avoid:** a second navigation on the phone that does the same job as the drawer; a filled button in the furniture; the tab bar on a conversation, where it would take a row from the transcript to say what the back button already says; a shell that is the same colour as the content with a border between them.
 **Chosen, not asked:**
 - *The tab bar is for destinations, not for tasks.* Five top-level screens is what fits a thumb; anything deeper is a place you were sent to, and a back control is the honest way out of it. This also keeps the composer off the bottom edge, where the keyboard arrives.
-- *The sidebar footer holds Dashboard, Add project and Settings rather than the top.* `page-shell` puts account and settings at the bottom of the sidebar; Bench's same three every time are what a person reaches for after the projects list, not before it.
+- *The sidebar footer holds Ask Bench, Dashboard, Add project and Settings rather than the top.* `page-shell` puts account and settings at the bottom of the sidebar; Bench's same four every time are what a person reaches for after the projects list, not before it. Ask Bench is not a sixth tab on the phone: five is what fits a thumb, and it is a place a person goes on purpose, which the drawer serves.
 - *Emphasis in the sidebar is a fill plus an accent rule, never bold alone.* A folded project still reports on its sessions through a status dot, so folding is not the same as forgetting.
 - *A button's label is one line.* A button is a thing you aim at, and one whose label wraps changes height as the text around it changes width, so the same control is 29px tall where the heading is short and 48px where it is long - which is how **New session** came to sit two lines tall on a phone with its plus stranded beside the lone word "New". Which element gives when two will not fit is settled by the box the button is in, never by the label.
 - *The sidebar's theme pill names the theme; it does not preview it.* The header row is 219px of room for an 89px mark and this pill, and the longest theme Bench ships asks the pill for 145px. The name is what the pill is for, so it stays whole and the three colour dots stand down there - the sidebar they would sit on is already painted in the theme. Cut instead, `Quiet Temple`, the light default, read "Quiet T…" on every screen. Settings' own pill has the room and keeps its dots.
@@ -218,6 +218,31 @@
 - *The composer's keyboard hint is two clauses, and the second is the one that goes.* "Enter to send" is true of any keyboard; "· Shift+Enter new line · Esc to stop" is a desk's shorthand. The line asks for 198px and the bar has that for it from 520px up; squeezed below that the ellipsis landed on the separator itself - "Enter to send · …" - which reads as a fault. So the second clause is droppable and the first is not, and on a finger `hide-touch` drops the whole line.
 - *The suggestion row can be put away, and only a phone can put it away.* At 390 the chips stand three lines deep between the transcript and the input, and the input is what the screen is for; at 1280 the same row is one line above a box with room around it, so there the control is written out of the layout rather than merely hidden and a desk keeps the row it has always had. Putting it away is not a setting: the next suggestion the model sends brings the row back and nothing else does. Had the four standing chips revived it, the row would have returned on the very next turn and the dismiss would have been a lie. It is not remembered across a reload either, because a preference that can only be set one way is a way to lose the shortcuts with nothing left to ask them from.
 - *A chip takes the caret with it on a desk, and not on a finger.* The chip was the whole prompt, so the next press wanted is Enter - and after Send, this app already puts the caret back on a desk and leaves it alone on a phone. A finger gets no keyboard: it would rise over the row the tap just came from, and the chip had left nothing in the box to correct.
+
+## View: Ask Bench (`#/ask`, `#/ask/:sid`)
+
+**Job:** ask about the whole of Bench, or have it act, in words - "what's running and what has it cost today", "start a task in api to bump the SDK", "which provider is failing" - without first choosing a project, and without the conversation being a session that edits Bench's own code.
+**Pattern:** `form` for the opening question above a `list-detail` list of past conversations; a conversation itself is the Session view's detail pane, unchanged.
+**Primary action:** **Ask** - the filled button under the question box, reached with `⌘↵`. Asking starts a conversation and opens it; nothing else on the page is filled.
+**Hierarchy:**
+1. `Ask Bench` (20px) with one muted line: what it can reach - every project, task, session, provider and device - and that it asks before it changes anything.
+2. The question box and **Ask**.
+3. **Conversations** (16px), then one row per conversation: a status dot, the title, and on the right the status badge (only when not idle) and the time it last moved.
+
+**States:**
+- **Loading:** none of its own; conversations are sessions and come from the store.
+- **Empty:** the question box is the empty state. **Conversations** is not drawn until there is one, because a heading over nothing would only repeat that this is the first visit.
+- **Error:** a conversation that cannot start - no provider ready - is a toast, and the question stays in the box.
+- **In a conversation:** the Session view as it is, with two differences. There is no permission mode to choose: a conversation here always asks before it acts, so the mode control is not drawn. And its empty line says what it reaches rather than naming a directory, because it has no project to work in.
+- **Happy path:** three conversations, one waiting on an approval to start a task, and a question half typed.
+
+**Layout - desktop (1280):** `.page` → header → the question box as a `--surface-1` card the width of the page, its textarea three lines tall, **Ask** at the card's foot on the right → **Conversations** as a `.list` with hairline dividers, 20px below the card.
+**Layout - phone (390):** padding 16px. The card spans the width and **Ask** stays at its foot on the right. Rows stack the title over the badge and time at 650px, as the Sessions list does.
+**Avoid:** a chat bubble floating over every screen; a second transcript component; a model or mode picker on the question card - it starts on the person's defaults, and the conversation's own chip changes the model; any tool here that merges, closes or deletes.
+**Chosen, not asked:**
+- *It acts through Bench's tools and nothing else.* No shell, no file edits, no files of its own to read: its working folder sits beside Bench's database and the file holding provider keys, and the tools are the boundary. Reading never asks; anything that changes something asks every time, with no "always allow".
+- *Landing and deleting stay with the person.* Merging or closing a task, removing a project, revoking a device - the conversation can say what it would do, and the person does it, which is the rule every task session already lives under.
+- *A conversation is a session with no project.* It is listed under Sessions, waits in the Inbox, and notifies like every other session, so a decision it needs is found where every other decision is.
 
 ## View: Pairing (`#/pair/:code`) and Not paired
 

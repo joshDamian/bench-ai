@@ -9,6 +9,7 @@ import { Store } from './store.mjs';
 import { Runtime, MODES } from './runtime.mjs';
 import { providerReady } from './providers.mjs';
 import { benchServer } from './tools.mjs';
+import { askServer } from './ask.mjs';
 import { Loop, newLoop } from './loop.mjs';
 import * as g from './git.mjs';
 
@@ -56,8 +57,9 @@ export class Service extends EventEmitter {
     super();
     this.root = root;
     this.store = new Store(root);
-    // Each session's own bench MCP server: tools that act on its task and project.
-    this.runtime = new Runtime(this.store, { ...o, mcp: (sessionId) => benchServer(this, sessionId) });
+    // Each session's own bench MCP server: tools that act on its task and project, or, for
+    // an Ask Bench conversation, on the whole of Bench.
+    this.runtime = new Runtime(this.store, { ...o, mcp: (sessionId) => (this.store.getSession(sessionId)?.project_id ? benchServer(this, sessionId) : askServer(this, sessionId)) });
     /**
      * Sends a push notification to the person's devices, and says to how many. Set by
      * the server, which holds the push keys; null where there is no push (the CLI, tests).
@@ -65,11 +67,17 @@ export class Service extends EventEmitter {
      */
     this.notifier = null;
     /**
+     * What only the HTTP server knows - a pairing link's address, what the machine is
+     * holding - for Ask Bench to read. Set by the server; null in the CLI and tests.
+     * @type {{pair: () => Promise<{urls:string[], expiresIn:number}>, metrics: () => Promise<import('./contract.mjs').Metrics>, status: () => Record<string, unknown>} | null}
+     */
+    this.host = null;
+    /**
      * Loop until done: what feeds a task's failing check back to its session. It listens for
      * the runtime's turn-done, so a loop is driven by turns ending, not by a timer.
      */
     this.loop = new Loop(this);
-    this.runtime.on('turn-done', ({ session }) => session && this.emit('git', session.project_id));
+    this.runtime.on('turn-done', ({ session }) => session?.project_id && this.emit('git', session.project_id));
     this.runtime.on('task', (t) => this.emit('task', t));
     this.#importLegacy();
   }
@@ -557,7 +565,7 @@ export class Service extends EventEmitter {
     return s;
   }
 
-  /** @param {{projectId?:string, taskId?:string, archived?:boolean}} [q] */
+  /** @param {{projectId?:string, taskId?:string, archived?:boolean, ask?:boolean}} [q] */
   sessions(q) {
     return this.store.listSessions(q);
   }
@@ -585,14 +593,17 @@ export class Service extends EventEmitter {
 
   /**
    * A session in a task's worktree, or in the project's own checkout when there is no task.
+   * With no project at all it is an Ask Bench conversation: it works in a folder of its own
+   * under Bench's data and always asks before it acts, whatever the person's default mode.
    * `startedBy` is the session that started it through a bench tool; `purpose` is 'review'
    * for one request_review started. `images` go with the prompt, as a person's pasted ones do.
-   * @param {{projectId:string, taskId?:string|null, title?:string, providerId?:string, modelId?:string|null, mode?:PermissionMode, effort?:string|null, prompt?:string, images?:{media_type:string, data:string}[], startedBy?:string|null, purpose?:string|null}} o
+   * @param {{projectId?:string|null, taskId?:string|null, title?:string, providerId?:string, modelId?:string|null, mode?:PermissionMode, effort?:string|null, prompt?:string, images?:{media_type:string, data:string}[], startedBy?:string|null, purpose?:string|null}} o
    */
   createSession(o) {
-    const p = this.project(o.projectId);
+    const p = o.projectId ? this.project(o.projectId) : null;
+    if (!p && o.taskId) throw fail('A task session needs its project');
     const t = o.taskId ? this.task(o.taskId) : null;
-    if (t && t.project_id !== p.id) throw fail('That task belongs to another project');
+    if (t && t.project_id !== p?.id) throw fail('That task belongs to another project');
     if (t && t.state !== 'active') throw fail(`The task is ${t.state}`, 409);
     const d = this.defaults();
     const providerId = o.providerId || d.providerId;
@@ -602,13 +613,14 @@ export class Service extends EventEmitter {
     if (!ready.ready) throw fail(`${provider.name}: ${ready.reason}`);
     const modelId = o.modelId !== undefined ? o.modelId : providerId === d.providerId ? d.modelId : null;
     if (modelId && this.store.getModel(modelId)?.provider_id !== providerId) throw fail('That model is not on that provider');
-    const mode = o.mode || d.mode;
+    const mode = p ? o.mode || d.mode : 'default';
     if (!MODES.includes(/** @type {any} */ (mode))) throw fail(`Unknown mode ${mode}`);
+    if (!p) fs.mkdirSync(this.askDir(), { recursive: true });
     const s = this.store.addSession({
-      project_id: p.id,
+      project_id: p?.id || null,
       task_id: t?.id || null,
-      title: o.title?.trim() || (t ? 'New task session' : 'New session'),
-      cwd: t ? t.worktree : p.path,
+      title: o.title?.trim() || (t ? 'New task session' : p ? 'New session' : 'New conversation'),
+      cwd: t ? t.worktree : p ? p.path : this.askDir(),
       provider_id: providerId,
       model_id: modelId || null,
       permission_mode: mode,
@@ -619,6 +631,11 @@ export class Service extends EventEmitter {
     this.runtime.emit('session', s);
     if (o.prompt?.trim()) this.send(s.id, o.prompt, o.images?.length ? { images: o.images } : undefined);
     return this.session(s.id);
+  }
+
+  /** Where Ask Bench conversations work: a folder of their own, not a project. */
+  askDir() {
+    return path.join(this.store.dir, 'ask');
   }
 
   /** @param {string} id @param {string} text @param {{images?: {media_type:string, data:string}[], files?: {name:string, media_type?:string, data:string}[], uploads?: {file:string, type?:string}[], writeUp?:boolean}} [o] */
@@ -637,7 +654,13 @@ export class Service extends EventEmitter {
       if (!patch.title.trim()) throw fail('A title cannot be empty');
       this.runtime.emit('session', this.store.updateSession(id, { title: patch.title.trim() }));
     }
-    if (patch.mode) await this.runtime.setMode(id, patch.mode);
+    if (patch.mode) {
+      try {
+        await this.runtime.setMode(id, patch.mode);
+      } catch (e) {
+        throw fail(/** @type {Error} */ (e).message, 409);
+      }
+    }
     if (patch.effort !== undefined) patch = { ...patch, effort: effortOf(patch.effort) };
     if (patch.providerId !== undefined || patch.modelId !== undefined || patch.effort !== undefined) {
       const providerId = patch.providerId || this.session(id).provider_id;

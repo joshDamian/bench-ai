@@ -1,7 +1,7 @@
 // Every session on this machine, flat and newest-activity-first, so a phone can reach
 // one without opening its project first. The projects are one tab over; this is the
 // list a person actually drives from, filtered to what needs them.
-import { html, useState, useEffect, formatWhen } from '../lib.mjs';
+import { html, useState, useEffect, formatWhen, sessionHref } from '../lib.mjs';
 import { useStore } from '../api.mjs';
 import { Dot, StatusBadge } from '../components/ui.mjs';
 
@@ -17,8 +17,8 @@ export function SessionsList() {
   const projects = useStore((s) => s.projects);
   const [filter, setFilter] = useState('open');
 
-  const where = (s) => [projects.find((p) => p.id === s.project_id)?.name, tasks.find((t) => t.id === s.task_id)?.title].filter(Boolean).join(' · ');
-  const href = (s) => (s.task_id ? `#/p/${s.project_id}/t/${s.task_id}/s/${s.id}` : `#/p/${s.project_id}/s/${s.id}`);
+  const where = (s) => (s.project_id ? [projects.find((p) => p.id === s.project_id)?.name, tasks.find((t) => t.id === s.task_id)?.title].filter(Boolean).join(' · ') : 'Ask Bench');
+  const href = sessionHref;
 
   const counts = {
     open: sessions.filter((s) => s.status === 'running' || s.status === 'waiting').length,

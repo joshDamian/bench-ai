@@ -708,12 +708,16 @@ route('GET', '/api/doctor', () => svc.doctor());
 route('GET', '/api/devices', () => svc.store.listDevices());
 route('DELETE', '/api/devices/:id', ({ params }) => ({ ok: svc.store.revokeDevice(params[0]) }));
 // A one-time code a new device trades for its own token. Ten minutes, single use.
-route('POST', '/api/pairing', async () => {
+async function newPairing() {
   const code = crypto.randomBytes(9).toString('base64url');
   svc.store.addPairing(code, 10 * 60 * 1000);
   const urls = (await publicUrls()).map((base) => `${base}/#/pair/${code}`);
-  const qr = urls[0] ? await QRCode.toString(urls[0], { type: 'svg', margin: 1 }) : null;
-  return { code, urls, qr, expiresIn: 600 };
+  return { code, urls, expiresIn: 600 };
+}
+route('POST', '/api/pairing', async () => {
+  const p = await newPairing();
+  const qr = p.urls[0] ? await QRCode.toString(p.urls[0], { type: 'svg', margin: 1 }) : null;
+  return { ...p, qr };
 });
 
 route('GET', '/api/push/key', () => (vapid ? { key: vapid.publicKey } : Promise.reject(Object.assign(new Error('Push is not available'), { status: 503 }))));
@@ -728,7 +732,8 @@ route('POST', '/api/push/choices', ({ body }) => ({ ok: svc.store.setPushChoices
 // definition `bench service install` writes says so.
 const supervised = env('SERVICE') || null;
 
-route('GET', '/api/server/status', () => ({ pid: process.pid, startedAt, uptimeMs: Date.now() - startedAt, version: pkg.version, commit: release?.commit || null, root, terminals: terminals.size, supervised }));
+const serverStatus = () => ({ pid: process.pid, startedAt, uptimeMs: Date.now() - startedAt, version: pkg.version, commit: release?.commit || null, root, terminals: terminals.size, supervised });
+route('GET', '/api/server/status', serverStatus);
 
 // Settings → Update Bench: reinstall from the checkout this release came from. The
 // installer restarts the service itself; the page watches for the new commit to answer.
@@ -740,7 +745,7 @@ route('POST', '/api/server/update', () => startUpdate(update));
 // than pushed on a timer, so nothing shells out to `ps` or `du` for a page nobody is
 // looking at. The expensive part - the sizes - is cached inside metrics.mjs.
 const releasesDir = env('RELEASE_DIR') || path.join(os.homedir(), '.local', 'share', 'bench', 'releases');
-route('GET', '/api/metrics', () => {
+function metrics() {
   const projects = svc.store.listProjects();
   return collect({
     root,
@@ -759,8 +764,11 @@ route('GET', '/api/metrics', () => {
         { name: `${p.name} worktrees`, path: worktreeRoot(p.path), note: 'task branches' },
       ]),
     ],
-  });
-});
+  });}
+route('GET', '/api/metrics', metrics);
+// What Ask Bench reads that only this process knows.
+// collect() widens `source` to a string; the snapshot is a Metrics all the same.
+svc.host = { pair: newPairing, metrics: /** @type {() => Promise<import('./contract.mjs').Metrics>} */ (/** @type {unknown} */ (metrics)), status: serverStatus };
 // Exits so the service manager starts a fresh process. Refused when nothing would, since
 // a restart that is really a stop leaves a phone with no way back.
 route('POST', '/api/server/restart', () => {

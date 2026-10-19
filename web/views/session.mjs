@@ -281,11 +281,18 @@ export function SessionPane({ sessionId, onArchived }) {
   const modelName = model ? model.display_name || model.name : provider?.name || 'Model';
   const modeName = MODES.find((m) => m.value === s.permission_mode)?.label || s.permission_mode;
   const setMode = (mode) => api.updateSession(s.id, { mode }).catch(toast);
+  // An Ask Bench conversation has no project to open a shell in, and no mode to pick: it
+  // always asks before it acts.
+  const ask = !s.project_id;
   const inDock = shell && docked && canDock;
   const shellTitle = `Terminal · ${s.cwd}`;
   const items = [
-    inDock ? { label: 'Close the terminal', onSelect: () => setShell(false) } : { label: 'Terminal in this folder', onSelect: () => setShell(true) },
-    { label: 'Open in terminal (claude --resume)', disabled: !s.claude_session_id || running, onSelect: () => setTerminal(true) },
+    ...(ask
+      ? []
+      : [
+          inDock ? { label: 'Close the terminal', onSelect: () => setShell(false) } : { label: 'Terminal in this folder', onSelect: () => setShell(true) },
+          { label: 'Open in terminal (claude --resume)', disabled: !s.claude_session_id || running, onSelect: () => setTerminal(true) },
+        ]),
     { label: 'Rename', onSelect: rename },
     s.archived_at
       ? { label: 'Unarchive', onSelect: () => api.archiveSession(s.id, false).catch(toast) }
@@ -308,7 +315,7 @@ export function SessionPane({ sessionId, onArchived }) {
   // the four things a person types most often after Claude stops.
   const showQuick = !running && !approvals.length && events[events.length - 1]?.kind === 'result';
   // The model's own guess at the next prompt comes first, when it sent one.
-  const QUICK = [...new Set([suggestion, 'Continue', 'Run the tests', 'Commit it', 'Explain the change'].filter(Boolean))].slice(0, 5);
+  const QUICK = [...new Set([suggestion, 'Continue', ...(ask ? [] : ['Run the tests', 'Commit it', 'Explain the change'])].filter(Boolean))].slice(0, 5);
 
   return html`
     <section class="session ${inDock ? 'docked' : ''}" ref=${sectionRef}>
@@ -322,13 +329,15 @@ export function SessionPane({ sessionId, onArchived }) {
           <div class="session-controls">
             <${ModelPicker} compact providers=${providers} value=${{ providerId: s.provider_id, modelId: s.model_id }} onChange=${(v) => api.updateSession(s.id, v).catch(toast)} />
             <${EffortPicker} compact value=${s.effort} onChange=${(effort) => api.updateSession(s.id, { effort }).catch(toast)} />
-            <${ModePicker} compact value=${s.permission_mode} onChange=${setMode} />
-            <button class="btn sm ghost" type="button" title=${inDock ? 'Close the terminal' : `Terminal in ${s.cwd}`} aria-pressed=${docked && canDock ? String(inDock) : undefined} onClick=${() => setShell(!inDock)}><${Icon} name="terminal" size=${14} /> Terminal</button>
+            ${ask
+              ? null
+              : html`<${ModePicker} compact value=${s.permission_mode} onChange=${setMode} />
+                  <button class="btn sm ghost" type="button" title=${inDock ? 'Close the terminal' : `Terminal in ${s.cwd}`} aria-pressed=${docked && canDock ? String(inDock) : undefined} onClick=${() => setShell(!inDock)}><${Icon} name="terminal" size=${14} /> Terminal</button>`}
             <${MoreMenu} items=${items} />
           </div>
           <button class="session-chip" type="button" onClick=${() => setSheet(true)} aria-haspopup="dialog">
             <span class="session-chip-model">${modelName}</span>
-            <span class="session-chip-mode">${modeName}</span>
+            ${ask ? null : html`<span class="session-chip-mode">${modeName}</span>`}
             <${Icon} name="chevron" size=${14} />
           </button>
         </header>
@@ -343,7 +352,9 @@ export function SessionPane({ sessionId, onArchived }) {
           }}
         >
           ${more ? html`<button class="btn sm ghost earlier" type="button" onClick=${earlier}>Load earlier</button>` : null}
-          ${events.length === 0 && loaded ? html`<div class="transcript-empty muted">Say what you want done. Claude works in <code>${s.cwd}</code>.</div>` : null}
+          ${events.length === 0 && loaded
+            ? html`<div class="transcript-empty muted">${ask ? 'Ask about any project, task, session, provider or device, or say what to do. Bench asks before it changes anything.' : html`Say what you want done. Claude works in <code>${s.cwd}</code>.`}</div>`
+            : null}
           <${FilesContext.Provider} value=${filesCtx}><${Transcript} events=${events} sessionId=${s.id} /><//>
           ${stream.thinking && !stream.text ? html`<div class="msg-thinking live"><span class="muted">Thinking…</span></div>` : null}
           ${stream.text ? html`<div class="msg assistant streaming"><${Markdown} text=${stream.text} /></div>` : null}
@@ -388,7 +399,7 @@ export function SessionPane({ sessionId, onArchived }) {
         ? html`<${Sheet} title="Session settings" onClose=${() => setSheet(false)}>
             <label class="field"><span class="field-label">Model</span><${ModelPicker} providers=${providers} value=${{ providerId: s.provider_id, modelId: s.model_id }} onChange=${(v) => api.updateSession(s.id, v).catch(toast)} /></label>
             <label class="field"><span class="field-label">Effort</span><${EffortPicker} value=${s.effort} onChange=${(effort) => api.updateSession(s.id, { effort }).catch(toast)} /></label>
-            <label class="field"><span class="field-label">Permissions</span><${ModePicker} value=${s.permission_mode} onChange=${setMode} /></label>
+            ${ask ? null : html`<label class="field"><span class="field-label">Permissions</span><${ModePicker} value=${s.permission_mode} onChange=${setMode} /></label>`}
             <div class="sheet-actions">
               ${items.map(
                 (it) => html`<button class="btn ${it.danger ? 'danger' : 'secondary'}" type="button" disabled=${it.disabled} key=${it.label} onClick=${() => { setSheet(false); it.onSelect(); }}>${it.label}</button>`
@@ -1068,6 +1079,7 @@ function Composer({ session: s, commands, quick, onDismissQuick }) {
   };
 
   const cycleMode = () => {
+    if (!s.project_id) return;
     const order = ['default', 'acceptEdits', 'plan'];
     const next = order[(order.indexOf(s.permission_mode) + 1) % order.length];
     api.updateSession(s.id, { mode: next }).catch(toast);
@@ -1172,7 +1184,7 @@ function Composer({ session: s, commands, quick, onDismissQuick }) {
             e.target.value = '';
           }} />
           <button class="btn ghost icon-only" type="button" aria-label="Attach files" title="Attach images, PDFs, APKs or any file (or drop them here)" onClick=${() => file.current?.click()}><${Icon} name="attach" /></button>
-          <button class="mode-chip" type="button" onClick=${cycleMode} title="Permission mode (Shift+Tab)">${MODES.find((m) => m.value === s.permission_mode)?.label}</button>
+          ${s.project_id ? html`<button class="mode-chip" type="button" onClick=${cycleMode} title="Permission mode (Shift+Tab)">${MODES.find((m) => m.value === s.permission_mode)?.label}</button>` : null}
           <span class="composer-hint muted hide-touch">Enter to send<span class="hint-more"> · Shift+Enter new line${running ? ' · Esc to stop' : ''}</span></span>
           <span class="composer-gap"></span>
           ${SR ? html`<button class="btn ghost icon-only ${listening ? 'listening' : ''}" type="button" aria-label=${listening ? 'Stop dictation' : 'Dictate'} title="Dictate" onClick=${dictate}><${Icon} name="mic" /></button>` : null}

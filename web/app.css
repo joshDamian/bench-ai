@@ -772,6 +772,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .new-task{margin-top:var(--space-4);display:grid;gap:var(--space-3)}
 .new-task-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--space-3)}
 .new-task-foot{justify-content:flex-start}
+.ask-card{margin-top:var(--space-4);display:grid;gap:var(--space-3)}
+.ask-foot{justify-content:flex-end}
 .picker{flex-wrap:nowrap}
 .picker>*{min-width:0;flex:1}
 .picker.compact>*{flex:0 1 auto}

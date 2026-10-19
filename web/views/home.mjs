@@ -1,5 +1,5 @@
 // The projects, and adding one by browsing to it.
-import { html, useEffect, useState, shortDir } from '../lib.mjs';
+import { html, useEffect, useState, shortDir, sessionHref } from '../lib.mjs';
 import { api, useStore, refresh } from '../api.mjs';
 import { showToast } from '../components/toast.mjs';
 import { Dialog, Dot, sessionsStatus, Icon } from '../components/ui.mjs';
@@ -56,7 +56,7 @@ function Waiting() {
         ${approvals.map((a) => {
           const s = sessions.find((x) => x.id === a.session_id);
           if (!s) return null;
-          const href = s.task_id ? `#/p/${s.project_id}/t/${s.task_id}/s/${s.id}` : `#/p/${s.project_id}/s/${s.id}`;
+          const href = sessionHref(s);
           return html`<a class="list-row attention" href=${href} key=${a.id}>
             <div class="list-row-main"><${Dot} status="waiting" /><span class="row-title">${a.title || a.tool}</span></div>
             <div class="list-row-side muted">${s.title}</div>

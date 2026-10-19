@@ -136,7 +136,8 @@ export type SessionStatus = 'idle' | 'running' | 'waiting' | 'error';
 
 export interface Session {
   id: string;
-  project_id: string;
+  /** Null for an Ask Bench conversation, which belongs to no project. */
+  project_id: string | null;
   /** Null for a session in the project's own checkout. */
   task_id: string | null;
   title: string;
