@@ -178,6 +178,8 @@ export function Icon({ name, size = 16 }) {
     mic: 'M8 2.5a2 2 0 0 0-2 2v3.5a2 2 0 1 0 4 0V4.5a2 2 0 0 0-2-2zM3.5 7.5v.5a4.5 4.5 0 0 0 9 0v-.5M8 12.5V14',
     // A pulse, for the Dashboard: the machine's own reading rather than a chart.
     activity: 'M1.5 8h2.6l1.5-4.4L8 12.6l1.4-4.6h5.1',
+    // A speech bubble, for Ask Bench.
+    ask: 'M2.5 3.5h11v7.5H7.5l-3 2.5V11h-2z',
   };
   return html`<svg class="ic" width=${size} height=${size} viewBox="0 0 16 16" aria-hidden="true"><path d=${paths[name] || ''} /></svg>`;
 }

@@ -12,6 +12,7 @@ import { cleanEnv, providerEnv, invocationId, priceUsage } from './providers.mjs
 import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
+import { askApproval, ASK_TOOLS, ASK_BRIEF } from './ask.mjs';
 
 /** @typedef {import('./contract.mjs').Session} Session */
 /** @typedef {import('./contract.mjs').Task} Task */
@@ -350,7 +351,7 @@ export class Runtime extends EventEmitter {
       /* a provider missing its key still has commands to list */
     }
     /** @type {any} */
-    const q = this.query({ prompt: /** @type {any} */ (idle), options: { cwd: s.cwd, env, settingSources: ['project', 'local'], plugins: this.#plugins() } });
+    const q = this.query({ prompt: /** @type {any} */ (idle), options: { cwd: s.cwd, env, ...(s.project_id ? { settingSources: ['project', 'local'], plugins: this.#plugins() } : { settingSources: [], plugins: [] }) } });
     /** @type {ReturnType<typeof setTimeout>|undefined} */
     let timer;
     try {
@@ -515,7 +516,7 @@ export class Runtime extends EventEmitter {
     this.#event(id, 'user', { text, images: images.length, files: saved.map(({ name, size, type }) => ({ name, size, type })) });
     const first = !s.claude_session_id && this.store.listEvents(id, { limit: 2 }).length === 1;
     const title = text.trim() ? titleFrom(text) : saved.length ? titleFrom(saved.map((f) => f.name).join(', ')) : null;
-    this.#update(id, { status: this.#pendingFor(id) ? 'waiting' : 'running', error: null, ...(first && title && /^New (session|task)/.test(s.title) ? { title } : {}) });
+    this.#update(id, { status: this.#pendingFor(id) ? 'waiting' : 'running', error: null, ...(first && title && /^New (session|task|conversation)/.test(s.title) ? { title } : {}) });
   }
 
   /**
@@ -533,11 +534,16 @@ export class Runtime extends EventEmitter {
     const provider = this.store.getProvider(s.provider_id);
     if (!provider) throw new Error(`Provider ${s.provider_id} is gone; pick another`);
     const model = s.model_id ? this.store.getModel(s.model_id) || null : null;
-    const project = this.store.getProject(s.project_id);
+    const project = s.project_id ? this.store.getProject(s.project_id) : null;
+    // An Ask Bench conversation: no project, and Bench's tools in place of the shell and
+    // the editor. Its folder sits beside Bench's database and the file of provider keys,
+    // so the tools are the boundary, and it loads no project's settings or plugins.
+    const ask = !s.project_id;
     const scratch = this.scratchDir(s.id);
     fs.mkdirSync(scratch, { recursive: true });
+    if (ask) fs.mkdirSync(s.cwd, { recursive: true });
     const env = { ...cleanEnv(), ...providerEnv(provider, model), TMPDIR: scratch, TMP: scratch, TEMP: scratch, CLAUDE_AGENT_SDK_CLIENT_APP: 'bench' };
-    const instructions = [userInstructions(), scratchNote(scratch), this.#taskBrief(s)].filter(Boolean).join('\n\n') || null;
+    const instructions = (ask ? [userInstructions(), ASK_BRIEF] : [userInstructions(), scratchNote(scratch), this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
     const memory = project && path.resolve(project.path) !== path.resolve(s.cwd) ? memoryDir(project.path) : null;
     fs.mkdirSync(this.attachmentsDir(s.id), { recursive: true });
     const live = new Live(s.id);
@@ -546,10 +552,11 @@ export class Runtime extends EventEmitter {
     /** @type {import('@anthropic-ai/claude-agent-sdk').Options} */
     const options = {
       cwd: s.cwd,
-      additionalDirectories: [this.attachmentsDir(s.id), scratch],
+      additionalDirectories: ask ? [this.attachmentsDir(s.id)] : [this.attachmentsDir(s.id), scratch],
       env,
-      settingSources: ['project', 'local'],
-      plugins: this.#plugins(),
+      settingSources: ask ? [] : ['project', 'local'],
+      plugins: ask ? [] : this.#plugins(),
+      ...(ask ? { tools: ASK_TOOLS } : {}),
       permissionMode: /** @type {PermissionMode} */ (s.permission_mode),
       allowDangerouslySkipPermissions: true,
       includePartialMessages: true,
@@ -705,7 +712,9 @@ export class Runtime extends EventEmitter {
   #ask(id, tool, input, opts) {
     // Bench's own tools: the read-only ones never ask, `log` asks only in the modes that
     // ask about edits, and the rest are put to the person in words rather than a tool id.
-    const bench = benchApproval(tool, input, this.store.getSession(id), (taskId) => this.store.getTask(taskId));
+    const session = this.store.getSession(id);
+    const ask = !!session && !session.project_id;
+    const bench = ask ? askApproval(tool, input) : benchApproval(tool, input, session, (taskId) => this.store.getTask(taskId));
     if (bench?.allow) return Promise.resolve({ behavior: 'allow', updatedInput: input });
     return new Promise((resolve) => {
       /** @type {Approval} */
@@ -718,7 +727,8 @@ export class Runtime extends EventEmitter {
         reason: opts.decisionReason || opts.blockedPath || null,
         created_at: new Date().toISOString(),
       };
-      this.approvals.set(approval.id, { approval, resolve, suggestions: opts.suggestions || [] });
+      // Ask Bench asks every time: no "always allow" to turn into a standing rule.
+      this.approvals.set(approval.id, { approval, resolve, suggestions: ask ? [] : opts.suggestions || [] });
       opts.signal?.addEventListener('abort', () => this.#finish(approval.id, { behavior: 'deny', message: 'Cancelled' }));
       this.#update(id, { status: 'waiting' });
       this.emit('approval', approval);
@@ -789,7 +799,8 @@ export class Runtime extends EventEmitter {
   /** @param {string} id @param {PermissionMode} mode */
   async setMode(id, mode) {
     if (!MODES.includes(/** @type {any} */ (mode))) throw new Error(`Unknown mode ${mode}`);
-    this.#session(id);
+    const s = this.#session(id);
+    if (!s.project_id && mode !== 'default') throw new Error('Ask Bench always asks before it acts; its mode cannot change');
     const live = this.live.get(id);
     if (live) await live.q.setPermissionMode(mode);
     return this.#update(id, { permission_mode: mode });

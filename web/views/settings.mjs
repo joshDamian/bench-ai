@@ -386,7 +386,7 @@ function Usage() {
   for (const r of rows) by.set(r.project_id, (by.get(r.project_id) || 0) + r.cost);
   return html`
     <${Group} id="spend" title="Spend" hint="Estimates from Claude Code, at each model's published price. A subscription is not billed per token.">
-      ${[...by].map(([pid, cost]) => html`<${Row} key=${pid} label=${projects.find((p) => p.id === pid)?.name || 'Removed project'}><span class="set-value mono-sm">${formatCost(cost)}</span><//>`)}
+      ${[...by].map(([pid, cost]) => html`<${Row} key=${pid} label=${pid ? projects.find((p) => p.id === pid)?.name || 'Removed project' : 'Ask Bench'}><span class="set-value mono-sm">${formatCost(cost)}</span><//>`)}
     <//>
   `;
 }

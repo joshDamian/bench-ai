@@ -5,7 +5,7 @@
 // question that woke it can be answered without navigating: the approval card above is
 // the same one the transcript draws, so Allow and Deny are the same buttons in the same
 // place, not a second implementation that can drift from the first.
-import { html, formatWhen } from '../lib.mjs';
+import { html, formatWhen, sessionHref } from '../lib.mjs';
 import { useStore } from '../api.mjs';
 import { ApprovalCard } from './session.mjs';
 import { Dot } from '../components/ui.mjs';
@@ -16,8 +16,8 @@ export function Inbox() {
   const tasks = useStore((s) => s.tasks);
   const projects = useStore((s) => s.projects);
 
-  const where = (s) => [projects.find((p) => p.id === s.project_id)?.name, tasks.find((t) => t.id === s.task_id)?.title].filter(Boolean).join(' · ');
-  const href = (s) => (s.task_id ? `#/p/${s.project_id}/t/${s.task_id}/s/${s.id}` : `#/p/${s.project_id}/s/${s.id}`);
+  const where = (s) => (s.project_id ? [projects.find((p) => p.id === s.project_id)?.name, tasks.find((t) => t.id === s.task_id)?.title].filter(Boolean).join(' · ') : 'Ask Bench');
+  const href = sessionHref;
   // What settled since: a session that is no longer working. Newest first, and capped -
   // this is a glance at what just finished, not a second copy of the sessions list.
   const recent = sessions

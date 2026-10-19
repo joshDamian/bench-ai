@@ -34,8 +34,9 @@ const SCHEMA = `
     base_branch TEXT NOT NULL,base_commit TEXT NOT NULL,branch TEXT NOT NULL,worktree TEXT NOT NULL,
     state TEXT NOT NULL DEFAULT 'active',merge_commit TEXT,merged_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
 
-  -- A Claude session. task_id is null for one in the project's own checkout.
-  CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,task_id TEXT,title TEXT NOT NULL,cwd TEXT NOT NULL,
+  -- A Claude session. task_id is null for one in the project's own checkout; project_id
+  -- is null too for an Ask Bench conversation, which belongs to no project.
+  CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,project_id TEXT,task_id TEXT,title TEXT NOT NULL,cwd TEXT NOT NULL,
     provider_id TEXT NOT NULL,model_id TEXT,permission_mode TEXT NOT NULL DEFAULT 'default',effort TEXT,
     claude_session_id TEXT,status TEXT NOT NULL DEFAULT 'idle',error TEXT,
     cost REAL NOT NULL DEFAULT 0,input_tokens INTEGER NOT NULL DEFAULT 0,output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -113,6 +114,7 @@ export class Store {
     for (const col of ['started_by_session', 'purpose']) {
       if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === col)) this.db.exec(`ALTER TABLE sessions ADD COLUMN ${col} TEXT`);
     }
+    this.#projectlessSessions();
     // A log entry is a decision with its evidence, or a review: who reviewed and what it found.
     if (!this.db.prepare('PRAGMA table_info(task_log)').all().some((c) => c.name === 'kind')) this.db.exec("ALTER TABLE task_log ADD COLUMN kind TEXT NOT NULL DEFAULT 'decision'");
     this.#seedProviders();
@@ -164,6 +166,25 @@ export class Store {
     this.db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)');
     this.setSetting('legacy_import', 'pending');
     this.setSetting('legacy_backup', backup);
+  }
+
+  // Before Ask Bench every session had a project, and the column said so. SQLite cannot
+  // drop a NOT NULL in place, so the table is rebuilt once, from its own definition -
+  // columns added since included - with only that constraint gone.
+  #projectlessSessions() {
+    const col = this.db.prepare('PRAGMA table_info(sessions)').all().find((c) => c.name === 'project_id');
+    if (!col?.notnull) return;
+    const { sql } = /** @type {{sql:string}} */ (this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'").get());
+    const rebuilt = sql.replace(/^CREATE TABLE "?sessions"?/i, 'CREATE TABLE sessions_rebuilt').replace(/project_id TEXT NOT NULL/i, 'project_id TEXT');
+    this.db.exec('BEGIN');
+    try {
+      this.db.exec(rebuilt);
+      this.db.exec('INSERT INTO sessions_rebuilt SELECT * FROM sessions; DROP TABLE sessions; ALTER TABLE sessions_rebuilt RENAME TO sessions;');
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
 
   // Each built-in provider exists. One that is already there keeps its row - the
@@ -393,11 +414,12 @@ export class Store {
     return this.#one('SELECT * FROM sessions WHERE id=?', id);
   }
 
-  /** @param {{projectId?:string, taskId?:string, archived?:boolean}} [q] @returns {Session[]} */
+  /** `ask` keeps only Ask Bench conversations. @param {{projectId?:string, taskId?:string, archived?:boolean, ask?:boolean}} [q] @returns {Session[]} */
   listSessions(q = {}) {
     const where = [];
     const args = [];
     if (q.projectId) where.push('project_id=?') && args.push(q.projectId);
+    if (q.ask) where.push('project_id IS NULL');
     if (q.taskId) where.push('task_id=?') && args.push(q.taskId);
     if (!q.archived) where.push('archived_at IS NULL');
     return this.#all(`SELECT * FROM sessions ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC`, ...args);

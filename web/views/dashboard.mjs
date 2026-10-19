@@ -82,7 +82,7 @@ function Body({ m, sessions }) {
 
   /** Where a row leads: the session that owns it, else its task, else its project. @param {import('../../src/contract.d.mts').MetricProcess} p */
   const hrefOf = (p) => {
-    if (!p.projectId) return null;
+    if (!p.projectId) return p.kind === 'claude' && p.sessionId ? `#/ask/${p.sessionId}` : null;
     if (p.sessionId) return p.taskId ? `#/p/${p.projectId}/t/${p.taskId}/s/${p.sessionId}` : `#/p/${p.projectId}/s/${p.sessionId}`;
     if (p.taskId) return `#/p/${p.projectId}/t/${p.taskId}`;
     return `#/p/${p.projectId}`;

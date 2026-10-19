@@ -33,6 +33,9 @@ export function shortDir(p) {
   return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : String(p || '');
 }
 
+/** Where the app shows a session: its task, its project's checkout, or Ask Bench. */
+export const sessionHref = (s) => (!s.project_id ? `#/ask/${s.id}` : s.task_id ? `#/p/${s.project_id}/t/${s.task_id}/s/${s.id}` : `#/p/${s.project_id}/s/${s.id}`);
+
 export const isTouch = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 // Fuzzy match, scored: every query character in order, word starts and runs count more.

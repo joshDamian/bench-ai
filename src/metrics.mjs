@@ -239,7 +239,7 @@ export function rows(procs, o) {
             taskId: s?.task_id ?? null,
             projectId: s?.project_id ?? null,
             label: s?.title || 'Session',
-            sub: projectName(s?.project_id || ''),
+            sub: s && !s.project_id ? 'Ask Bench' : projectName(s?.project_id || ''),
           }));
         } else if (term) {
           const w = terminalWhere(term.key, o);
