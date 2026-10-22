@@ -13,6 +13,8 @@ import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
 import { askApproval, ASK_TOOLS, ASK_BRIEF } from './ask.mjs';
+import { resolveRouting, subagents, ROUTING_NOTE } from './routing.mjs';
+import { parseLimit, limitFromEvent } from './limits.mjs';
 
 /** @typedef {import('./contract.mjs').Session} Session */
 /** @typedef {import('./contract.mjs').Task} Task */
@@ -35,7 +37,8 @@ import { askApproval, ASK_TOOLS, ASK_BRIEF } from './ask.mjs';
 //
 // Clients never talk to a query. They send through this class and hear back through
 // its events: 'session' (a row changed), 'event' (a transcript entry was stored),
-// 'delta' (streaming text, not stored), 'approval' and 'approval-done'.
+// 'delta' (streaming text, not stored), 'approval' and 'approval-done'. 'limit' fires when
+// the Claude login's usage limit ended a turn, just before that turn's 'turn-done'.
 
 const IDLE_MS = 30 * 60 * 1000;
 // A tool result is shown in the transcript, not replayed to the model from here, so a
@@ -205,6 +208,13 @@ class Live {
     /** The turn in flight is a loop's read-only write-up: nothing it says is sent back to
      * work, whatever the check says. */
     this.writeUp = false;
+    /** @type {string|null} */
+    this.providerKind = null;
+    /** The usage limit ended the turn in flight: what Claude Code said, and when it lifts.
+     * @type {{message:string, resetsAt:Date|null}|null} */
+    this.limit = null;
+    /** The exact reset time from this turn's rate_limit_event, when it refused a request. @type {Date|null} */
+    this.limitAt = null;
   }
 
   /** @param {SDKUserMessage} m */
@@ -516,7 +526,9 @@ export class Runtime extends EventEmitter {
     this.#event(id, 'user', { text, images: images.length, files: saved.map(({ name, size, type }) => ({ name, size, type })) });
     const first = !s.claude_session_id && this.store.listEvents(id, { limit: 2 }).length === 1;
     const title = text.trim() ? titleFrom(text) : saved.length ? titleFrom(saved.map((f) => f.name).join(', ')) : null;
-    this.#update(id, { status: this.#pendingFor(id) ? 'waiting' : 'running', error: null, ...(first && title && /^New (session|task|conversation)/.test(s.title) ? { title } : {}) });
+    // A message, from the person or from the resume scheduler, takes the session off pause:
+    // if the limit is still there, the turn says so again.
+    this.#update(id, { status: this.#pendingFor(id) ? 'waiting' : 'running', error: null, ...(s.pause ? { pause: null } : {}), ...(first && title && /^New (session|task|conversation)/.test(s.title) ? { title } : {}) });
   }
 
   /**
@@ -527,6 +539,22 @@ export class Runtime extends EventEmitter {
   #plugins() {
     const person = personSkillsPlugin(this.store.dir);
     return person ? [{ type: 'local', path: PACK }, { type: 'local', path: person }] : [{ type: 'local', path: PACK }];
+  }
+
+  /**
+   * The subagent routing a session runs with: the person's default, then its project's, then
+   * its task's. @param {Session} s
+   */
+  routing(s) {
+    let base = null;
+    try {
+      base = JSON.parse(this.store.getSetting('routing') || 'null');
+    } catch {
+      /* a setting that cannot be read is the default */
+    }
+    const project = s.project_id ? this.store.getProject(s.project_id) : null;
+    const task = s.task_id ? this.store.getTask(s.task_id) : null;
+    return resolveRouting(base, project?.routing, task?.routing);
   }
 
   /** @param {Session} s */
@@ -542,12 +570,26 @@ export class Runtime extends EventEmitter {
     const scratch = this.scratchDir(s.id);
     fs.mkdirSync(scratch, { recursive: true });
     if (ask) fs.mkdirSync(s.cwd, { recursive: true });
-    const env = { ...cleanEnv(), ...providerEnv(provider, model), TMPDIR: scratch, TMP: scratch, TEMP: scratch, CLAUDE_AGENT_SDK_CLIENT_APP: 'bench' };
-    const instructions = (ask ? [userInstructions(), ASK_BRIEF] : [userInstructions(), scratchNote(scratch), this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
+    // Tiered subagents for a project session, when routing is on. "All subagents" is handed
+    // to Claude Code itself, and only on the Claude login: a hosted provider already pins every
+    // subagent to its own model.
+    const routing = ask ? null : this.routing(s);
+    const routed = routing?.enabled ? routing : null;
+    const env = {
+      ...cleanEnv(),
+      ...(routed?.all && provider.kind === 'claude-code' ? { CLAUDE_CODE_SUBAGENT_MODEL: routed.all } : {}),
+      ...providerEnv(provider, model),
+      TMPDIR: scratch,
+      TMP: scratch,
+      TEMP: scratch,
+      CLAUDE_AGENT_SDK_CLIENT_APP: 'bench',
+    };
+    const instructions = (ask ? [userInstructions(), ASK_BRIEF] : [userInstructions(), scratchNote(scratch), routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
     const memory = project && path.resolve(project.path) !== path.resolve(s.cwd) ? memoryDir(project.path) : null;
     fs.mkdirSync(this.attachmentsDir(s.id), { recursive: true });
     const live = new Live(s.id);
     live.providerId = provider.id;
+    live.providerKind = provider.kind;
     this.live.set(s.id, live);
     /** @type {import('@anthropic-ai/claude-agent-sdk').Options} */
     const options = {
@@ -557,6 +599,7 @@ export class Runtime extends EventEmitter {
       settingSources: ask ? [] : ['project', 'local'],
       plugins: ask ? [] : this.#plugins(),
       ...(ask ? { tools: ASK_TOOLS } : {}),
+      ...(routed ? { agents: subagents(routed) } : {}),
       permissionMode: /** @type {PermissionMode} */ (s.permission_mode),
       allowDangerouslySkipPermissions: true,
       includePartialMessages: true,
@@ -652,7 +695,20 @@ export class Runtime extends EventEmitter {
       else if (m.subtype === 'api_retry') this.#event(id, 'notice', { text: `API error, retrying (attempt ${m.attempt ?? '?'})` });
       return;
     }
+    if (m.type === 'rate_limit_event') {
+      const at = limitFromEvent(m.rate_limit_info);
+      if (at) live.limitAt = at;
+      return;
+    }
     if (m.type === 'assistant') {
+      // The Claude login's usage limit ends a turn with a message of its own. Only the main
+      // thread's counts: a subagent that hits it hands the failure back to the main thread,
+      // which then hits it too.
+      if (m.error === 'rate_limit' && !m.parent_tool_use_id && live.providerKind === 'claude-code') {
+        const text = (m.message?.content || []).filter((/** @type {any} */ b) => b.type === 'text').map((/** @type {any} */ b) => b.text).join('\n');
+        const hit = parseLimit(text);
+        if (hit) live.limit = { message: hit.message, resetsAt: hit.resetsAt };
+      }
       const content = (m.message?.content || []).filter((/** @type {any} */ b) => !(b.type === 'thinking' && !b.thinking) && b.type !== 'redacted_thinking');
       if (!content.length && !m.error) return;
       this.#event(id, 'assistant', { id: m.message?.id, content, parent: m.parent_tool_use_id, error: m.error || null, model: m.message?.model });
@@ -680,6 +736,19 @@ export class Runtime extends EventEmitter {
         : null;
       const total = hosted ?? m.total_cost_usd ?? 0;
       const s = /** @type {Session} */ (this.store.getSession(id));
+      // Each model's share, the subagents' models included: modelUsage counts every call the
+      // query made. Cumulative like the totals, so each figure is the largest seen.
+      /** @type {Record<string, import('./contract.mjs').ModelSpend>} */
+      const byModel = { ...(s.model_usage || {}) };
+      for (const [name, u] of Object.entries(/** @type {Record<string, any>} */ (m.modelUsage || {}))) {
+        const cost = priced ? priceUsage(priced, { input_tokens: u.inputTokens, output_tokens: u.outputTokens, cache_read_input_tokens: u.cacheReadInputTokens, cache_creation_input_tokens: u.cacheCreationInputTokens }) ?? 0 : u.costUSD ?? 0;
+        const was = byModel[name] || { cost: 0, input_tokens: 0, output_tokens: 0 };
+        byModel[name] = {
+          cost: Math.max(was.cost, cost),
+          input_tokens: Math.max(was.input_tokens, (u.inputTokens || 0) + (u.cacheReadInputTokens || 0) + (u.cacheCreationInputTokens || 0)),
+          output_tokens: Math.max(was.output_tokens, u.outputTokens || 0),
+        };
+      }
       this.#event(id, 'result', {
         subtype: m.subtype,
         is_error: !!m.is_error,
@@ -695,10 +764,17 @@ export class Runtime extends EventEmitter {
         cost: Math.max(s.cost, total),
         input_tokens: Math.max(s.input_tokens, input),
         output_tokens: Math.max(s.output_tokens, output),
+        ...(Object.keys(byModel).length ? { model_usage: byModel } : {}),
         ...(m.is_error && m.subtype !== 'error_during_execution' ? { error: (m.errors || []).join('\n').slice(0, 2000) || null } : {}),
       });
       live.writeUp = false;
-      if (live.turns === 0) this.emit('turn-done', { session: this.store.getSession(id), ok: !m.is_error });
+      // The usage limit ended this turn. Said before turn-done, so whatever pauses the session
+      // has done it by the time a loop decides what the turn's end means.
+      const limit = live.limit;
+      if (limit) this.emit('limit', { session_id: id, message: limit.message, until: live.limitAt || limit.resetsAt });
+      live.limit = null;
+      live.limitAt = null;
+      if (live.turns === 0) this.emit('turn-done', { session: this.store.getSession(id), ok: !m.is_error, limited: !!limit });
       return;
     }
     if (m.type === 'prompt_suggestion') this.emit('suggestion', { session_id: id, text: m.suggestion || m.text || '' });
@@ -862,7 +938,8 @@ export class Runtime extends EventEmitter {
     const s = this.store.getSession(id);
     const live = this.live.get(id);
     // Work still running in the background will wake the session again; check then.
-    if (!s?.task_id || !live || input.background_tasks?.length || live.writeUp) return {};
+    // Nor when the usage limit ended the turn: sent back to work, it would only hit it again.
+    if (!s?.task_id || !live || input.background_tasks?.length || live.writeUp || live.limit) return {};
     const r = await this.check(s.task_id, { sessionId: id, signal });
     if (!r || r.ok || !r.fresh) return {};
     const t = /** @type {Task} */ (this.store.getTask(s.task_id));

@@ -8,6 +8,11 @@
 //   "new skill"            pushes a changed command list, as a skill found mid-session does
 //   "suggest <text>"       sends that text as the turn's prompt suggestion, as a real
 //                          model does when it has a guess at what comes next
+//   "limit"                ends the turn on the Claude login's usage limit, as Claude Code
+//                          does: a rate_limit_event refusing the request, resetting at
+//                          `fakeLimit.resetsAt`, then a synthetic message saying so. While
+//                          `fakeLimit.on` is set, every message does this.
+//   "delegate"             reports a subagent's model alongside the session's own
 //   anything else          replies "echo: <text>"
 //
 // Every turn reasons first, in a thinking block of its own, before the reply - a real
@@ -19,6 +24,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const calls = [];
+
+/** The usage limit, as tests set it: `on` refuses every message; `resetsAt` is seconds since the epoch. */
+export const fakeLimit = { on: false, resetsAt: 0, text: "You've hit your session limit · resets 5pm (UTC)" };
 
 // What the model reasons through before it answers. A real block is prose that runs to
 // thousands of characters; this is a couple of paragraphs, which is enough for a view
@@ -68,6 +76,12 @@ export function fakeQuery({ prompt, options }) {
       let reply = `echo: ${text}`;
       let isError = false;
       let suggestion = '';
+      if (fakeLimit.on || text === 'limit') {
+        if (fakeLimit.resetsAt) emit({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt: fakeLimit.resetsAt, rateLimitType: 'five_hour' }, session_id: sessionId });
+        emit({ type: 'assistant', parent_tool_use_id: null, error: 'rate_limit', message: { id, model: '<synthetic>', content: [{ type: 'text', text: fakeLimit.text }] } });
+        emit({ type: 'result', subtype: 'success', is_error: true, duration_ms: 5, num_turns: 1, total_cost_usd: total, modelUsage: {}, queued_turn_count: 0, errors: [] });
+        continue;
+      }
       if (text.startsWith('write ')) {
         const [, file, ...rest] = text.split(' ');
         const input = { file_path: path.join(options.cwd, file), content: rest.join(' ') };
@@ -127,7 +141,10 @@ export function fakeQuery({ prompt, options }) {
         duration_ms: 5,
         num_turns: 1,
         total_cost_usd: total,
-        modelUsage: { m: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } },
+        modelUsage: {
+          m: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: total },
+          ...(text === 'delegate' ? { 'claude-haiku-4-5-20251001': { inputTokens: 200, outputTokens: 50, cacheReadInputTokens: 100, cacheCreationInputTokens: 0, costUSD: 0.002 } } : {}),
+        },
         queued_turn_count: 0,
         errors: isError ? ['it failed'] : [],
       });

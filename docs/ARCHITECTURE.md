@@ -19,6 +19,9 @@ browser ── HTTP /api/* ──┐
 | `src/service.mjs` | Projects, tasks, sessions and git actions: the operations the server and CLI expose. |
 | `src/git.mjs` | Git as child processes: status, branches, worktrees, diffs, landing. |
 | `src/providers.mjs` | Provider environments and model catalogs. |
+| `src/routing.mjs` | Subagent tiers and which model each runs on. |
+| `src/limits.mjs` | Reading the Claude login's usage-limit message and its reset time. |
+| `src/resume.mjs` | Pausing a session the usage limit stopped, and resuming it when the limit lifts. |
 | `src/server.mjs` | Routes, auth and pairing, the event hub, terminals, push. |
 | `src/terminal.mjs` | PTYs that outlive the socket that opened them. |
 | `web/` | Preact + htm with no build step. `api.mjs` is the client and the store. |
@@ -40,6 +43,16 @@ A session is a row plus, while in use, an open Agent SDK `query()` fed by an asy
   - To add a tool, add it to `benchTools()`; if it only reads, add its name to `READ_ONLY`.
 - **Settings.** Sessions load `project` and `local` settings, never `user`: a user `settings.json` `env` block would override the provider's `ANTHROPIC_BASE_URL`. The user's `~/.claude/CLAUDE.md` is appended to the system prompt instead. A session in a worktree is pointed at the checkout's auto-memory directory.
 - **The person's own skills.** Skills come from the loaded setting sources, so `~/.claude/skills` would arrive only with `user` - and with the settings that must not load. They are handed over on their own instead, as a second plugin beside the pack: `<data>/person-skills/`, a manifest and a `skills/` linked to the person's folder. Nothing is copied, and the folder is read again for each session, so a skill added later is there for the next one. A session sees them as `person:<skill>`, next to the pack's `bench:<skill>`.
+
+## Subagent routing
+
+Every project session is offered three subagents through the SDK's `agents` option - nothing is written into the project: `explorer` (read-only lookups, Haiku by default), `implementer` (well-specified edits, tests, checks; Sonnet) and `architect` (judgement; the session's own model). Their models come from the person's default (`settings.routing`), then the project's `routing`, then the task's, field by field; a null hands a field back to the level above. Routing can be turned off at any level, and an optional "all subagents" model is passed as `CLAUDE_CODE_SUBAGENT_MODEL`, which outranks every tier and the built-in agents too - only on the Claude login, since a hosted provider already pins every model to its own. A short note in the system prompt names the tiers; the pack's `bench:routing` skill has the full guidance. A session picks up a change when its process next starts.
+
+Spend by model: each result's `modelUsage` covers every call the query made, subagents included, so `sessions.model_usage` keeps each model's cost and tokens (the largest figure seen, as the session totals do). `GET /api/usage/models?projectId|taskId` sums them.
+
+## The usage limit
+
+The Claude login's limit ends a turn with a synthetic assistant message, `error: 'rate_limit'`, reading e.g. "You've hit your session limit · resets 5pm (UTC)"; the same turn usually carries a `rate_limit_event` whose `resetsAt` is exact. The runtime reads the event's time first and the text's second (`src/limits.mjs`, with fixture tests), and emits `limit` before the turn's `turn-done`. The Resumer marks the session paused - it stays idle, and `sessions.pause` holds `{until, message, at, tries, handed_to}` - so a loop waits rather than ending in an error and the Stop hook does not send it back to work. At the reset time plus 90 seconds it sends "Continue where you left off.", one session at a time and 30 seconds apart. A session refused again goes back to paused; with no usable time it waits 30 minutes, and after 3 refusals in a row Bench stops and says so. Any message takes a session off pause. The pause lives in the row, so a restart sets the timer again from it. Auto-resume is on by default (`settings.auto_resume`) and a session can override it (`sessions.auto_resume`). With a fallback provider set (`settings.limit_fallback`), a task or checkout session is not waited on: its work is handed to a new session on that provider, told what the task is and what the paused one last said.
 
 ## Tasks and git
 
