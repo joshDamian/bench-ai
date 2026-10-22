@@ -195,6 +195,9 @@ export class Loop {
       if (this.writeUps.has(s.id)) return this.#writeUpDone(s);
       let t = this.#looping(s);
       if (!t || !t.loop) return;
+      // The usage limit stopped it: not an error, a wait. The resume scheduler sends it back to
+      // work when the limit lifts, and the loop takes over again from that turn's end.
+      if (s.pause) return;
       // A session that errored, or whose turn ended as one, has nothing to carry on with.
       if (s.status === 'error' || !ok) {
         const why = s.error || (s.status === 'error' ? 'it could not go on' : 'its turn ended in an error');

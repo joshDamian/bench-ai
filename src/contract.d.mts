@@ -13,6 +13,59 @@ export interface Project {
   created_at: string;
   /** The check a new task in this project starts with. */
   check_command: string | null;
+  /** This project's own subagent models, over the person's default. Null follows the default. */
+  routing: Partial<Routing> | null;
+}
+
+/** A subagent tier: which kind of delegated work it takes. */
+export type RoutingTier = 'explorer' | 'implementer' | 'architect';
+
+/**
+ * Which model each subagent tier runs on. A model is an alias - `haiku`, `sonnet`, `opus`,
+ * `inherit` (the session's own) - or a full model id. `all`, when set, is handed to Claude
+ * Code as CLAUDE_CODE_SUBAGENT_MODEL and outranks every tier, the built-in subagents included.
+ * A project's or task's override holds only what it changes; a null there follows the level above.
+ */
+export interface Routing {
+  /** Off: no tiered subagents are offered, and the session's subagents run as Claude Code decides. */
+  enabled: boolean;
+  explorer: string;
+  implementer: string;
+  architect: string;
+  all: string | null;
+}
+
+/** Where a session's routing came from, field by field: the default, the project or the task. */
+export interface RoutingResolved extends Routing {
+  from: Partial<Record<keyof Routing, 'default' | 'project' | 'task'>>;
+}
+
+/** The Claude login's usage limit stopped a session. It stays idle, and this says until when. */
+export interface SessionPause {
+  /** When the limit lifts, as Claude Code said; null when it named no time Bench could read. */
+  until: string | null;
+  /** What Claude Code said, e.g. "You've hit your session limit · resets 5pm (UTC)". */
+  message: string;
+  at: string;
+  /** How many times in a row Bench has sent it back to work and found the limit still there. */
+  tries: number;
+  /** The session the work was handed to on another provider, when the person asked for that. */
+  handed_to?: string | null;
+}
+
+/** One model's share of a session's spend. Subagents' models are counted here too. */
+export interface ModelSpend {
+  cost: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+/** What Bench does when the Claude login's usage limit stops a session. */
+export interface LimitSettings {
+  /** Send paused sessions "Continue where you left off." when the limit lifts. */
+  autoResume: boolean;
+  /** Instead of waiting, hand the work to a new session on this provider and model. */
+  fallback: { providerId: string; modelId: string | null } | null;
 }
 
 export interface Provider {
@@ -99,6 +152,8 @@ export interface Task {
   created_by_session: string | null;
   /** On when a person has set this task to loop until its check passes. Off is null. */
   loop: TaskLoop | null;
+  /** This task's own subagent models, over its project's and the default. Null follows them. */
+  routing: Partial<Routing> | null;
   created_at: string;
   updated_at: string;
 }
@@ -173,6 +228,12 @@ export interface Session {
   cost: number;
   input_tokens: number;
   output_tokens: number;
+  /** Spend by model, the subagents' models included. Null before the first turn that reported it. */
+  model_usage: Record<string, ModelSpend> | null;
+  /** Set while the Claude login's usage limit has this session stopped. */
+  pause: SessionPause | null;
+  /** Whether Bench resumes it when the limit lifts; null follows the person's default. */
+  auto_resume: boolean | null;
   created_at: string;
   updated_at: string;
   archived_at: string | null;

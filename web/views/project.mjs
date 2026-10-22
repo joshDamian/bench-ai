@@ -1,12 +1,13 @@
 // A project: its checkout's git state and controls, new tasks, and the work in flight.
-import { html, useEffect, useState, recall, remember, shortDir, fuzzy } from '../lib.mjs';
+import { html, useEffect, useState, recall, remember, shortDir, fuzzy, sessionStatus } from '../lib.mjs';
 import { api, useStore } from '../api.mjs';
 import { showToast } from '../components/toast.mjs';
 import { confirmAction } from '../components/confirm.mjs';
 import { DiffViewer } from '../components/diff-viewer.mjs';
 import { MoreMenu } from '../components/menu.mjs';
+import { ProjectRoutingDialog } from '../components/routing.mjs';
 import { Time } from '../components/time.mjs';
-import { Dialog, Dot, ModelPicker, ModePicker, EffortPicker, BranchPicker, sessionsStatus, TaskBadge, StatusBadge, Icon } from '../components/ui.mjs';
+import { Dialog, Dot, ModelPicker, ModePicker, EffortPicker, BranchPicker, sessionsStatus, TaskBadge, StatusBadge, SessionBadge, Icon } from '../components/ui.mjs';
 import { TerminalPane } from '../components/terminal.mjs';
 
 const toast = (e) => showToast(e.message || String(e), 'error');
@@ -35,6 +36,7 @@ export function ProjectView({ projectId }) {
   const { git, error, reload } = useGit(projectId);
   const [showDone, setShowDone] = useState(false);
   const [terminal, setTerminal] = useState(false);
+  const [routing, setRouting] = useState(false);
 
   if (!project) return html`<div class="page muted">No such project.</div>`;
   const mine = tasks.filter((t) => t.project_id === projectId);
@@ -75,6 +77,7 @@ export function ProjectView({ projectId }) {
                 if (check !== null) api.setProjectCheck(projectId, check).then(() => import('../api.mjs').then((m) => m.refresh())).catch(toast);
               },
             },
+            { label: 'Subagent models…', onSelect: () => setRouting(true) },
             {
               label: 'Remove project',
               danger: true,
@@ -111,8 +114,8 @@ export function ProjectView({ projectId }) {
           ? html`<div class="list">
               ${checkout.map(
                 (s) => html`<a class="list-row" href=${`#/p/${projectId}/s/${s.id}`} key=${s.id}>
-                  <div class="list-row-main"><${Dot} status=${s.status} /> <span class="row-title">${s.title}</span></div>
-                  <div class="list-row-side"><${StatusBadge} status=${s.status} /><${Time} at=${s.updated_at} /></div>
+                  <div class="list-row-main"><${Dot} status=${sessionStatus(s)} /> <span class="row-title">${s.title}</span></div>
+                  <div class="list-row-side"><${SessionBadge} session=${s} /><${Time} at=${s.updated_at} /></div>
                 </a>`
               )}
             </div>`
@@ -126,6 +129,7 @@ export function ProjectView({ projectId }) {
           </section>`
         : null}
 
+      ${routing ? html`<${ProjectRoutingDialog} project=${project} onClose=${() => setRouting(false)} />` : null}
       ${terminal
         ? html`<${Dialog} wide title=${`Terminal · ${project.name}`} onClose=${() => setTerminal(false)}>
             <div class="terminal-dialog"><${TerminalPane} query=${{ project: projectId }} /></div>

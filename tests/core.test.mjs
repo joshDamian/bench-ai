@@ -520,6 +520,9 @@ test('provider keys are kept in the data folder env file, which the shell enviro
   }
 });
 
+/** The pack's skills a session loads by itself, rather than only when the person types them. */
+const MODEL_INVOKED = ['routing', 'cleanup'];
+
 test("Bench's plugin is one Claude Code can load: a named manifest, and skills named for their folders", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PACK, '.claude-plugin', 'plugin.json'), 'utf8'));
   assert.equal(manifest.name, 'bench');
@@ -533,7 +536,12 @@ test("Bench's plugin is one Claude Code can load: a named manifest, and skills n
     // The description is what the session reads to decide to open the skill, so it says
     // when to reach for it rather than what is inside.
     assert.match(front, /^description: "?Apply when .+/m, `${dir}: its description says when to apply it`);
-    assert.match(front, /^disable-model-invocation: true$/m, `${dir}: it runs in the main session, not a subagent`);
+    // `disable-model-invocation: true` takes a skill out of the model's list altogether: only
+    // the person's `/bench:<skill>` runs it. That is right for the procedures a person asks
+    // for, and wrong for the two the session is told to reach for itself - the routing note
+    // in the system prompt points at bench:routing, and bench:cleanup is for when work wraps up.
+    if (MODEL_INVOKED.includes(dir)) assert.doesNotMatch(front, /^disable-model-invocation: true$/m, `${dir}: the model has to be able to load it itself`);
+    else assert.match(front, /^disable-model-invocation: true$/m, `${dir}: only the person runs it`);
     const files = fs.readdirSync(path.join(PACK, 'skills', dir));
     if (files.some((f) => f.endsWith('.mjs'))) {
       // A skill that ships a script has to say how to reach it: the pack's folder is not

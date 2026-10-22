@@ -5,7 +5,7 @@
 // question that woke it can be answered without navigating: the approval card above is
 // the same one the transcript draws, so Allow and Deny are the same buttons in the same
 // place, not a second implementation that can drift from the first.
-import { html, formatWhen, sessionHref } from '../lib.mjs';
+import { html, formatWhen, sessionHref, sessionStatus } from '../lib.mjs';
 import { useStore } from '../api.mjs';
 import { ApprovalCard } from './session.mjs';
 import { Dot } from '../components/ui.mjs';
@@ -58,7 +58,7 @@ export function Inbox() {
             <div class="list">
               ${recent.map(
                 (s) => html`<a class="list-row ${s.status === 'error' ? 'attention-bad' : ''}" href=${href(s)} key=${s.id}>
-                  <div class="list-row-main"><${Dot} status=${s.status} /><span class="row-title">${s.title}</span></div>
+                  <div class="list-row-main"><${Dot} status=${sessionStatus(s)} /><span class="row-title">${s.title}</span></div>
                   <div class="list-row-side muted">${[where(s), formatWhen(s.updated_at)].filter(Boolean).join(' · ')}</div>
                 </a>`
               )}

@@ -241,7 +241,12 @@ svc.runtime.on('approval', (a) => {
 svc.runtime.on('suggestion', ({ session_id, text }) => text && broadcast({ type: 'suggestion', session_id, text }, session_id));
 svc.runtime.on('commands', ({ session_id, commands }) => broadcast({ type: 'commands', session_id, commands }, session_id));
 svc.runtime.on('approval-done', (a) => broadcast({ type: 'approval-done', ...a }));
-svc.runtime.on('turn-done', ({ session, ok }) => {
+svc.runtime.on('turn-done', ({ session, ok, limited }) => {
+  if (session && limited) {
+    const until = session.pause?.until ? new Date(session.pause.until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }) : null;
+    pushAll({ title: 'Paused at the usage limit', body: `${session.title}${until ? ` — until ${until}` : ''}`, url: sessionUrl(session), tag: `turn-${session.id}`, sessionId: session.id }, 'error').catch(() => {});
+    return;
+  }
   if (session) pushAll({ title: ok ? 'Claude finished' : 'Claude stopped with an error', body: session.title, url: sessionUrl(session), tag: `turn-${session.id}`, sessionId: session.id }, ok ? 'finished' : 'error').catch(() => {});
 });
 svc.on('task', (t) => broadcast({ type: 'task', task: t }));
@@ -583,7 +588,7 @@ route('POST', '/api/projects/clone', ({ body }) => svc.cloneProject(body));
 route('POST', '/api/projects/create', ({ body }) => svc.createProject(body));
 route('GET', '/api/github/repos', () => svc.githubRepos());
 route('POST', '/api/projects', ({ body }) => svc.addProject(body));
-route('PATCH', '/api/projects/:id', ({ params, body }) => svc.store.updateProject(params[0], body));
+route('PATCH', '/api/projects/:id', ({ params, body }) => (body.routing !== undefined ? svc.setProjectRouting(params[0], body.routing) : null, svc.store.updateProject(params[0], { ...body, routing: undefined })));
 route('DELETE', '/api/projects/:id', ({ params }) => (svc.removeProject(params[0]), { ok: true }));
 route('GET', '/api/projects/:id/git', ({ params }) => svc.git(params[0]));
 route('GET', '/api/projects/:id/diff', ({ params }) => svc.checkoutDiff(params[0]));
@@ -690,6 +695,8 @@ route('POST', '/api/sessions/:id/files/stat', async ({ params, body }) => {
   }
   return files;
 });
+route('GET', '/api/sessions/:id/routing', ({ params }) => svc.sessionRouting(params[0]));
+route('POST', '/api/sessions/:id/limit', ({ params, body }) => svc.sessionLimit(params[0], body));
 route('POST', '/api/sessions/:id/interrupt', async ({ params }) => ({ ok: await svc.interrupt(params[0]) }));
 route('PATCH', '/api/sessions/:id', ({ params, body }) => svc.updateSession(params[0], body));
 route('POST', '/api/sessions/:id/archive', ({ params, body }) => svc.archiveSession(params[0], body.archived !== false));
@@ -703,6 +710,7 @@ route('PATCH', '/api/models/:id', ({ params, body }) => svc.updateModel(decodeUR
 route('GET', '/api/defaults', () => svc.defaults());
 route('PUT', '/api/defaults', ({ body }) => svc.setDefaults(body));
 route('GET', '/api/usage', () => svc.usage());
+route('GET', '/api/usage/models', ({ u }) => svc.usageByModel({ projectId: u.searchParams.get('projectId') || undefined, taskId: u.searchParams.get('taskId') || undefined }));
 route('GET', '/api/doctor', () => svc.doctor());
 
 route('GET', '/api/devices', () => svc.store.listDevices());

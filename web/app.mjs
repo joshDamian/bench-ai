@@ -1,6 +1,6 @@
 // The shell: routing, the sidebar of projects and their work, and the gates for a
 // device that is not paired.
-import { html, render, useEffect, useState, recall, remember } from './lib.mjs';
+import { html, render, useEffect, useState, recall, remember, sessionStatus } from './lib.mjs';
 import { useStore, refresh, connect } from './api.mjs';
 import './install.mjs';
 import { ToastContainer } from './components/toast.mjs';
@@ -113,7 +113,7 @@ function Sidebar({ route, onNavigate, onAdd }) {
                     )}
                     ${ps.map(
                       (s) => html`<a class="side-item checkout ${route.sessionId === s.id && route.view === 'session' ? 'active' : ''}" href=${`#/p/${p.id}/s/${s.id}`} onClick=${onNavigate} key=${s.id}>
-                        <${Dot} status=${s.status} /><span>${s.title}</span>
+                        <${Dot} status=${sessionStatus(s)} /><span>${s.title}</span>
                       </a>`
                     )}
                   `

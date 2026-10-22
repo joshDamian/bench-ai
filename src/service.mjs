@@ -11,6 +11,8 @@ import { providerReady } from './providers.mjs';
 import { benchServer } from './tools.mjs';
 import { askServer } from './ask.mjs';
 import { Loop, newLoop } from './loop.mjs';
+import { Resumer } from './resume.mjs';
+import { routingPatch, DEFAULT_ROUTING } from './routing.mjs';
 import { holders, removable, sizeOf } from './artifacts.mjs';
 import * as g from './git.mjs';
 
@@ -78,6 +80,8 @@ export class Service extends EventEmitter {
      * the runtime's turn-done, so a loop is driven by turns ending, not by a timer.
      */
     this.loop = new Loop(this);
+    /** After the usage limit: pauses a session it stopped, and resumes it when the limit lifts. */
+    this.resumer = new Resumer(this);
     this.runtime.on('turn-done', ({ session }) => session?.project_id && this.emit('git', session.project_id));
     this.runtime.on('task', (t) => this.emit('task', t));
     this.#importLegacy();
@@ -484,12 +488,18 @@ export class Service extends EventEmitter {
    * `loop` turns the unattended loop on, retunes a running one's caps, or - with null -
    * stops it. Like the bar, this is a person's to set: no bench tool reaches it.
    * @param {string} id
-   * @param {{title?:string, done?:string|null, check?:string|null, loop?:{max_attempts?:unknown, max_minutes?:unknown}|null}} patch
+   * `routing` is the task's own subagent models; null clears it. A session picks it up when
+   * its process next starts.
+   * @param {{title?:string, done?:string|null, check?:string|null, loop?:{max_attempts?:unknown, max_minutes?:unknown}|null, routing?:object|null}} patch
    */
   editTask(id, patch) {
     const t0 = this.task(id);
     /** @type {Partial<Task>} */
     const change = {};
+    if (patch.routing !== undefined) {
+      const merged = patch.routing === null ? null : { ...(t0.routing || {}), ...routingPatch(patch.routing, { override: true }) };
+      change.routing = merged && Object.values(merged).some((v) => v !== null) ? merged : null;
+    }
     if (patch.title !== undefined) {
       if (!patch.title?.trim()) throw fail('A title cannot be empty');
       change.title = patch.title.trim();
@@ -586,11 +596,31 @@ export class Service extends EventEmitter {
       modelId: this.store.getSetting('default_model') || null,
       mode: /** @type {PermissionMode} */ (this.store.getSetting('default_mode') || 'default'),
       effort: this.store.getSetting('default_effort') || null,
+      routing: this.routingDefault(),
+      limits: this.resumer.settings(),
     };
   }
 
-  /** @param {{providerId?:string, modelId?:string|null, mode?:string, effort?:string|null, projectsDir?:string|null}} o */
+  /** The person's default subagent routing. @returns {import('./contract.mjs').Routing} */
+  routingDefault() {
+    try {
+      return { ...DEFAULT_ROUTING, ...JSON.parse(this.store.getSetting('routing') || '{}') };
+    } catch {
+      return { ...DEFAULT_ROUTING };
+    }
+  }
+
+  /**
+   * `routing` changes the default subagent models; `limits` what happens at the usage limit.
+   * @param {{providerId?:string, modelId?:string|null, mode?:string, effort?:string|null, projectsDir?:string|null, routing?:object, limits?:{autoResume?:boolean, fallback?:{providerId:string, modelId?:string|null}|null}}} o
+   */
   setDefaults(o) {
+    if (o.routing !== undefined) this.store.setSetting('routing', JSON.stringify({ ...this.routingDefault(), ...routingPatch(o.routing) }));
+    if (o.limits) {
+      if (o.limits.autoResume !== undefined) this.store.setSetting('auto_resume', o.limits.autoResume ? '1' : '0');
+      if (o.limits.fallback !== undefined) this.store.setSetting('limit_fallback', JSON.stringify(this.#fallback(o.limits.fallback)));
+      this.resumer.changed();
+    }
     if (o.projectsDir !== undefined) this.store.setSetting('projects_dir', o.projectsDir ? path.resolve(expandHome(o.projectsDir)) : '');
     const effort = effortOf(o.effort);
     if (effort !== undefined) this.store.setSetting('default_effort', effort || '');
@@ -598,6 +628,49 @@ export class Service extends EventEmitter {
     if (o.modelId !== undefined) this.store.setSetting('default_model', o.modelId || '');
     if (o.mode && MODES.includes(/** @type {any} */ (o.mode))) this.store.setSetting('default_mode', o.mode);
     return this.defaults();
+  }
+
+  /** A fallback provider and model, checked. @param {any} fb */
+  #fallback(fb) {
+    if (!fb || !fb.providerId) return null;
+    const provider = this.store.getProvider(String(fb.providerId));
+    if (!provider) throw fail('No such provider');
+    if (provider.kind === 'claude-code') throw fail('The fallback has to be another provider: the Claude login is the one that is out');
+    const modelId = fb.modelId || null;
+    if (modelId && this.store.getModel(modelId)?.provider_id !== provider.id) throw fail('That model is not on that provider');
+    return { providerId: provider.id, modelId };
+  }
+
+  /**
+   * A project's own subagent routing, over the default. Null clears it.
+   * @param {string} id @param {object|null} routing
+   */
+  setProjectRouting(id, routing) {
+    const p = this.project(id);
+    const merged = routing === null ? null : { ...(p.routing || {}), ...routingPatch(routing, { override: true }) };
+    return this.store.updateProject(id, { routing: merged && Object.values(merged).some((v) => v !== null) ? merged : null });
+  }
+
+  /** The subagent routing a session runs with, and where each part came from. @param {string} id */
+  sessionRouting(id) {
+    return this.runtime.routing(this.session(id));
+  }
+
+  /** Spend by model for a project or a task, the subagents' models included. @param {{projectId?:string, taskId?:string}} [q] */
+  usageByModel(q) {
+    return this.store.usageByModel(q);
+  }
+
+  /**
+   * A session's own auto-resume switch, or a resume now. Null follows the person's default.
+   * @param {string} id @param {{autoResume?:boolean|null, resumeNow?:boolean}} o
+   */
+  sessionLimit(id, o) {
+    this.session(id);
+    if (o.autoResume !== undefined) this.runtime.emit('session', this.store.updateSession(id, { auto_resume: o.autoResume }));
+    if (o.resumeNow) this.resumer.resume(id);
+    this.resumer.changed();
+    return this.session(id);
   }
 
   /**
@@ -947,6 +1020,7 @@ export class Service extends EventEmitter {
   }
 
   shutdown() {
+    this.resumer.shutdown();
     this.runtime.shutdown();
   }
 }

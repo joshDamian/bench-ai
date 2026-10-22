@@ -1,13 +1,14 @@
 // Providers, defaults, devices, notifications and the server's health.
-import { html, useEffect, useRef, useState, recall, remember, formatCost, formatDuration } from '../lib.mjs';
+import { html, useEffect, useRef, useState, recall, remember, formatCost, formatDuration, formatTokens } from '../lib.mjs';
 import { api, useStore, refresh, reconnectNow } from '../api.mjs';
 import { showToast } from '../components/toast.mjs';
 import { confirmAction } from '../components/confirm.mjs';
-import { Toggle } from '../components/form.mjs';
+import { Toggle, Select } from '../components/form.mjs';
 import { Time } from '../components/time.mjs';
 import { ModelPicker, ModePicker, EffortPicker } from '../components/ui.mjs';
 import { useInstall } from '../install.mjs';
 import { ThemeTrigger } from '../components/theme-picker.mjs';
+import { TIERS, DEFAULT_ROUTING, routingModelOptions, modelName } from '../components/routing.mjs';
 
 const toast = (e) => showToast(e.message || String(e), 'error');
 
@@ -20,6 +21,8 @@ export function Settings() {
         <${SectionNav} groups=${groups} />
         <div class="set-groups" ref=${groups}>
           <${Defaults} />
+          <${Subagents} />
+          <${UsageLimit} />
           <${Providers} />
           <${Notifications} />
           <${Devices} />
@@ -171,6 +174,71 @@ function Defaults() {
       <//>
       <${ProjectsFolder} value=${d.projectsDir} onSave=${(projectsDir) => run('projectsDir', { projectsDir })} saved=${saved('projectsDir')} failed=${failed('projectsDir')} />
       <p class="set-note">Sessions load the project's <code>.claude/</code> settings and CLAUDE.md, and your own <code>~/.claude/CLAUDE.md</code>. Your user <code>settings.json</code> is not loaded, so its <code>env</code> cannot redirect a provider.</p>
+    <//>
+  `;
+}
+
+/** The subagent tiers' default models. A project or a task overrides them from its own menu. */
+function Subagents() {
+  const providers = useStore((s) => s.providers);
+  const r = useStore((s) => s.defaults?.routing) || DEFAULT_ROUTING;
+  const { run, saved, failed } = useSaves((routing) => api.setDefaults({ routing }).then(refresh));
+  return html`
+    <${Group} id="subagents" title="Subagents" hint="What the work a session hands to a subagent runs on. A project or a task can set its own from its ⋯ menu.">
+      <${Row} label="Route subagents by tier" hint="Offers every project session a cheap explorer, a mid-tier implementer and a capable architect." after=${failed('enabled')}>
+        ${saved('enabled')}<${Toggle} hideLabel label="Route subagents by tier" checked=${r.enabled} onChange=${(enabled) => run('enabled', { enabled })} />
+      <//>
+      ${TIERS.map(
+        (t) => html`<${Row} key=${t.key} label=${t.label} hint=${t.hint} stack after=${failed(t.key)}>
+          ${saved(t.key)}<${Select} ariaLabel=${t.label} disabled=${!r.enabled} value=${r[t.key]} options=${routingModelOptions(providers, r[t.key])} onChange=${(v) => run(t.key, { [t.key]: v })} />
+        <//>`
+      )}
+      <${Row} label="All subagents" hint="Set, it outranks every tier and Claude Code's built-in subagents. On the Claude login only." stack after=${failed('all')}>
+        ${saved('all')}<${Select}
+          ariaLabel="All subagents"
+          disabled=${!r.enabled}
+          value=${r.all || ''}
+          options=${[{ value: '', label: 'Not set' }, ...routingModelOptions(providers, r.all)]}
+          onChange=${(v) => run('all', { all: v || null })}
+        />
+      <//>
+    <//>
+  `;
+}
+
+/** A fallback as the select holds it: the provider and its model, or nothing. */
+const fallbackKey = (f) => (f ? `${f.providerId}|${f.modelId || ''}` : '');
+
+/** What happens when the Claude login's usage limit stops a session. */
+function UsageLimit() {
+  const providers = useStore((s) => s.providers);
+  const l = useStore((s) => s.defaults?.limits) || { autoResume: true, fallback: null };
+  const { run, saved, failed } = useSaves((limits) => api.setDefaults({ limits }).then(refresh));
+  const others = providers.filter((p) => p.kind !== 'claude-code' && (p.ready || p.id === l.fallback?.providerId));
+  const options = [
+    { value: '', label: 'Nobody - wait for the limit' },
+    ...others.flatMap((p) => [
+      { value: `${p.id}|`, label: `${p.name} · default model` },
+      ...p.models.filter((m) => m.enabled || m.id === l.fallback?.modelId).map((m) => ({ value: `${p.id}|${m.id}`, label: `${p.name} · ${m.display_name || m.name}` })),
+    ]),
+  ];
+  const pick = (v) => {
+    const [providerId, modelId] = v.split('|');
+    run('fallback', { fallback: v ? { providerId, modelId: modelId || null } : null });
+  };
+  return html`
+    <${Group} id="limit" title="Usage limit" hint="When the Claude login's limit stops a session mid-task. A session can change auto-resume for itself.">
+      <${Row} label="Resume automatically" hint=${'Sends paused sessions "Continue where you left off." when the limit resets.'} after=${failed('autoResume')}>
+        ${saved('autoResume')}<${Toggle} hideLabel label="Resume automatically" checked=${l.autoResume} onChange=${(autoResume) => run('autoResume', { autoResume })} />
+      <//>
+      <${Row}
+        label="Instead, hand the work to"
+        hint=${others.length ? "A task or checkout session's work goes to a new session there, told what the paused one was doing." : 'Turn on another provider in Providers to hand work to it.'}
+        stack
+        after=${failed('fallback')}
+      >
+        ${saved('fallback')}<${Select} ariaLabel="Hand the work to" disabled=${!others.length && !l.fallback} value=${fallbackKey(l.fallback)} options=${options} onChange=${pick} />
+      <//>
     <//>
   `;
 }
@@ -377,9 +445,12 @@ function Notifications() {
 
 function Usage() {
   const projects = useStore((s) => s.projects);
+  const providers = useStore((s) => s.providers);
   const [rows, setRows] = useState(null);
+  const [models, setModels] = useState([]);
   useEffect(() => {
     api.usage().then(setRows).catch(() => setRows([]));
+    api.usageByModel().then(setModels).catch(() => setModels([]));
   }, []);
   if (!rows?.length) return null;
   const by = new Map();
@@ -387,6 +458,14 @@ function Usage() {
   return html`
     <${Group} id="spend" title="Spend" hint="Estimates from Claude Code, at each model's published price. A subscription is not billed per token.">
       ${[...by].map(([pid, cost]) => html`<${Row} key=${pid} label=${pid ? projects.find((p) => p.id === pid)?.name || 'Removed project' : 'Ask Bench'}><span class="set-value mono-sm">${formatCost(cost)}</span><//>`)}
+      ${models.length
+        ? html`<h3 class="set-sub">By model</h3>
+            ${models.map(
+              (m) => html`<${Row} key=${m.model} label=${modelName(m.model, providers)} hint=${`${formatTokens(m.input_tokens)} in · ${formatTokens(m.output_tokens)} out · ${m.sessions} session${m.sessions === 1 ? '' : 's'}`}>
+                <span class="set-value mono-sm">${formatCost(m.cost)}</span>
+              <//>`
+            )}`
+        : null}
     <//>
   `;
 }

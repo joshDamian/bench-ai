@@ -66,6 +66,7 @@ const SCHEMA = `
 
 export const hash = (/** @type {string} */ s) => crypto.createHash('sha256').update(s).digest('hex');
 const now = () => new Date().toISOString();
+const PROJECT = "SELECT id,name,path,created_at,json_extract(commands,'$.check') AS check_command,routing FROM projects";
 
 /**
  * A transcript listing carries a stub in place of each thinking block's text: how long
@@ -118,9 +119,17 @@ export class Store {
     // started_by_session: the session that started this one with a bench tool, if one did;
     // such a session may not start others. purpose: 'review' for a session request_review
     // started, which reads and reports rather than works, so the task's check does not hold it.
-    for (const col of ['started_by_session', 'purpose']) {
+    // pause: the Claude login's usage limit stopped this session, as JSON - when it lifts and
+    // what Claude Code said. Null when it is not paused. auto_resume: whether Bench sends it
+    // back to work when the limit lifts; null follows the person's default. model_usage: what
+    // each model the session used (its own and its subagents') cost, as JSON.
+    for (const col of ['started_by_session', 'purpose', 'pause', 'model_usage']) {
       if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === col)) this.db.exec(`ALTER TABLE sessions ADD COLUMN ${col} TEXT`);
     }
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'auto_resume')) this.db.exec('ALTER TABLE sessions ADD COLUMN auto_resume INTEGER');
+    // routing: a project's or a task's own subagent models, as JSON, over the person's default.
+    if (!this.db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE projects ADD COLUMN routing TEXT');
+    if (!this.db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE tasks ADD COLUMN routing TEXT');
     this.#projectlessSessions();
     // A log entry is a decision with its evidence, or a review: who reviewed and what it found.
     if (!this.db.prepare('PRAGMA table_info(task_log)').all().some((c) => c.name === 'kind')) this.db.exec("ALTER TABLE task_log ADD COLUMN kind TEXT NOT NULL DEFAULT 'decision'");
@@ -240,19 +249,24 @@ export class Store {
 
   // -- projects ---------------------------------------------------------------
 
+  /** A project row, with its `routing` JSON read back. @param {any} r @returns {Project|undefined} */
+  #project(r) {
+    return r && { ...r, routing: r.routing ? JSON.parse(r.routing) : null };
+  }
+
   /** @returns {Project[]} */
   listProjects() {
-    return this.#all('SELECT id,name,path,created_at,json_extract(commands,\'$.check\') AS check_command FROM projects ORDER BY name COLLATE NOCASE');
+    return this.#all(`${PROJECT} ORDER BY name COLLATE NOCASE`).map((r) => /** @type {Project} */ (this.#project(r)));
   }
 
   /** @param {string} id @returns {Project|undefined} */
   getProject(id) {
-    return this.#one('SELECT id,name,path,created_at,json_extract(commands,\'$.check\') AS check_command FROM projects WHERE id=?', id);
+    return this.#project(this.#one(`${PROJECT} WHERE id=?`, id));
   }
 
   /** @param {string} p @returns {Project|undefined} */
   projectByPath(p) {
-    return this.#one('SELECT id,name,path,created_at,json_extract(commands,\'$.check\') AS check_command FROM projects WHERE path=?', p);
+    return this.#project(this.#one(`${PROJECT} WHERE path=?`, p));
   }
 
   /** @param {{name:string, path:string}} p @returns {Project} */
@@ -264,10 +278,11 @@ export class Store {
 
   /**
    * `check_command` is the default check a new task in this project starts with; an empty
-   * one clears it. @param {string} id @param {{name?:string, check_command?:string|null}} patch
+   * one clears it. `routing` is the project's own subagent models; null follows the default.
+   * @param {string} id @param {{name?:string, check_command?:string|null, routing?:object|null}} patch
    */
   updateProject(id, patch) {
-    this.#patch('projects', id, patch.name ? { name: patch.name } : {});
+    this.#patch('projects', id, { ...(patch.name ? { name: patch.name } : {}), ...(patch.routing !== undefined ? { routing: patch.routing ? JSON.stringify(patch.routing) : null } : {}) });
     if (patch.check_command !== undefined) {
       const check = String(patch.check_command || '').trim();
       if (check) this.db.prepare("UPDATE projects SET commands=json_set(commands,'$.check',?) WHERE id=?").run(check, id);
@@ -357,10 +372,10 @@ export class Store {
   /** A task row, with its `loop` JSON read back into the shape the wire carries. @param {any} r @returns {Task|undefined} */
   #task(r) {
     if (!r) return r;
-    return { ...r, loop: r.loop ? JSON.parse(r.loop) : null };
+    return { ...r, loop: r.loop ? JSON.parse(r.loop) : null, routing: r.routing ? JSON.parse(r.routing) : null };
   }
 
-  /** @param {Omit<Task,'state'|'merge_commit'|'merged_at'|'created_at'|'updated_at'|'done'|'check_command'|'check_status'|'check_tree'|'check_output'|'check_at'|'created_by_session'|'loop'> & {created_at?:string, done?:string|null, check_command?:string|null, created_by_session?:string|null, loop?:Task['loop']}} t @returns {Task} */
+  /** @param {Omit<Task,'state'|'merge_commit'|'merged_at'|'created_at'|'updated_at'|'done'|'check_command'|'check_status'|'check_tree'|'check_output'|'check_at'|'created_by_session'|'loop'|'routing'> & {created_at?:string, done?:string|null, check_command?:string|null, created_by_session?:string|null, loop?:Task['loop']}} t @returns {Task} */
   addTask(t) {
     const at = t.created_at || now();
     this.db
@@ -382,8 +397,8 @@ export class Store {
 
   /** @param {string} id @param {Partial<Task>} patch */
   updateTask(id, patch) {
-    const { loop, ...rest } = patch;
-    this.#patch('tasks', id, { ...rest, ...(loop === undefined ? {} : { loop: loop === null ? null : JSON.stringify(loop) }), updated_at: now() });
+    const { loop, routing, ...rest } = patch;
+    this.#patch('tasks', id, { ...rest, ...(loop === undefined ? {} : { loop: loop === null ? null : JSON.stringify(loop) }), ...(routing === undefined ? {} : { routing: routing ? JSON.stringify(routing) : null }), updated_at: now() });
     return /** @type {Task} */ (this.getTask(id));
   }
 
@@ -416,9 +431,15 @@ export class Store {
     return /** @type {Session} */ (this.getSession(id));
   }
 
+  /** A session row, with its JSON columns read back. @param {any} r @returns {Session|undefined} */
+  #session(r) {
+    if (!r) return r;
+    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume };
+  }
+
   /** @param {string} id @returns {Session|undefined} */
   getSession(id) {
-    return this.#one('SELECT * FROM sessions WHERE id=?', id);
+    return this.#session(this.#one('SELECT * FROM sessions WHERE id=?', id));
   }
 
   /** `ask` keeps only Ask Bench conversations. @param {{projectId?:string, taskId?:string, archived?:boolean, ask?:boolean}} [q] @returns {Session[]} */
@@ -429,13 +450,22 @@ export class Store {
     if (q.ask) where.push('project_id IS NULL');
     if (q.taskId) where.push('task_id=?') && args.push(q.taskId);
     if (!q.archived) where.push('archived_at IS NULL');
-    return this.#all(`SELECT * FROM sessions ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC`, ...args);
+    return this.#all(`SELECT * FROM sessions ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC`, ...args).map((r) => /** @type {Session} */ (this.#session(r)));
   }
 
   /** @param {string} id @param {Partial<Session>} patch */
   updateSession(id, patch) {
-    this.#patch('sessions', id, { ...patch, updated_at: now() });
+    /** @type {Record<string, any>} */
+    const row = { ...patch, updated_at: now() };
+    for (const k of /** @type {const} */ (['pause', 'model_usage'])) if (row[k] !== undefined) row[k] = row[k] === null ? null : JSON.stringify(row[k]);
+    if (row.auto_resume !== undefined) row.auto_resume = row.auto_resume === null ? null : row.auto_resume ? 1 : 0;
+    this.#patch('sessions', id, row);
     return /** @type {Session} */ (this.getSession(id));
+  }
+
+  /** Sessions the usage limit paused, archived or not, for the resume scheduler. @returns {Session[]} */
+  pausedSessions() {
+    return this.#all('SELECT * FROM sessions WHERE pause IS NOT NULL ORDER BY json_extract(pause,\'$.until\')').map((r) => /** @type {Session} */ (this.#session(r)));
   }
 
   /** A session left 'running' or 'waiting' by a process that is gone is idle: nothing is driving it. */
@@ -519,6 +549,32 @@ export class Store {
       `SELECT s.project_id, s.task_id, s.provider_id, SUM(s.cost) cost, SUM(s.input_tokens) input_tokens, SUM(s.output_tokens) output_tokens, COUNT(*) sessions
        FROM sessions s GROUP BY s.project_id, s.task_id, s.provider_id`
     );
+  }
+
+  /**
+   * Spend by model, summed over sessions: each session's per-model figures, subagents'
+   * models included. Sessions from before Bench kept these are left out, so the sum can be
+   * less than the totals above. @param {{projectId?:string, taskId?:string}} [q]
+   * @returns {{model:string, cost:number, input_tokens:number, output_tokens:number, sessions:number}[]}
+   */
+  usageByModel(q = {}) {
+    const where = ['model_usage IS NOT NULL'];
+    const args = [];
+    if (q.projectId) where.push('project_id=?') && args.push(q.projectId);
+    if (q.taskId) where.push('task_id=?') && args.push(q.taskId);
+    /** @type {Map<string, {model:string, cost:number, input_tokens:number, output_tokens:number, sessions:number}>} */
+    const by = new Map();
+    for (const r of this.#all(`SELECT model_usage FROM sessions WHERE ${where.join(' AND ')}`, ...args)) {
+      for (const [model, u] of Object.entries(JSON.parse(r.model_usage) || {})) {
+        const t = by.get(model) || { model, cost: 0, input_tokens: 0, output_tokens: 0, sessions: 0 };
+        t.cost += u.cost || 0;
+        t.input_tokens += u.input_tokens || 0;
+        t.output_tokens += u.output_tokens || 0;
+        t.sessions++;
+        by.set(model, t);
+      }
+    }
+    return [...by.values()].sort((a, b) => b.cost - a.cost);
   }
 
   // -- the v1 import ------------------------------------------------------------

@@ -1,6 +1,6 @@
 // Small pieces every view uses: status, dialogs, and the pickers for provider, model,
 // mode and branch.
-import { html, useEffect, useRef } from '../lib.mjs';
+import { html, useEffect, useRef, sessionStatus, formatUntil } from '../lib.mjs';
 import { Select } from './form.mjs';
 
 export const MODES = [
@@ -17,6 +17,8 @@ const SESSION_STATUS = {
   running: ['Working', 'badge-info badge-working'],
   waiting: ['Needs you', 'badge-warn'],
   error: ['Error', 'badge-bad'],
+  // The usage limit stopped it: idle, but coming back. A ring, not a tone - see the brief.
+  paused: ['Paused', 'badge-paused'],
   idle: ['Idle', 'badge-neutral'],
 };
 
@@ -27,10 +29,18 @@ export function StatusBadge({ status }) {
 
 /** The dot beside a name in a list: what its sessions are doing, worst first. */
 export function sessionsStatus(sessions) {
-  if (sessions.some((s) => s.status === 'waiting')) return 'waiting';
-  if (sessions.some((s) => s.status === 'running')) return 'running';
-  if (sessions.some((s) => s.status === 'error')) return 'error';
+  const st = sessions.map(sessionStatus);
+  for (const k of ['waiting', 'running', 'error', 'paused']) if (st.includes(k)) return k;
   return 'idle';
+}
+
+/**
+ * A session's badge, with its reset time when the usage limit has it paused - when it
+ * starts again is the one thing a paused row is for.
+ */
+export function SessionBadge({ session: s }) {
+  const status = sessionStatus(s);
+  return html`<${StatusBadge} status=${status} />${status === 'paused' && s.pause?.until ? html`<span class="muted time pause-until">until ${formatUntil(s.pause.until)}</span>` : null}`;
 }
 
 export function Dot({ status, title }) {

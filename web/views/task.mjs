@@ -1,10 +1,11 @@
 // A task: its sessions, what it changed against its base, a shell in its worktree, and
 // the way back into the base branch.
-import { html, useEffect, useRef, useState } from '../lib.mjs';
+import { html, useEffect, useRef, useState, sessionStatus } from '../lib.mjs';
 import { api, useStore } from '../api.mjs';
 import { showToast } from '../components/toast.mjs';
 import { DiffViewer } from '../components/diff-viewer.mjs';
 import { MoreMenu } from '../components/menu.mjs';
+import { TaskRoutingDialog } from '../components/routing.mjs';
 import { TerminalPane } from '../components/terminal.mjs';
 import { Dialog, Dot, TaskBadge, Sheet, Icon } from '../components/ui.mjs';
 import { SessionPane } from './session.mjs';
@@ -101,6 +102,7 @@ export function TaskView({ projectId, taskId, sessionId, tab }) {
                   git?.dirty?.length ? { label: 'Commit…', onSelect: () => setDialog('commit') } : null,
                   { label: 'Push branch', onSelect: () => act(() => api.pushTask(taskId), 'Pushed') },
                   { label: 'Open a pull request…', onSelect: () => setDialog('pr') },
+                  { label: 'Subagent models…', onSelect: () => setDialog('routing') },
                   { label: 'Close task…', danger: true, onSelect: () => setDialog('close') },
                 ]
               : [{ label: 'Back to project', onSelect: () => go(`#/p/${projectId}`) }]}
@@ -115,7 +117,7 @@ export function TaskView({ projectId, taskId, sessionId, tab }) {
           /* `named`: the one tab whose label is not a fixed word but a session's own title, so
              it is the one the phone lets shrink to an ellipsis. Changes, Log and Terminal keep
              their width - a destination you have to guess at is worse than a short name. */
-          (s) => html`<a role="tab" class="task-tab named ${current?.id === s.id ? 'active' : ''} ${s.archived_at ? 'archived' : ''}" href=${`${base}/s/${s.id}`} key=${s.id}><${Dot} status=${s.status} /><span>${s.title}</span></a>`
+          (s) => html`<a role="tab" class="task-tab named ${current?.id === s.id ? 'active' : ''} ${s.archived_at ? 'archived' : ''}" href=${`${base}/s/${s.id}`} key=${s.id}><${Dot} status=${sessionStatus(s)} /><span>${s.title}</span></a>`
         )}
         ${active ? html`<button class="task-tab add" type="button" onClick=${newSession} aria-label="New session in this task"><${Icon} name="plus" /></button>` : null}
         <span class="tab-gap"></span>
@@ -183,6 +185,7 @@ export function TaskView({ projectId, taskId, sessionId, tab }) {
       ${dialog === 'pr' ? html`<${PrDialog} task=${task} onClose=${() => setDialog(null)} />` : null}
       ${dialog === 'close' ? html`<${CloseDialog} task=${task} onClose=${() => setDialog(null)} />` : null}
       ${dialog === 'bar' ? html`<${BarDialog} task=${task} onClose=${() => setDialog(null)} />` : null}
+      ${dialog === 'routing' ? html`<${TaskRoutingDialog} task=${task} onClose=${() => setDialog(null)} />` : null}
       ${dialog === 'loop' ? html`<${LoopDialog} task=${task} onClose=${() => setDialog(null)} />` : null}
       ${dialog === 'output' ? html`<${Dialog} wide title=${`Last check: ${task.check_command}`} onClose=${() => setDialog(null)}><pre class="check-output">${task.check_output || '(no output)'}</pre><//>` : null}
     </div>
