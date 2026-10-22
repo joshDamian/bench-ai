@@ -82,7 +82,7 @@ test("a conversation's query gets Bench's tools, no shell, no project settings, 
   assert.equal(o.permissionMode, 'default');
   assert.equal(o.additionalDirectories.length, 1, 'its attachments only, no scratch folder');
   assert.match(o.systemPrompt.append, /# Ask Bench/);
-  assert.equal(o.hooks, undefined, 'no task, so no check holds its stop');
+  assert.equal(o.hooks.Stop, undefined, 'no task, so no check holds its stop');
   const names = o.mcpServers.bench.instance ? askServer(svc, s.id).tools.map((t) => t.name) : [];
   assert.ok(names.includes('overview'));
   assert.equal(svc.session(s.id).title, 'what is running?', 'the first message titles it');

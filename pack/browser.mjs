@@ -142,6 +142,48 @@ function shortDir() {
   throw new Unrenderable('Nowhere short to put a browser profile (tried /tmp).');
 }
 
+/**
+ * Browsers still running, by profile, stopped and their profiles removed on the way out
+ * if a run ends without close() - a gate stopped with ^C, or killed by the script that
+ * started it - so a killed run does not leave its profile in /tmp. The browser goes
+ * first: a profile removed under a running Chrome is written straight back.
+ * @type {Map<string, import('node:child_process').ChildProcess>}
+ */
+const live = new Map();
+let watching = false;
+function forgetOnExit() {
+  if (watching) return;
+  watching = true;
+  const stop = () => {
+    for (const proc of live.values()) {
+      try {
+        proc.kill('SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }
+  };
+  const remove = () => {
+    for (const dir of live.keys()) fs.rmSync(dir, { recursive: true, force: true });
+    live.clear();
+  };
+  // Nothing asynchronous runs in an exit listener, so this one can only stop and remove;
+  // the signal path below has the moment it takes Chrome to let go.
+  process.on('exit', () => {
+    stop();
+    remove();
+  });
+  for (const [sig, code] of /** @type {const} */ ([['SIGINT', 130], ['SIGTERM', 143]])) {
+    process.on(sig, () => {
+      stop();
+      setTimeout(() => {
+        remove();
+        process.exit(code);
+      }, 100);
+    });
+  }
+}
+
 /** @typedef {(params?:any) => any} Send */
 /** @typedef {(params:any) => void} Listener */
 /** @typedef {{id:number, method:string, params:any, sessionId?:string}} Message */
@@ -273,6 +315,7 @@ export class Browser {
     const exe = findBrowser(o.browser);
     if (!exe) throw new Unrenderable(NO_BROWSER);
     const profile = shortDir();
+    forgetOnExit();
     // A headless shell is already headless; a full Chrome needs telling.
     const headless = /headless.shell/i.test(path.basename(exe)) ? [] : ['--headless=new'];
     const args = [
@@ -295,10 +338,13 @@ export class Browser {
       'about:blank',
     ];
     const proc = spawn(exe, args, {
-      // TMPDIR too: Chrome's singleton socket lives there, and a long one is fatal.
-      env: { ...process.env, TMPDIR: path.dirname(profile), TMP: path.dirname(profile) },
+      // TMPDIR too: Chrome's singleton socket lives there, and a long one is fatal. It is
+      // the profile itself, which is short, so the org.chromium.Chromium.* folder Chrome
+      // makes there goes when the profile does instead of staying in /tmp after every run.
+      env: { ...process.env, TMPDIR: profile, TMP: profile },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
+    live.set(profile, proc);
     /** @type {string} */
     let said = '';
     const endpoint = await new Promise((resolve, reject) => {
@@ -325,6 +371,8 @@ export class Browser {
       } catch {
         /* already gone */
       }
+      fs.rmSync(profile, { recursive: true, force: true });
+      live.delete(profile);
       throw e;
     });
 
@@ -568,6 +616,7 @@ export class Browser {
     // The browser writes its profile as it exits; a moment's wait stops the rm racing it.
     await new Promise((r) => setTimeout(r, 50));
     fs.rmSync(this.#profile, { recursive: true, force: true });
+    live.delete(this.#profile);
   }
 }
 
