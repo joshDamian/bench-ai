@@ -55,6 +55,13 @@ const SCHEMA = `
   -- made it decide. Written by the bench tool \`log\`, read on the task's Log tab.
   CREATE TABLE IF NOT EXISTS task_log(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT NOT NULL,session_id TEXT,decision TEXT NOT NULL,evidence TEXT NOT NULL,created_at TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS task_log_by_task ON task_log(task_id,id);
+
+  -- What appeared in /tmp while a session's tool ran: candidates for cleaning up after it.
+  -- removed_at is when Bench removed it (or found it already gone), and removed_by why -
+  -- 'archive', or the session or person that asked - so the table is also the log.
+  CREATE TABLE IF NOT EXISTS artifacts(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,task_id TEXT,project_id TEXT,path TEXT NOT NULL,tool TEXT,
+    created_at TEXT NOT NULL,removed_at TEXT,removed_by TEXT,UNIQUE(session_id,path));
+  CREATE INDEX IF NOT EXISTS artifacts_by_path ON artifacts(path);
 `;
 
 export const hash = (/** @type {string} */ s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -474,6 +481,34 @@ export class Store {
   deleteSessionData(sessionId) {
     this.db.prepare('DELETE FROM session_events WHERE session_id=?').run(sessionId);
     this.db.prepare('DELETE FROM sessions WHERE id=?').run(sessionId);
+  }
+
+  // -- artifacts --------------------------------------------------------------
+
+  /** Records that `path` appeared while one of the session's tools ran. Once per session and path, until it is removed. @param {{session_id:string, task_id:string|null, project_id:string|null, path:string, tool?:string|null}} a */
+  addArtifact(a) {
+    const live = this.#one('SELECT id FROM artifacts WHERE session_id=? AND path=? AND removed_at IS NULL', a.session_id, a.path);
+    if (live) return;
+    // A path removed and made again is a new record, so the old row keeps its history.
+    this.db.prepare('DELETE FROM artifacts WHERE session_id=? AND path=? AND removed_at IS NOT NULL').run(a.session_id, a.path);
+    this.db.prepare('INSERT INTO artifacts(session_id,task_id,project_id,path,tool,created_at) VALUES(?,?,?,?,?,?)').run(a.session_id, a.task_id, a.project_id, a.path, a.tool ?? null, now());
+  }
+
+  /** @param {{sessionId?:string, taskId?:string, projectId?:string, removed?:boolean, ask?:boolean}} [q] @returns {import('./contract.mjs').Artifact[]} */
+  listArtifacts(q = {}) {
+    const where = [];
+    const args = [];
+    if (q.sessionId) where.push('session_id=?') && args.push(q.sessionId);
+    if (q.taskId) where.push('task_id=?') && args.push(q.taskId);
+    if (q.projectId) where.push('project_id=?') && args.push(q.projectId);
+    if (q.ask) where.push('project_id IS NULL');
+    if (!q.removed) where.push('removed_at IS NULL');
+    return this.#all(`SELECT * FROM artifacts ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id`, ...args);
+  }
+
+  /** @param {number} id @param {string} by */
+  markArtifactRemoved(id, by) {
+    this.db.prepare('UPDATE artifacts SET removed_at=?, removed_by=? WHERE id=?').run(now(), by, id);
   }
 
   // -- usage ------------------------------------------------------------------

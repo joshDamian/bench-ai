@@ -13,6 +13,7 @@ import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
 import { askApproval, ASK_TOOLS, ASK_BRIEF } from './ask.mjs';
+import { snapshot, appeared } from './artifacts.mjs';
 
 /** @typedef {import('./contract.mjs').Session} Session */
 /** @typedef {import('./contract.mjs').Task} Task */
@@ -255,6 +256,9 @@ export class Runtime extends EventEmitter {
     this.commandCache = new Map();
     /** @type {Map<string, Promise<SlashCommand[]>>} */
     this.commandProbes = new Map();
+    /** /tmp before each tool call in flight, by tool_use_id; see #beforeTool.
+     * @type {Map<string, Set<string>>} */
+    this.tmpBefore = new Map();
     store.resetLiveSessions();
     // A check that was running when the server stopped never finished: it was not judged.
     for (const t of store.listTasks()) if (t.check_status === 'running') store.updateTask(t.id, { check_status: null, check_tree: null });
@@ -570,7 +574,13 @@ export class Runtime extends EventEmitter {
       // A task session may not stop on a failing check: Bench runs it, and a failure goes
       // back to the model as the reason it has to keep going. A reviewer only reads and
       // reports, so the check does not hold it.
-      ...(s.task_id && s.purpose !== 'review' ? { hooks: { Stop: [{ hooks: [(input, _id, { signal }) => this.#onStop(s.id, /** @type {any} */ (input), signal)], timeout: CHECK_TIMEOUT_MS / 1000 + 60 }] } } : {}),
+      hooks: {
+        ...(s.task_id && s.purpose !== 'review' ? { Stop: [{ hooks: [(input, _id, { signal }) => this.#onStop(s.id, /** @type {any} */ (input), signal)], timeout: CHECK_TIMEOUT_MS / 1000 + 60 }] } : {}),
+        // What each tool call leaves in /tmp, recorded against this session; see artifacts.mjs.
+        PreToolUse: [{ hooks: [async (input) => this.#beforeTool(/** @type {any} */ (input))] }],
+        PostToolUse: [{ hooks: [async (input) => this.#afterTool(s.id, /** @type {any} */ (input))] }],
+        PostToolUseFailure: [{ hooks: [async (input) => this.#afterTool(s.id, /** @type {any} */ (input))] }],
+      },
       ...(model ? { model: invocationId(model) } : {}),
       ...(s.effort ? { effort: /** @type {any} */ (s.effort) } : {}),
       ...(s.claude_session_id ? { resume: s.claude_session_id } : {}),
@@ -827,6 +837,30 @@ export class Runtime extends EventEmitter {
       this.close(id);
     } else if (live && model) await live.q.setModel(invocationId(model));
     return this.#update(id, { provider_id: providerId, model_id: modelId, ...(o.effort !== undefined ? { effort: o.effort } : {}) });
+  }
+
+  // -- what tools leave behind --------------------------------------------------------
+
+  /** /tmp as it was when a tool call started, by tool_use_id. @param {{tool_use_id?:string}} input */
+  #beforeTool(input) {
+    if (input.tool_use_id) this.tmpBefore.set(input.tool_use_id, snapshot());
+    return {};
+  }
+
+  /** Records what appeared in /tmp during the call. @param {string} id @param {{tool_use_id?:string, tool_name?:string}} input */
+  #afterTool(id, input) {
+    const before = input.tool_use_id ? this.tmpBefore.get(input.tool_use_id) : undefined;
+    if (!before || !input.tool_use_id) return {};
+    this.tmpBefore.delete(input.tool_use_id);
+    const s = this.store.getSession(id);
+    if (!s) return {};
+    for (const p of appeared(before, snapshot())) this.store.addArtifact({ session_id: id, task_id: s.task_id, project_id: s.project_id, path: p, tool: input.tool_name || null });
+    return {};
+  }
+
+  /** A line in a session's transcript from Bench itself. @param {string} id @param {string} text */
+  notice(id, text) {
+    return this.#event(id, 'notice', { text });
   }
 
   // -- the task's check -------------------------------------------------------------

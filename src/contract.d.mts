@@ -104,6 +104,22 @@ export interface Task {
 }
 
 /** One entry in a task's decision log, written by a session with the bench tool `log`. */
+/** Something that appeared in /tmp while one of a session's tools ran. */
+export interface Artifact {
+  id: number;
+  session_id: string;
+  task_id: string | null;
+  project_id: string | null;
+  path: string;
+  /** The tool that was running when it appeared. */
+  tool: string | null;
+  created_at: string;
+  /** When Bench removed it, or found it gone; null while it is still there to clean. */
+  removed_at: string | null;
+  /** Why: 'archive', 'gone', or the session id or 'person' that asked. */
+  removed_by: string | null;
+}
+
 export interface TaskLogEntry {
   id: number;
   task_id: string;
