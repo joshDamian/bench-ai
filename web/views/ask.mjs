@@ -1,10 +1,10 @@
 // Ask Bench: questions and actions about the whole of Bench, in words, in a conversation
 // that belongs to no project. The page is a question box and the conversations so far;
 // a conversation itself is the session pane, as any other session's is.
-import { html, useEffect, useState, recall, remember, formatWhen } from '../lib.mjs';
+import { html, useEffect, useState, recall, remember, formatWhen, sessionStatus } from '../lib.mjs';
 import { api, useStore } from '../api.mjs';
 import { showToast } from '../components/toast.mjs';
-import { Dot, StatusBadge } from '../components/ui.mjs';
+import { Dot, SessionBadge } from '../components/ui.mjs';
 import { SessionPane } from './session.mjs';
 import { go } from './project.mjs';
 
@@ -64,8 +64,8 @@ function AskHome() {
             <div class="list">
               ${conversations.map(
                 (s) => html`<a class="list-row" href=${`#/ask/${s.id}`} key=${s.id}>
-                  <div class="list-row-main"><${Dot} status=${s.status} /><span class="row-title">${s.title}</span></div>
-                  <div class="list-row-side">${s.status !== 'idle' ? html`<${StatusBadge} status=${s.status} />` : null}<span class="muted time">${formatWhen(s.updated_at)}</span></div>
+                  <div class="list-row-main"><${Dot} status=${sessionStatus(s)} /><span class="row-title">${s.title}</span></div>
+                  <div class="list-row-side">${sessionStatus(s) !== 'idle' ? html`<${SessionBadge} session=${s} />` : null}<span class="muted time">${formatWhen(s.updated_at)}</span></div>
                 </a>`
               )}
             </div>

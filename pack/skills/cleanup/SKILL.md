@@ -1,7 +1,6 @@
 ---
 name: cleanup
 description: "Apply when a task or session is wrapping up, before it is merged or handed back, or when the person asks to tidy up temporary files. Lists what this session or task left in /tmp - Bench records it as the tools run - keeps anything worth keeping, and removes the rest."
-disable-model-invocation: true
 ---
 
 # Clean up after this work

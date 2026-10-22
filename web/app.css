@@ -293,6 +293,11 @@ textarea.input{font-family:var(--font-ui);resize:vertical}
 .badge-working::before{animation:pulse 1.6s var(--ease) infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 @media(prefers-reduced-motion:reduce){.badge-working::before{animation:none}}
+/* Paused at the usage limit: stopped, and coming back. A ring rather than a tone - the
+   tones are taken (waiting on a person, working, failed, landed) and each would say
+   something false here. The hollow shape is what tells it from Idle and from Working. */
+.badge-paused{color:var(--muted);border-color:var(--line-strong)}
+.badge-paused::before{background:transparent;border:1px solid currentColor;box-sizing:border-box}
 
 .list{display:flex;flex-direction:column;margin-top:var(--space-3);background:var(--surface-1);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 /* A list is one surface with rules between its rows, not a stack of cards: a stack
@@ -722,6 +727,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .dot-waiting{background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg)}
 .dot-error{background:var(--bad)}
 @media(prefers-reduced-motion:reduce){.dot-running{animation:none}}
+.dot-paused{background:transparent;box-shadow:inset 0 0 0 var(--space-half) var(--muted)}
 
 .page{padding:var(--space-6) var(--space-7) var(--space-7);max-width:1100px;width:100%;box-sizing:border-box}
 .page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-4)}
@@ -986,6 +992,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .set-error{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2);font-size:var(--text-sm);color:var(--bad)}
 .set-note{font-size:var(--text-sm);color:var(--muted);overflow-wrap:anywhere}
 .set-rows>.set-note{padding-top:var(--space-2)}
+.set-sub{margin:var(--space-5) 0 0;padding-top:var(--space-4);border-top:1px solid var(--line);font-size:var(--text-md);font-weight:600;color:var(--muted)}
+.routing-fields{display:grid;gap:var(--space-4)}
+.field-hint{font-size:var(--text-sm);color:var(--muted)}
 .skeleton{display:block;height:14px;border-radius:var(--radius-sm);background:linear-gradient(90deg,var(--line) 25%,var(--line-strong) 50%,var(--line) 75%);background-size:200% 100%;animation:shimmer 1.6s linear infinite}
 .skeleton.sm{height:11px}
 @media(prefers-reduced-motion:reduce){.skeleton{animation:none}.set-nav-item{transition:none}}
@@ -1252,6 +1261,23 @@ button.side-settings{width:100%;text-align:left}
 .pending-main{display:flex;align-items:center;gap:var(--space-2);min-width:0;flex:1;text-align:left}
 .pending-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-sm);font-weight:650;color:var(--warn)}
 .pending-bar .btn{flex:none}
+
+/* The usage limit's pause, in the pending bar's place and shape but untoned: nothing is
+   wrong and nothing is asked. It wraps its controls under the line on a phone. */
+.pause-bar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2) var(--space-3);padding:var(--space-2) var(--space-3);background:var(--surface-rail);border-top:1px solid var(--line)}
+.pause-text{display:flex;align-items:center;gap:var(--space-2);flex:1 1 auto;min-width:0;font-size:var(--text-sm);font-weight:600;color:var(--text)}
+.pause-text>span:last-child{min-width:0;overflow-wrap:anywhere}
+.pause-text a{color:var(--accent)}
+.pause-actions{display:flex;align-items:center;gap:var(--space-3);flex:none;margin-left:auto}
+
+/* The session's spend, when there is more than one model behind it: a quiet way in. */
+.spend-btn{display:inline-flex;align-items:center;min-height:var(--space-6);background:none;border:0;padding:0;color:var(--muted);cursor:pointer;text-decoration:underline dotted;text-underline-offset:var(--space-half)}
+.spend-btn:hover{color:var(--text)}
+.spend-rows{display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:var(--space-4)}
+.spend-row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:baseline;padding:var(--space-2) 0;border-top:1px solid var(--line)}
+.spend-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.spend-cost{text-align:right;color:var(--text)}
+.spend-total{font-weight:650}
 
 /* Catch up to what landed while reading history. Sticky at the foot of the scroller so
    it never sits over the composer, whatever the composer's height. */

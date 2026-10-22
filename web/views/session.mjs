@@ -1,5 +1,5 @@
 // A Claude session: its transcript, what it is waiting on, and the box to talk to it.
-import { html, useEffect, useMemo, useRef, useState, recall, remember, isTouch, shortDir, formatCost, formatDuration, formatTokens } from '../lib.mjs';
+import { html, useEffect, useMemo, useRef, useState, recall, remember, isTouch, shortDir, formatCost, formatDuration, formatTokens, formatUntil, sessionStatus, pauseState, spendRows, sessionHref } from '../lib.mjs';
 import { api, useStore, watchSession, outboxCount } from '../api.mjs';
 import { readTranscript, saveTranscript } from '../transcript-cache.mjs';
 import { Markdown } from '../components/markdown.mjs';
@@ -8,10 +8,12 @@ import { mergeEvents, finishesStream } from '../transcript.mjs';
 import { MoreMenu } from '../components/menu.mjs';
 import { CopyButton } from '../components/copy.mjs';
 import { showToast } from '../components/toast.mjs';
+import { Toggle } from '../components/form.mjs';
+import { modelName } from '../components/routing.mjs';
 import { confirmAction } from '../components/confirm.mjs';
 import { TerminalPane } from '../components/terminal.mjs';
 import { FilesContext, useSessionFiles, useViewer, FileViewer, FileButtons, FileThumb } from '../components/files.mjs';
-import { StatusBadge, ModelPicker, ModePicker, EffortPicker, MODES, Dialog, Sheet, Icon } from '../components/ui.mjs';
+import { StatusBadge, Dot, ModelPicker, ModePicker, EffortPicker, MODES, Dialog, Sheet, Icon } from '../components/ui.mjs';
 
 const toast = (e) => showToast(e.message || String(e), 'error');
 
@@ -114,6 +116,7 @@ export function SessionPane({ sessionId, onArchived }) {
   };
   const sectionRef = useRef(null);
   const [sheet, setSheet] = useState(false);
+  const [spend, setSpend] = useState(false);
   // The reader is at the bottom (following) or has scrolled up to read. `pinned` is what
   // the auto-scroll follows; `showJump` is the tap-to-catch-up button, offered only when
   // the reader is away from the bottom and something new has landed.
@@ -323,8 +326,12 @@ export function SessionPane({ sessionId, onArchived }) {
         <header class="session-head">
           <div class="session-title">
             <button class="title-btn" type="button" title="Rename" onClick=${rename}>${s.title}</button>
-            <${StatusBadge} status=${s.status} />
-            ${s.cost ? html`<span class="muted mono-sm hide-touch" title="Estimated spend">${formatCost(s.cost)}</span>` : null}
+            <${StatusBadge} status=${sessionStatus(s)} />
+            ${s.cost
+              ? spendRows(s.model_usage).length > 1
+                ? html`<button class="spend-btn mono-sm hide-touch" type="button" title="Estimated spend, by model" aria-haspopup="dialog" onClick=${() => setSpend(true)}>${formatCost(s.cost)}</button>`
+                : html`<span class="muted mono-sm hide-touch" title="Estimated spend">${formatCost(s.cost)}</span>`
+              : null}
           </div>
           <div class="session-controls">
             <${ModelPicker} compact providers=${providers} value=${{ providerId: s.provider_id, modelId: s.model_id }} onChange=${(v) => api.updateSession(s.id, v).catch(toast)} />
@@ -375,6 +382,7 @@ export function SessionPane({ sessionId, onArchived }) {
                 : html`<button class="btn sm secondary" type="button" onClick=${review}>Review</button>`}
             </div>`
           : null}
+        ${s.pause && !s.archived_at && sessionStatus(s) === 'paused' ? html`<${PauseBar} session=${s} />` : null}
         ${s.archived_at
           ? html`<div class="composer archived muted">
               ${taskState && taskState !== 'active'
@@ -394,6 +402,7 @@ export function SessionPane({ sessionId, onArchived }) {
               <div class="term-dock-body"><${TerminalPane} query=${{ session: s.id, shell: 1 }} /></div>
             </aside>`
         : null}
+      ${spend ? html`<${SpendDialog} session=${s} providers=${providers} onClose=${() => setSpend(false)} />` : null}
       ${viewing ? html`<${FileViewer} sessionId=${s.id} file=${viewing} onClose=${closeViewer} />` : null}
       ${sheet
         ? html`<${Sheet} title="Session settings" onClose=${() => setSheet(false)}>
@@ -424,6 +433,66 @@ export function SessionPane({ sessionId, onArchived }) {
           <//>`
         : null}
     </section>
+  `;
+}
+
+/**
+ * The usage limit has this session stopped: when it starts again, and the two things a
+ * person can do about it - turn this session's auto-resume off or on, or resume it now.
+ * Above the composer, where the thumb already is; untoned, because nothing is wrong and
+ * nothing is being asked.
+ */
+function PauseBar({ session: s }) {
+  const fallback = useStore((st) => st.defaults?.limits?.autoResume ?? true);
+  const handedTo = useStore((st) => (s.pause.handed_to ? st.sessions.find((x) => x.id === s.pause.handed_to) : null));
+  const [busy, setBusy] = useState(false);
+  const auto = s.auto_resume ?? fallback;
+  const st = pauseState(s.pause, auto);
+  const until = st.until ? ` until ${formatUntil(st.until)}` : '';
+  const what = {
+    until: ' · resumes automatically',
+    retry: st.retryAt ? ` · Bench will try again at ${formatUntil(st.retryAt)}` : '',
+    off: ' · auto-resume is off',
+    stopped: ' · Bench stopped trying',
+    handed: null,
+  }[st.kind];
+  const resume = () => {
+    setBusy(true);
+    api.sessionLimit(s.id, { resumeNow: true }).catch(toast).finally(() => setBusy(false));
+  };
+  return html`
+    <div class="pause-bar" role="status">
+      <span class="pause-text" title=${s.pause.message}>
+        <${Dot} status="paused" title="Paused" />
+        <span>Paused${until}${what}${st.kind === 'handed'
+          ? html` · handed to ${handedTo ? html`<a href=${sessionHref(handedTo)}>${handedTo.title}</a>` : html`<a href=${sessionHref({ ...s, id: s.pause.handed_to })}>another session</a>`}`
+          : null}</span>
+      </span>
+      <span class="pause-actions">
+        <${Toggle} label="Auto-resume" checked=${auto} onChange=${(on) => api.sessionLimit(s.id, { autoResume: on }).catch(toast)} />
+        <button class="btn sm secondary" type="button" disabled=${busy} onClick=${resume}>${busy ? 'Resuming…' : 'Resume now'}</button>
+      </span>
+    </div>
+  `;
+}
+
+/** What a session spent on each model, its subagents' included, most expensive first. */
+function SpendDialog({ session: s, providers, onClose }) {
+  const rows = spendRows(s.model_usage);
+  return html`
+    <${Dialog} title="Spend by model" onClose=${onClose}>
+      <p class="muted">Estimates at each model's published price, subagents included. A subscription is not billed per token.</p>
+      <div class="spend-rows">
+        ${rows.map(
+          (r) => html`<div class="spend-row" key=${r.model}>
+            <span class="spend-model">${modelName(r.model, providers)}</span>
+            <span class="muted mono-sm">${formatTokens(r.input_tokens)} in · ${formatTokens(r.output_tokens)} out</span>
+            <span class="mono-sm spend-cost">${formatCost(r.cost)}</span>
+          </div>`
+        )}
+        <div class="spend-row spend-total"><span class="spend-model">Total</span><span></span><span class="mono-sm spend-cost">${formatCost(s.cost)}</span></div>
+      </div>
+    <//>
   `;
 }
 

@@ -1,9 +1,9 @@
 // Every session on this machine, flat and newest-activity-first, so a phone can reach
 // one without opening its project first. The projects are one tab over; this is the
 // list a person actually drives from, filtered to what needs them.
-import { html, useState, useEffect, formatWhen, sessionHref } from '../lib.mjs';
+import { html, useState, useEffect, formatWhen, sessionHref, sessionStatus } from '../lib.mjs';
 import { useStore } from '../api.mjs';
-import { Dot, StatusBadge } from '../components/ui.mjs';
+import { Dot, SessionBadge } from '../components/ui.mjs';
 
 const FILTERS = [
   { id: 'open', label: 'Open' },
@@ -20,17 +20,19 @@ export function SessionsList() {
   const where = (s) => (s.project_id ? [projects.find((p) => p.id === s.project_id)?.name, tasks.find((t) => t.id === s.task_id)?.title].filter(Boolean).join(' · ') : 'Ask Bench');
   const href = sessionHref;
 
+  // A paused session is open work: the usage limit stopped it and it is coming back.
+  const open = (s) => s.status === 'running' || s.status === 'waiting' || sessionStatus(s) === 'paused';
   const counts = {
-    open: sessions.filter((s) => s.status === 'running' || s.status === 'waiting').length,
+    open: sessions.filter(open).length,
     waiting: sessions.filter((s) => s.status === 'waiting').length,
     all: sessions.length,
   };
   const shown = sessions
-    .filter((s) => (filter === 'waiting' ? s.status === 'waiting' : filter === 'open' ? s.status === 'running' || s.status === 'waiting' : true))
+    .filter((s) => (filter === 'waiting' ? s.status === 'waiting' : filter === 'open' ? open(s) : true))
     .sort((a, b) => {
       // Whatever is waiting on a person comes first, then what is working, then the rest,
       // each newest first - the order a phone should be read in.
-      const rank = (s) => (s.status === 'waiting' ? 0 : s.status === 'running' ? 1 : s.status === 'error' ? 2 : 3);
+      const rank = (s) => ({ waiting: 0, running: 1, paused: 2, error: 3 })[sessionStatus(s)] ?? 4;
       return rank(a) - rank(b) || Date.parse(b.updated_at) - Date.parse(a.updated_at);
     });
 
@@ -52,11 +54,11 @@ export function SessionsList() {
             ${shown.map(
               (s) => html`<a class="list-row" href=${href(s)} key=${s.id}>
                 <div class="list-row-main">
-                  <${Dot} status=${s.status} />
+                  <${Dot} status=${sessionStatus(s)} />
                   <span class="row-title">${s.title}</span>
                   ${s.error ? html`<span class="muted session-error">${s.error}</span>` : null}
                 </div>
-                <div class="list-row-side"><${StatusBadge} status=${s.status} /><span class="muted time">${formatWhen(s.updated_at)}</span></div>
+                <div class="list-row-side"><${SessionBadge} session=${s} /><span class="muted time">${formatWhen(s.updated_at)}</span></div>
               </a>`
             )}
           </div>`

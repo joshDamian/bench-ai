@@ -89,6 +89,66 @@ export function formatWhen(iso, now = Date.now()) {
   return `${then.getDate()} ${MONTHS[then.getMonth()]}${year}`;
 }
 
+// A time still to come, as a paused session's reset is said: the clock alone today,
+// "Tomorrow 09:00" tomorrow, and the date with the clock further out - a weekly limit
+// can be days away, and "09:00" alone would be read as this morning.
+export function formatUntil(iso, now = Date.now()) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '—';
+  const then = new Date(t);
+  const today = new Date(now);
+  const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  if (t < midnight + 86400000) return clockOf(then);
+  if (t < midnight + 2 * 86400000) return `Tomorrow ${clockOf(then)}`;
+  return `${then.getDate()} ${MONTHS[then.getMonth()]} ${clockOf(then)}`;
+}
+
+// What the usage limit's pause means for a session, as the session view and the lists say
+// it. The timing is src/resume.mjs's `dueAt`, mirrored because the browser is not served
+// src/; a test holds the two together.
+export const PAUSE_RETRY_MS = 30 * 60 * 1000;
+export const PAUSE_MAX_TRIES = 3;
+
+/** The session's status as a person reads it: idle with a pause is Paused. */
+export const sessionStatus = (s) => (s && s.status === 'idle' && s.pause ? 'paused' : s?.status || 'idle');
+
+/**
+ * @param {{until:string|null, at:string, tries:number, handed_to?:string|null}} p
+ * @param {boolean} auto whether Bench resumes this session itself
+ * @returns {{kind:'handed'|'stopped'|'off'|'until'|'retry', until:string|null, retryAt:string|null}}
+ */
+export function pauseState(p, auto) {
+  const until = p.until || null;
+  if (p.handed_to) return { kind: 'handed', until, retryAt: null };
+  if (p.tries > PAUSE_MAX_TRIES) return { kind: 'stopped', until, retryAt: null };
+  if (!auto) return { kind: 'off', until, retryAt: null };
+  if (until) return { kind: 'until', until, retryAt: null };
+  return { kind: 'retry', until: null, retryAt: new Date(Date.parse(p.at) + PAUSE_RETRY_MS * Math.max(1, p.tries)).toISOString() };
+}
+
+/**
+ * A session's spend by model, most expensive first. `model_usage` is keyed by the model
+ * Claude Code reported, subagents' models included.
+ * @param {Record<string, {cost:number, input_tokens:number, output_tokens:number}>|null} usage
+ */
+export function spendRows(usage) {
+  return Object.entries(usage || {})
+    .map(([model, u]) => ({ model, cost: u.cost || 0, input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0 }))
+    .sort((a, b) => b.cost - a.cost || a.model.localeCompare(b.model));
+}
+
+// Subagent routing as src/routing.mjs resolves it - the default, then a project's, then a
+// task's set fields - mirrored here so a dialog can name what "Default" follows at its
+// level. A test holds the two together.
+export const DEFAULT_ROUTING = { enabled: true, explorer: 'haiku', implementer: 'sonnet', architect: 'inherit', all: null };
+
+/** The routing a level inherits: the default, then each override's set fields in turn. */
+export function inheritRouting(base, ...overrides) {
+  const r = { ...DEFAULT_ROUTING };
+  for (const o of [base, ...overrides]) for (const [k, v] of Object.entries(o || {})) if (v !== null && v !== undefined) r[k] = v;
+  return r;
+}
+
 // One unified diff, classified and numbered, line by line.
 //
 // The numbering is the whole reason this lives here rather than in the component.

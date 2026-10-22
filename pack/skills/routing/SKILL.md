@@ -1,7 +1,6 @@
 ---
 name: routing
 description: "Apply when about to delegate work to a subagent, or when the person asks how subagents are chosen. Picks the cheapest of Bench's tiers - explorer, implementer, architect - that will do the work reliably, says when to escalate, and how to write a short, focused brief."
-disable-model-invocation: true
 ---
 
 # Route work to the right subagent

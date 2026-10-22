@@ -43,7 +43,10 @@ if (folder === '--pick') {
   // clean, which is the one thing a gate must never do.
   const empty = s.projects.find((/** @type {any} */ p) => !s.tasks.some((/** @type {any} */ t) => t.project_id === p.id) && !s.sessions.some((/** @type {any} */ x) => x.project_id === p.id));
   const ask = s.sessions.find((/** @type {any} */ x) => !x.project_id);
-  const ids = { project, task: task?.id, taskSession: s.sessions.find((/** @type {any} */ x) => x.task_id === task?.id)?.id, session: checkout?.id, emptyProject: empty?.id, ask: ask?.id };
+  // A checkout session the usage limit has paused, for the pause bar. Any session that has
+  // one will do; with none, the route falls back to the plain checkout session.
+  const paused = s.sessions.find((/** @type {any} */ x) => x.pause && x.project_id === project && !x.task_id) || checkout;
+  const ids = { project, task: task?.id, taskSession: s.sessions.find((/** @type {any} */ x) => x.task_id === task?.id)?.id, session: checkout?.id, paused: paused?.id, emptyProject: empty?.id, ask: ask?.id };
   const missing = Object.entries(ids).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) {
     console.error(`The running Bench has no ${missing.join(', ')} to gate. Stop it and let the gate start a seeded one.`);
@@ -124,7 +127,7 @@ const projects = [
   { name: 'infra', files: { 'README.md': '# infra\n\nTerraform for the VPS and the backups.\n' }, tasks: [], checkout: [] },
 ];
 
-const ids = { project: '', task: '', taskSession: '', session: '', emptyProject: '', ask: '' };
+const ids = { project: '', task: '', taskSession: '', session: '', paused: '', emptyProject: '', ask: '' };
 for (const p of projects) {
   const project = await call('POST', '/api/projects', { path: repo(p.name, p.files), name: p.name });
   if (!ids.project) ids.project = project.id;
@@ -150,6 +153,15 @@ for (const p of projects) {
     await settle(s.id);
     await say(s.id, 'Thanks - can you also say which job is slowest?');
     if (!ids.session) ids.session = s.id;
+  }
+  if (p.checkout.length && !ids.paused) {
+    // One that handed work to a subagent on another model, then hit the usage limit: the
+    // pause bar, and a spend figure with more than one model behind it.
+    const s = await call('POST', '/api/sessions', { projectId: project.id, title: 'Migrate the ledger exports to Parquet', prompt: 'delegate' });
+    await settle(s.id);
+    await call('POST', `/api/sessions/${s.id}/messages`, { text: 'limit' });
+    await settle(s.id);
+    ids.paused = s.id;
   }
 }
 // Ask Bench: two conversations about the whole machine, in no project.

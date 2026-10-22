@@ -124,6 +124,7 @@ export const api = {
   mkdir: (/** @type {string} */ parent, /** @type {string} */ name) => post('/api/fs/mkdir', { parent, name }),
   renameProject: (/** @type {string} */ id, /** @type {string} */ name) => patch(`/api/projects/${id}`, { name }),
   setProjectCheck: (/** @type {string} */ id, /** @type {string} */ check) => patch(`/api/projects/${id}`, { check_command: check }),
+  setProjectRouting: (/** @type {string} */ id, /** @type {object|null} */ routing) => patch(`/api/projects/${id}`, { routing }),
   removeProject: (/** @type {string} */ id) => del(`/api/projects/${id}`),
   git: (/** @type {string} */ id) => get(`/api/projects/${id}/git`),
   checkoutDiff: (/** @type {string} */ id) => get(`/api/projects/${id}/diff`),
@@ -139,6 +140,8 @@ export const api = {
   renameTask: (/** @type {string} */ id, /** @type {string} */ title) => patch(`/api/tasks/${id}`, { title }),
   setTaskBar: (/** @type {string} */ id, /** @type {{done?:string|null, check?:string|null}} */ b) => patch(`/api/tasks/${id}`, b),
   checkTask: (/** @type {string} */ id) => post(`/api/tasks/${id}/check`),
+  // Subagent models over the level above; a null field follows it, a null whole clears it.
+  setTaskRouting: (/** @type {string} */ id, /** @type {object|null} */ routing) => patch(`/api/tasks/${id}`, { routing }),
   setTaskLoop: (/** @type {string} */ id, /** @type {{max_attempts?:number, max_minutes?:number}|null} */ loop) => patch(`/api/tasks/${id}`, { loop }),
   taskGit: (/** @type {string} */ id) => get(`/api/tasks/${id}/git`),
   taskDiff: (/** @type {string} */ id) => get(`/api/tasks/${id}/diff`),
@@ -162,6 +165,8 @@ export const api = {
   send: sendMessage,
   upload,
   fileStat: (/** @type {string} */ id, /** @type {string[]} */ paths) => post(`/api/sessions/${enc(id)}/files/stat`, { paths }),
+  // The usage limit: this session's own auto-resume (null follows the default), or a resume now.
+  sessionLimit: (/** @type {string} */ id, /** @type {{autoResume?:boolean|null, resumeNow?:boolean}} */ b) => post(`/api/sessions/${id}/limit`, b),
   interrupt: (/** @type {string} */ id) => post(`/api/sessions/${id}/interrupt`),
   updateSession: (/** @type {string} */ id, /** @type {any} */ b) => patch(`/api/sessions/${id}`, b),
   // An archived or deleted session's cached transcript goes with it. The socket says so
@@ -190,6 +195,7 @@ export const api = {
   testProvider: (/** @type {string} */ id, /** @type {string|null} */ modelId) => post(`/api/providers/${id}/test`, { modelId }),
   setDefaults: (/** @type {any} */ b) => request('/api/defaults', { method: 'PUT', body: b }),
   usage: () => get('/api/usage'),
+  usageByModel: (/** @type {{projectId?:string, taskId?:string}} */ q = {}) => get(`/api/usage/models?${new URLSearchParams(/** @type {any} */ (q))}`),
   doctor: () => get('/api/doctor'),
   devices: () => get('/api/devices'),
   revokeDevice: (/** @type {string} */ id) => del(`/api/devices/${id}`),
