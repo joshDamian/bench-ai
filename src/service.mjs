@@ -13,6 +13,7 @@ import { askServer } from './ask.mjs';
 import { Loop, newLoop } from './loop.mjs';
 import { Resumer } from './resume.mjs';
 import { routingPatch, DEFAULT_ROUTING } from './routing.mjs';
+import { holders, removable, sizeOf } from './artifacts.mjs';
 import * as g from './git.mjs';
 
 /** @typedef {import('./contract.mjs').Task} Task */
@@ -84,6 +85,12 @@ export class Service extends EventEmitter {
     this.runtime.on('turn-done', ({ session }) => session?.project_id && this.emit('git', session.project_id));
     this.runtime.on('task', (t) => this.emit('task', t));
     this.#importLegacy();
+    // What archived sessions left in /tmp that was still open when they were archived, or
+    // that a server stopped before it could clean: the same rule, applied again.
+    for (const id of new Set(this.store.listArtifacts().map((a) => a.session_id))) {
+      const s = this.store.getSession(id);
+      if (!s || s.archived_at) this.#cleanAfter(id);
+    }
   }
 
   // -- projects ---------------------------------------------------------------------
@@ -412,7 +419,9 @@ export class Service extends EventEmitter {
     for (const s of this.store.listSessions({ taskId: t.id })) {
       this.runtime.close(s.id);
       this.runtime.dropScratch(s.id);
-      this.runtime.emit('session', this.store.updateSession(s.id, { archived_at: new Date().toISOString() }));
+      const archived = this.store.updateSession(s.id, { archived_at: new Date().toISOString() });
+      this.#cleanAfter(s.id);
+      this.runtime.emit('session', archived);
     }
     try {
       g.removeWorktree(repo, t.worktree);
@@ -756,6 +765,96 @@ export class Service extends EventEmitter {
     return this.runtime.interrupt(id);
   }
 
+  // -- what sessions leave in /tmp ----------------------------------------------------
+
+  /**
+   * What sessions left in /tmp, as recorded while their tools ran, with whether each is
+   * still there, its size, and the processes holding it open. `removed` adds what was
+   * already cleaned, which is the log of what went and why.
+   * @param {{sessionId?:string, taskId?:string, projectId?:string, removed?:boolean, ask?:boolean}} [q]
+   */
+  artifacts(q = {}) {
+    const rows = this.store.listArtifacts(q);
+    const open = holders(rows.filter((a) => !a.removed_at).map((a) => a.path));
+    return rows.map((a) => {
+      const exists = !a.removed_at && fs.existsSync(a.path);
+      return { ...a, exists, ...(exists ? sizeOf(a.path) : { bytes: 0, partial: false }), heldBy: open ? open.get(a.path) || [] : null };
+    });
+  }
+
+  /**
+   * Removes what sessions left in /tmp - only top-level entries of a temporary folder,
+   * and only what no process holds open - and records each removal with who asked.
+   * `paths` narrows it to those. Something already gone is marked so, and something held
+   * open, or on a system that cannot say, is kept and named.
+   * @param {{sessionId?:string, taskId?:string, projectId?:string, ask?:boolean, paths?:string[]}} q @param {string} by
+   */
+  cleanArtifacts(q, by) {
+    const want = q.paths?.length ? new Set(q.paths.map((p) => path.resolve(p))) : null;
+    const rows = this.store.listArtifacts(q).filter((a) => !want || want.has(a.path));
+    /** @type {{path:string, bytes:number}[]} */
+    const removed = [];
+    /** @type {{path:string, why:string}[]} */
+    const kept = [];
+    /** @type {string[]} */
+    const gone = [];
+    // One path recorded by several sessions is removed once, and marked for each.
+    /** @type {Map<string, import('./contract.mjs').Artifact[]>} */
+    const byPath = new Map();
+    for (const a of rows) byPath.set(a.path, [...(byPath.get(a.path) || []), a]);
+    const open = holders([...byPath.keys()]);
+    for (const [p, list] of byPath) {
+      const mark = (/** @type {string} */ why) => list.forEach((a) => this.store.markArtifactRemoved(a.id, why));
+      if (!fs.existsSync(p)) {
+        gone.push(p);
+        mark('gone');
+        continue;
+      }
+      if (!removable(p)) {
+        kept.push({ path: p, why: 'not a top-level entry of a temporary folder' });
+        continue;
+      }
+      if (!open) {
+        kept.push({ path: p, why: 'this system cannot tell whether a process has it open' });
+        continue;
+      }
+      const pids = open.get(p) || [];
+      if (pids.length) {
+        kept.push({ path: p, why: `open in process ${pids.slice(0, 5).join(', ')}` });
+        continue;
+      }
+      const { bytes } = sizeOf(p);
+      try {
+        fs.rmSync(p, { recursive: true, force: true });
+      } catch (e) {
+        kept.push({ path: p, why: /** @type {Error} */ (e).message });
+        continue;
+      }
+      removed.push({ path: p, bytes });
+      mark(by);
+    }
+    return { removed, kept, gone };
+  }
+
+  /** The archive rule: clean what an archived session left, and say so in its transcript. @param {string} sessionId */
+  #cleanAfter(sessionId) {
+    let r;
+    try {
+      r = this.cleanArtifacts({ sessionId }, 'archive');
+    } catch {
+      return;
+    }
+    if (!r.removed.length && !r.kept.length) return;
+    if (!this.store.getSession(sessionId)) return;
+    const bytes = r.removed.reduce((n, x) => n + x.bytes, 0);
+    const size = bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    const lines = [
+      r.removed.length ? `Removed ${r.removed.length} temporary item${r.removed.length === 1 ? '' : 's'} this session left in /tmp (${size}): ${r.removed.map((x) => x.path).join(', ')}` : null,
+      r.kept.length ? `Kept ${r.kept.map((x) => `${x.path} (${x.why})`).join(', ')}; Bench tries again when it restarts.` : null,
+    ];
+    this.runtime.notice(sessionId, lines.filter(Boolean).join('\n'));
+  }
+
   /** @param {string} id @param {boolean} archived */
   archiveSession(id, archived = true) {
     const s = this.session(id);
@@ -766,6 +865,7 @@ export class Service extends EventEmitter {
       this.runtime.dropScratch(id);
     } else if (s.task_id && this.task(s.task_id).state !== 'active') throw fail('Reopen the task first', 409);
     const updated = this.store.updateSession(id, { archived_at: archived ? new Date().toISOString() : null });
+    if (archived) this.#cleanAfter(id);
     this.runtime.emit('session', updated);
     return updated;
   }
@@ -776,6 +876,7 @@ export class Service extends EventEmitter {
     this.runtime.close(id);
     fs.rmSync(this.runtime.attachmentsDir(id), { recursive: true, force: true });
     this.runtime.dropScratch(id);
+    this.#cleanAfter(id);
     this.store.deleteSessionData(id);
     this.runtime.emit('session-removed', id);
     return { ok: true };

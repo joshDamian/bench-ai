@@ -524,7 +524,7 @@ test("Bench's plugin is one Claude Code can load: a named manifest, and skills n
   const manifest = JSON.parse(fs.readFileSync(path.join(PACK, '.claude-plugin', 'plugin.json'), 'utf8'));
   assert.equal(manifest.name, 'bench');
   const skills = fs.readdirSync(path.join(PACK, 'skills'));
-  for (const name of ['review', 'catch-up', 'verify-ui', 'design-check', 'design-review', 'design-tokens', 'design-brief']) assert.ok(skills.includes(name), `the pack ships ${name}`);
+  for (const name of ['review', 'catch-up', 'cleanup', 'verify-ui', 'design-check', 'design-review', 'design-tokens', 'design-brief']) assert.ok(skills.includes(name), `the pack ships ${name}`);
   for (const dir of skills) {
     const text = fs.readFileSync(path.join(PACK, 'skills', dir, 'SKILL.md'), 'utf8');
     const front = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1];
@@ -766,7 +766,7 @@ test('a session outside a task has no stop hook', async () => {
   const s = svc.createSession({ projectId: project.id });
   svc.send(s.id, 'hi');
   await until(() => svc.events(s.id).some((e) => e.kind === 'result'));
-  assert.equal(calls.at(-1).options.hooks, undefined);
+  assert.equal(calls.at(-1).options.hooks.Stop, undefined);
   svc.shutdown();
 });
 

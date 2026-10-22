@@ -58,7 +58,7 @@ test('the server has every tool, and only the read-only ones say so', () => {
   assert.equal(server.type, 'sdk');
   assert.equal(server.name, 'bench');
   const names = server.tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['create_task', 'get_task', 'list_models', 'list_sessions', 'list_tasks', 'log', 'notify', 'request_review', 'run_check', 'send_to_session', 'session_status', 'start_session', 'task_diff', 'task_status', 'update_from_base', 'wait_for_session']);
+  assert.deepEqual(names, ['clean_up', 'create_task', 'get_task', 'list_artifacts', 'list_models', 'list_sessions', 'list_tasks', 'log', 'notify', 'request_review', 'run_check', 'send_to_session', 'session_status', 'start_session', 'task_diff', 'task_status', 'update_from_base', 'wait_for_session']);
   // The wait tools may run up to 1800s, so the server's own tool-call limit must outlast them.
   assert.equal(server.timeout, TOOL_TIMEOUT_MS);
   assert.ok(server.timeout > 1800 * 1000, 'a long wait_for_session is not cut short by the tool-call limit');

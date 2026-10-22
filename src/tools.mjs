@@ -25,7 +25,7 @@ import { mergeBase, revParse } from './git.mjs';
 // READ_ONLY so it runs without asking.
 
 /** Tools that only read: they carry readOnlyHint and never ask the person. */
-export const READ_ONLY = new Set(['task_status', 'task_diff', 'list_tasks', 'get_task', 'list_sessions', 'session_status', 'list_models', 'wait_for_session']);
+export const READ_ONLY = new Set(['task_status', 'task_diff', 'list_tasks', 'get_task', 'list_sessions', 'session_status', 'list_models', 'wait_for_session', 'list_artifacts']);
 
 const PREFIX = 'mcp__bench__';
 // Modes in which a person has said edits need no asking; `log` writes only to Bench's
@@ -60,11 +60,12 @@ const INSTRUCTIONS = `Bench runs this session. These tools show and act on the t
 - A trail and the person: log records a decision with its evidence in the task's decision log - evidence is what you measured or saw, not what you believe. notify sends a push notification to the person's devices, at most one a minute; use it when they need to know or act, not for progress.
 - The project: list_tasks, get_task, create_task, list_sessions, session_status, list_models.
 - Other sessions: start_session (a new session in this task, another task or the project's checkout, on any enabled model), send_to_session, wait_for_session (until it is idle, waiting on the person, or errored; returns the end of its reply).
+- Temporary files: list_artifacts shows what this session or task left in /tmp, recorded as its tools ran; clean_up removes what nothing has open. Archiving a session does the same.
 - A second opinion: request_review has a model of a different family review this task's change against what done means, waits for it, records its findings in the task's log, and returns them. Given \`screenshots\`, it is a design review: the critic judges the rendered UI in them against a design rubric instead of the diff. Check each finding before acting on it.
 
 Ids can be shortened to any unique prefix of 4 or more characters.
 
-Some things are deliberately not tools: merging or closing a task, changing any task's "done means" or check, turning on or stopping a task's loop-until-done, and deleting anything. Those stay with the person - a session must not lower its own bar, land its own work, or put itself into an unattended loop. If one is needed, say so in your reply.
+Some things are deliberately not tools: merging or closing a task, changing any task's "done means" or check, turning on or stopping a task's loop-until-done, and deleting anything other than the temporary files clean_up removes. Those stay with the person - a session must not lower its own bar, land its own work, or put itself into an unattended loop. If one is needed, say so in your reply.
 
 Limits: a session started by start_session, request_review or create_task cannot itself call start_session or create_task - one level, never a chain. It can still call request_review, since a review only reads (Plan mode) and the reviewer it starts cannot call any of the three. At most ${MAX_STARTED} sessions started by tools run at once in a project.
 
@@ -88,6 +89,43 @@ export function tail(s, n) {
 
 /** @param {string} id */
 export const short = (id) => id.slice(0, 8);
+
+/** @param {number} b */
+const mb = (b) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+/**
+ * What list_artifacts says: each thing left in /tmp, its size, whether something holds
+ * it open, and the session that made it; then, with `removed`, what already went and why.
+ * @param {ReturnType<Service['artifacts']>} rows @param {string} where
+ */
+export function artifactReport(rows, where) {
+  const live = rows.filter((a) => !a.removed_at);
+  const done = rows.filter((a) => a.removed_at);
+  const lines = [];
+  if (!live.length) lines.push(`Nothing ${where} is left in /tmp.`);
+  else {
+    const total = live.reduce((n, a) => n + a.bytes, 0);
+    lines.push(`${plural(live.length, 'item')} ${where} in /tmp, ${mb(total)}:`);
+    for (const a of live) {
+      const state = !a.exists ? 'already gone' : a.heldBy === null ? 'cannot tell if open' : a.heldBy.length ? `open in process ${a.heldBy.slice(0, 3).join(', ')}` : 'not open';
+      lines.push(`- ${a.path} — ${a.exists ? `${mb(a.bytes)}${a.partial ? '+' : ''}, ` : ''}${state}; made by session ${short(a.session_id)}${a.tool ? ` during ${a.tool}` : ''}, ${when(a.created_at)}`);
+    }
+  }
+  if (done.length) {
+    lines.push('', 'Already removed:');
+    for (const a of done) lines.push(`- ${a.path} — ${a.removed_by === 'gone' ? 'was already gone' : `removed ${when(a.removed_at)} (${a.removed_by === 'archive' ? 'when its session was archived' : a.removed_by === 'person' ? 'by the person' : `asked by session ${short(String(a.removed_by))}`})`}`);
+  }
+  return lines.join('\n');
+}
+
+/** What clean_up says it did. @param {ReturnType<Service['cleanArtifacts']>} r */
+export function cleanReport(r) {
+  const lines = [];
+  if (r.removed.length) lines.push(`Removed ${plural(r.removed.length, 'item')}, ${mb(r.removed.reduce((n, x) => n + x.bytes, 0))}:`, ...r.removed.map((x) => `- ${x.path}`));
+  if (r.gone.length) lines.push(`Already gone: ${r.gone.join(', ')}`);
+  if (r.kept.length) lines.push('Kept:', ...r.kept.map((x) => `- ${x.path} — ${x.why}`));
+  return lines.join('\n') || 'Nothing recorded to clean up.';
+}
 /** @param {string} s @param {number} n */
 export const cut = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 /** @param {number} n @param {string} one @param {string} [many] */
@@ -135,6 +173,7 @@ export function benchApproval(tool, input, session, getTask) {
     create_task: `Bench: create task — ${s(input.title)}`,
     start_session: `Bench: start a session${input.provider || input.model ? ` on ${s(input.model || input.provider)}` : ''} — ${s(input.title || input.prompt)}`,
     send_to_session: `Bench: message session ${s(input.id)} — ${s(input.message)}`,
+    clean_up: `Bench: remove what ${input.scope === 'task' ? 'this task' : 'this session'} left in /tmp${Array.isArray(input.paths) && input.paths.length ? ` — ${s(input.paths.join(', '))}` : ''}`,
     request_review: `Bench: request a review of this task${input.provider || input.model ? ` on ${s(input.model || input.provider)}` : ' from a model of another family'}${input.focus ? ` — ${s(input.focus)}` : ''}`,
   };
   return { allow: false, title: titles[name] || `Bench: ${name.replace(/_/g, ' ')}` };
@@ -851,6 +890,37 @@ export function benchTools(svc, sessionId) {
         }
         const why = settled && session ? `The reviewer is waiting on the person: ${svc.runtime.pending(session.id).map((a) => a.title || a.tool).join('; ')}.` : settled ? 'The review session is gone.' : `The reviewer is still working after ${Math.round(waitMs(timeout_s) / 1000)}s.`;
         return ok(`${head}\n${why} Its findings will be recorded in the task's log when it finishes; wait_for_session ${short(reviewer.id)} waits for it, and task_status shows the log.`);
+      }),
+      write
+    ),
+
+    tool(
+      'list_artifacts',
+      "What this session (or, with scope `task`, every session in this task) left in /tmp, as Bench recorded while its tools ran: each item's size and whether a process still has it open. `removed` adds what was already cleaned up, and why.",
+      {
+        scope: z.enum(['session', 'task']).optional().describe("'session' (default) or 'task'"),
+        removed: z.boolean().optional().describe('Also list what was already removed'),
+      },
+      guard(async ({ scope, removed }) => {
+        const { me, task } = caller(svc, sessionId);
+        if (scope === 'task' && !task) return no('This session is not in a task.');
+        const rows = svc.artifacts(scope === 'task' && task ? { taskId: task.id, removed } : { sessionId: me.id, removed });
+        return ok(artifactReport(rows, scope === 'task' ? 'this task left' : 'this session left'));
+      }),
+      read
+    ),
+
+    tool(
+      'clean_up',
+      "Removes what this session (or, with scope `task`, this task) left in /tmp: only what Bench recorded appearing while its tools ran, only top-level entries, and never anything a process has open. `paths` narrows it to those. Move anything worth keeping into the project first. Archiving a session does the same on its own.",
+      {
+        scope: z.enum(['session', 'task']).optional().describe("'session' (default) or 'task'"),
+        paths: z.array(z.string()).optional().describe('Only these, from list_artifacts'),
+      },
+      guard(async ({ scope, paths }) => {
+        const { me, task } = caller(svc, sessionId);
+        if (scope === 'task' && !task) return no('This session is not in a task.');
+        return ok(cleanReport(svc.cleanArtifacts(scope === 'task' && task ? { taskId: task.id, paths } : { sessionId: me.id, paths }, me.id)));
       }),
       write
     ),
