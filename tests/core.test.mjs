@@ -521,13 +521,13 @@ test('provider keys are kept in the data folder env file, which the shell enviro
 });
 
 /** The pack's skills a session loads by itself, rather than only when the person types them. */
-const MODEL_INVOKED = ['routing', 'cleanup'];
+const MODEL_INVOKED = ['routing', 'cleanup', 'design', 'design-tokens', 'design-brief', 'design-check', 'design-review', 'verify-ui'];
 
 test("Bench's plugin is one Claude Code can load: a named manifest, and skills named for their folders", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PACK, '.claude-plugin', 'plugin.json'), 'utf8'));
   assert.equal(manifest.name, 'bench');
   const skills = fs.readdirSync(path.join(PACK, 'skills'));
-  for (const name of ['review', 'catch-up', 'cleanup', 'verify-ui', 'design-check', 'design-review', 'design-tokens', 'design-brief']) assert.ok(skills.includes(name), `the pack ships ${name}`);
+  for (const name of ['review', 'catch-up', 'cleanup', 'verify-ui', 'design', 'design-check', 'design-review', 'design-tokens', 'design-brief']) assert.ok(skills.includes(name), `the pack ships ${name}`);
   for (const dir of skills) {
     const text = fs.readFileSync(path.join(PACK, 'skills', dir, 'SKILL.md'), 'utf8');
     const front = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1];
@@ -538,8 +538,9 @@ test("Bench's plugin is one Claude Code can load: a named manifest, and skills n
     assert.match(front, /^description: "?Apply when .+/m, `${dir}: its description says when to apply it`);
     // `disable-model-invocation: true` takes a skill out of the model's list altogether: only
     // the person's `/bench:<skill>` runs it. That is right for the procedures a person asks
-    // for, and wrong for the two the session is told to reach for itself - the routing note
-    // in the system prompt points at bench:routing, and bench:cleanup is for when work wraps up.
+    // for, and wrong for the ones the session is told to reach for itself - the routing note
+    // in the system prompt points at bench:routing, bench:cleanup is for when work wraps up,
+    // and the design skills have to fire on UI work without the person naming them.
     if (MODEL_INVOKED.includes(dir)) assert.doesNotMatch(front, /^disable-model-invocation: true$/m, `${dir}: the model has to be able to load it itself`);
     else assert.match(front, /^disable-model-invocation: true$/m, `${dir}: only the person runs it`);
     const files = fs.readdirSync(path.join(PACK, 'skills', dir));
@@ -657,7 +658,9 @@ test('design-check tells a session only flags and config keys the gate takes', (
   // A config key is an option's own name, which the line that reads its flag sets.
   const keys = [...text.matchAll(/"(\w+)":/g)].map((m) => m[1]);
   for (const key of ['bodyPx', 'themeScript']) assert.ok(keys.includes(key), `the skill names the ${key} key`);
-  for (const key of keys) assert.match(gate, new RegExp(`o\\.${key} =`), `design-check.mjs reads the ${key} key`);
+  // The same file configures the design hook, so a key either one reads is a real key.
+  const hook = fs.readFileSync(path.join(PACK, 'skills', 'design-check', 'hook.mjs'), 'utf8');
+  for (const key of keys) assert.ok(new RegExp(`o\\.${key} =`).test(gate) || new RegExp(`config\\.${key}\\b`).test(hook), `design-check.mjs or the hook reads the ${key} key`);
   assert.match(text, /!\.bench\/design-check\.\*/, 'and says how to un-ignore the config');
 });
 

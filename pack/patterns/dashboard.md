@@ -33,6 +33,7 @@ A home or overview screen that answers "how are things, and what needs me?" for 
 ## What to avoid
 - A wall of eight equal stat cards at the top, all the same size and weight, so nothing is the point.
 - Three equal cards when one number is the point.
+- The hero-metric template - big numbers over small labels, an icon in a tinted tile on each - and figures with no baseline; the data rules are in the honest-data reference, the other tells in the tells reference.
 - Charts for the sake of it: a pie of two values, a line chart of four points, a gauge.
 - Every stat coloured green or red, so colour stops meaning anything.
 - Numbers with no period or comparison ("1,204") - big but not informative.

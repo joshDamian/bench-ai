@@ -1,0 +1,17 @@
+{
+  "description": "Bench's design hook: after an edit to a UI file, the static design rules are read against the lines it wrote, and anything found is told to the session. Off for a project with \"hook\": false in .bench/design-check.json.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/design-check/hook.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

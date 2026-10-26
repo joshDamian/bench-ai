@@ -27,6 +27,7 @@ This pattern is the states. Per view, the brief has to say which empty is the fi
 ## What to avoid
 - A big grey "No data" in the middle of the page, or an empty table with only its header row.
 - A full-page spinner where the shape of the page was knowable in advance.
+- Content held invisible until a script reveals it, so a failed script leaves a blank: render it visible, and hide only under a class the script adds.
 - A cartoon illustration 300px tall on every empty state.
 - Error text that is the exception ("TypeError: Failed to fetch", "Error 500") or a red toast that disappears with the reason.
 - The same empty state for "nothing yet" and "nothing matches", so a filtered-out person is told to create their first item.

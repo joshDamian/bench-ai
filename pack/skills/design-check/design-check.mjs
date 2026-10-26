@@ -8,6 +8,11 @@
 //   2  it could not look: no browser, a page that would not render, a rule that could not
 //      be measured. Never a pass - a gate that cannot see must not say "fine".
 //
+// Beyond those, it measures the tells generated UI falls into and the finishing details,
+// in the tiers rules.mjs keeps: a floor finding is a defect like the rules above; a reflex
+// finding is a warning a project fixes or waives in its Design.md; a finish finding is a
+// note. Neither of the last two changes the exit code.
+//
 // It judges only what a machine can judge. Whether the layout is right, whether the change
 // is the one that was asked for, whether the design is any good: that is what `verify-ui`
 // and a person's eyes are for.
@@ -15,6 +20,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Browser, Unrenderable, findBrowser, NO_BROWSER } from '../../browser.mjs';
+import { tierOf, readWaivers, readIgnores, BY_ID } from './rules.mjs';
+import { pageTells, pageAtRest, pageScheme } from './tells.mjs';
 
 const USAGE = `design-check - render a page and hold it to the mechanical rules.
 
@@ -30,6 +37,7 @@ const USAGE = `design-check - render a page and hold it to the mechanical rules.
   --grid <px>           the spacing grid (default: 8)
   --body-px <px>        the smallest body text allowed; headings are exempt (default: 16)
   --ignore <sel,...>    selectors to leave alone
+  --ignore-rules <a,b>  reflex or finish rules not to report (floor rules cannot be ignored)
   --shots <dir>         also write screenshots here (they are the before/after evidence)
   --shots-widths <a,b>  widths for --shots (default: 1280,390)
   --shots-themes <a,b>  themes for --shots (default: light); any other adds "-<theme>" to the name
@@ -47,10 +55,11 @@ const USAGE = `design-check - render a page and hold it to the mechanical rules.
   --json                findings as JSON
   --help                this
 
-  exit 0 pass, 1 a defect, 2 could not look
+  exit 0 pass, 1 a defect, 2 could not look. Reflex and finish findings are warnings, printed
+  but never a defect; a reflex rule is waived with its reason under "## Waivers" in Design.md.
 `;
 
-/** One thing wrong with the page. @typedef {{rule:string, route:string, theme:string, state:string, viewport:string, selector:string, detail:string}} Finding */
+/** One thing wrong with the page. @typedef {{rule:string, route:string, theme:string, state:string, viewport:string, selector:string, detail:string, tier?:string, waived?:string}} Finding */
 
 // ---------------------------------------------------------------------------
 // What the page is asked, in its own words
@@ -633,7 +642,7 @@ function motionFindings(motion, route) {
 /** @param {string[]} argv @param {Record<string, any>} base */
 function options(argv, base) {
   /** @type {Record<string, any>} */
-  const o = { routes: ['/'], widths: [280, 320, 414], themes: ['light', 'dark'], shotsWidths: [1280, 390], shotsThemes: ['light'], click: [], ignore: [], grid: 8, bodyPx: 16, width: 1280, wait: 0, json: false, ...base };
+  const o = { routes: ['/'], widths: [280, 320, 414], themes: ['light', 'dark'], shotsWidths: [1280, 390], shotsThemes: ['light'], click: [], ignore: [], ignoreRules: [], grid: 8, bodyPx: 16, width: 1280, wait: 0, json: false, ...base };
   const list = (/** @type {string} */ v) => String(v).split(',').map((s) => s.trim()).filter(Boolean);
   for (let i = 0; i < argv.length; i++) {
     const [flag, inline] = argv[i].includes('=') ? argv[i].split(/=(.*)/s) : [argv[i], null];
@@ -651,6 +660,7 @@ function options(argv, base) {
       // Added to what the config file already ignores, rather than replacing it: a run that
       // names one extra selector must not silently drop the project's own exceptions.
       case '--ignore': o.ignore = [...o.ignore, ...list(next())]; break;
+      case '--ignore-rules': o.ignoreRules = [...o.ignoreRules, ...list(next())]; break;
       case '--shots': o.shots = next(); break;
       case '--shots-widths': o.shotsWidths = list(next()).map(Number); break;
       case '--shots-themes': o.shotsThemes = list(next()); break;
@@ -693,12 +703,19 @@ function findTokens(cwd) {
  * The tokens a project has written down: their names, their colours, and the lengths
  * among them. A CSS file gives names as well as values; a JSON file gives values.
  * @param {string} file
- * @returns {{names:Set<string>, colors:Set<string>, lengths:Set<number>}}
+ * @returns {{names:Set<string>, colors:Set<string>, lengths:Set<number>, fontSizes:Set<number>}}
  */
 function readTokens(file) {
   const names = new Set();
   const colors = new Set();
   const lengths = new Set();
+  /** The type scale: lengths a token names as a font size. @type {Set<number>} */
+  const fontSizes = new Set();
+  /** @param {string} name @param {string} value */
+  const size = (name, value) => {
+    const n = px(value, 16);
+    if (n !== null && n > 0 && /font|text|type|fs\b/i.test(name) && /size|^--(text|fs)-|\.(text|fs)\./i.test(name)) fontSizes.add(n);
+  };
   /** @param {string} value */
   const take = (value) => {
     const c = sameColor(value);
@@ -713,24 +730,27 @@ function readTokens(file) {
     throw new Unrenderable(`Could not read the token file ${file}: ${/** @type {Error} */ (e).message}`);
   }
   if (file.endsWith('.json')) {
-    /** @param {any} node */
-    const walk = (node) => {
-      if (node && typeof node === 'object') for (const v of Object.values(node)) walk(v);
-      else if (typeof node === 'string' || typeof node === 'number') take(String(node).trim());
-      else if (typeof node === 'object' && node?.value) take(String(node.value).trim());
+    /** @param {any} node @param {string} at */
+    const walk = (node, at) => {
+      if (node && typeof node === 'object') for (const [k, v] of Object.entries(node)) walk(v, `${at}.${k}`);
+      else if (typeof node === 'string' || typeof node === 'number') {
+        take(String(node).trim());
+        size(at, String(node).trim());
+      }
     };
     try {
-      walk(JSON.parse(text));
+      walk(JSON.parse(text), '');
     } catch (e) {
       throw new Unrenderable(`Could not read the token file ${file}: ${/** @type {Error} */ (e).message}`);
     }
-    return { names, colors, lengths };
+    return { names, colors, lengths, fontSizes };
   }
   for (const m of text.matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g)) {
     names.add(m[1]);
     take(m[2].trim());
+    size(m[1], m[2].trim());
   }
-  return { names, colors, lengths };
+  return { names, colors, lengths, fontSizes };
 }
 
 /** Nothing that could not be looked at is ever a pass. @param {string} reason */
@@ -774,8 +794,8 @@ async function main() {
 
   const cwd = process.cwd();
   const tokens = o.tokens || findTokens(cwd);
-  /** @type {{names:Set<string>, colors:Set<string>, lengths:Set<number>}} */
-  let tokenFile = { names: new Set(), colors: new Set(), lengths: new Set() };
+  /** @type {{names:Set<string>, colors:Set<string>, lengths:Set<number>, fontSizes:Set<number>}} */
+  let tokenFile = { names: new Set(), colors: new Set(), lengths: new Set(), fontSizes: new Set() };
   if (tokens) {
     try {
       tokenFile = readTokens(path.resolve(cwd, tokens));
@@ -792,6 +812,16 @@ async function main() {
       return couldNotLook(`could not read the theme script ${o.themeScript}: ${/** @type {Error} */ (e).message}`);
     }
   }
+  // What the project has said about the reflex rules: waived with a reason in Design.md, or
+  // not to be reported at all. Neither reaches a floor rule; an attempt is said, not obeyed.
+  let designMd = '';
+  try {
+    designMd = fs.readFileSync(path.resolve(cwd, 'Design.md'), 'utf8');
+  } catch {
+    /* no Design.md: nothing is waived */
+  }
+  const { waived, refused: refusedWaivers } = readWaivers(designMd);
+  const { ignored: ignoredRules, refused: refusedIgnores } = readIgnores(o.ignoreRules);
   if (!findBrowser(o.browser)) return couldNotLook(NO_BROWSER);
 
   /** @type {Finding[]} */
@@ -902,7 +932,15 @@ ${themeScript}
         findings.push(...contrastFindings({ texts: plain.texts, route, theme, state: 'default', interactiveOnly: false }));
         findings.push(...sizeFindings(plain, route, theme, o.bodyPx));
         findings.push(...semanticsFindings(plain, route, theme));
-        if (theme === o.themes[0]) findings.push(...overflowFindings(plain, route, theme, o.width));
+        if (theme === o.themes[0]) {
+          findings.push(...overflowFindings(plain, route, theme, o.width));
+          const tells = await page.evaluate(`(${pageTells})(${JSON.stringify({ ignore: o.ignore, fontSizes: [...tokenFile.fontSizes] })})`);
+          for (const t of tells) findings.push({ rule: t.rule, route, theme: '', state: '', viewport: '', selector: t.selector, detail: t.detail });
+        }
+        if (theme === 'dark') {
+          const { dark, scheme } = await page.evaluate(`(${pageScheme})()`);
+          if (dark && !/dark/.test(scheme)) findings.push({ rule: 'doc-meta', route, theme, state: '', viewport: '', selector: 'html', detail: 'a dark page with no color-scheme: dark, so scrollbars and form fields stay light' });
+        }
 
         // Hover, then focus. The browser puts every element into the state and the same
         // audit runs again, so what is measured is what the state really produces.
@@ -928,6 +966,20 @@ ${themeScript}
         await page.setViewport(o.width, 900);
         if (!(await load(url)).ok) throw new Unrenderable(`${url} did not render with prefers-reduced-motion`);
         findings.push(...motionFindings((await page.evaluate(audit)).motion, route));
+
+        // The page with its scripts off: whatever is still invisible was waiting for a script
+        // to show it, and a person whose script failed sees a blank where it should be.
+        await page.setScripts(false);
+        try {
+          await setTheme('light');
+          if ((await load(url)).ok) {
+            const rest = await page.evaluate(`(${pageAtRest})(${JSON.stringify({ ignore: o.ignore })})`);
+            if (rest.drawnByScript) page.note(`${route} draws nothing without its scripts, so hidden-at-rest was not judged there`);
+            for (const h of rest.hidden) findings.push({ rule: 'hidden-at-rest', route, theme: '', state: 'no script', viewport: '', selector: h.split(' ')[0], detail: `invisible until a script shows it: ${h}` });
+          }
+        } finally {
+          await page.setScripts(true);
+        }
 
         // The widths a page has to survive: a small phone, a phone, a large phone.
         for (const width of o.widths) {
@@ -970,10 +1022,20 @@ ${themeScript}
   const notes = page.notes;
   await page.close();
 
-  const list = dedupe(findings);
-  const code = list.length ? 1 : 0;
-  if (o.json) process.stdout.write(`${JSON.stringify({ code, url: o.url, routes: o.routes, looked, tokens: tokens || null, shots, notes, findings: list }, null, 2)}\n`);
-  else process.stdout.write(report(o, list, shots, notes, tokens, looked));
+  for (const r of [...refusedWaivers.map((r) => `Design.md waiver not applied - ${r}`), ...refusedIgnores.map((r) => `ignoreRules not applied - ${r}`)]) notes.push(r);
+  /** @type {Finding[]} */ const defects = [];
+  /** @type {Finding[]} */ const warnings = [];
+  /** @type {Finding[]} */ const waivedList = [];
+  for (const f of dedupe(findings)) {
+    f.tier = tierOf(f.rule);
+    if (f.tier === 'floor') defects.push(f);
+    else if (ignoredRules.has(f.rule)) continue;
+    else if (f.tier === 'reflex' && waived.has(f.rule)) waivedList.push({ ...f, waived: /** @type {string} */ (waived.get(f.rule)) });
+    else warnings.push(f);
+  }
+  const code = defects.length ? 1 : 0;
+  if (o.json) process.stdout.write(`${JSON.stringify({ code, url: o.url, routes: o.routes, looked, tokens: tokens || null, shots, notes, findings: defects, warnings, waived: waivedList }, null, 2)}\n`);
+  else process.stdout.write(report(o, defects, shots, notes, tokens, looked, warnings, waivedList));
   return code;
 }
 
@@ -990,18 +1052,23 @@ function dedupe(list) {
 
 /**
  * @param {any} o @param {Finding[]} findings @param {string[]} shots @param {string[]} notes @param {string|null} tokens @param {number} looked
+ * @param {Finding[]} [warnings] reflex and finish findings @param {Finding[]} [waivedList]
  */
-function report(o, findings, shots, notes, tokens, looked) {
+function report(o, findings, shots, notes, tokens, looked, warnings = [], waivedList = []) {
   const saw = `${looked} route${looked === 1 ? '' : 's'} at ${o.width}px in ${o.themes.join('+')}${o.onlyShots ? '' : `, hover and focus, overflow at ${o.widths.join('/')}px, reduced motion`}`;
-  const tail = [...shots.map((s) => `  shot ${s}`), ...notes.map((n) => `  note ${n}`)];
+  const warn = warnings.map((f) => `  ${String(f.tier).padEnd(6)}  ${f.rule}  ${f.selector}  ${f.detail}. Instead: ${BY_ID.get(f.rule)?.instead}`);
+  const kept = waivedList.map((f) => `  waived  ${f.rule}  ${f.selector}  (Design.md: ${f.waived})`);
+  const reflexes = warnings.filter((f) => f.tier === 'reflex').length;
+  const counts = warnings.length ? `; ${reflexes} reflex warning${reflexes === 1 ? '' : 's'}, ${warnings.length - reflexes} finish note${warnings.length - reflexes === 1 ? '' : 's'}` : '';
+  const tail = [...warn, ...kept, ...shots.map((s) => `  shot ${s}`), ...notes.map((n) => `  note ${n}`)];
   const tokenNote = tokens ? `tokens from ${tokens}` : 'no design-token file found, so the token rules were skipped';
-  if (!findings.length) return [`design-check ${o.url}: clean - ${saw}, ${tokenNote}`, ...tail, ''].join('\n');
+  if (!findings.length) return [`design-check ${o.url}: clean - ${saw}, ${tokenNote}${counts}`, ...tail, ''].join('\n');
   const width = Math.max(...findings.map((f) => f.rule.length));
   const lines = findings.map((f) => {
     const state = [f.theme, f.state].filter(Boolean).join(' ');
     return `  ${f.rule.padEnd(width)}  ${(f.viewport || state ? `[${[f.viewport, state].filter(Boolean).join(', ')}] ` : '')}${f.selector}  ${f.detail}`;
   });
-  return [`design-check ${o.url}: ${findings.length} defect${findings.length === 1 ? '' : 's'} - ${saw}, ${tokenNote}`, ...lines, ...tail, ''].join('\n');
+  return [`design-check ${o.url}: ${findings.length} defect${findings.length === 1 ? '' : 's'} - ${saw}, ${tokenNote}${counts}`, ...lines, ...tail, ''].join('\n');
 }
 
 /**

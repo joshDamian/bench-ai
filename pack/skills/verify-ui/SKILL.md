@@ -1,7 +1,6 @@
 ---
 name: verify-ui
-description: "Apply when a session changes what a person sees - CSS, a component, a layout, a theme - and has to prove it rather than describe it. Renders the app before and after the change at desktop and phone widths and hands back the screenshots."
-disable-model-invocation: true
+description: "Apply when a change to what a person sees - CSS, a component, a layout, a theme, copy on screen, motion - is ready to show, and has to be proved rather than described. Renders the app before and after the change at desktop and phone widths and hands back the screenshots. Not for changes with no visible UI."
 ---
 
 # Show the UI change
@@ -28,6 +27,7 @@ Editing CSS is not proof the page changed the way you meant. This is the UI vers
    A before shot from the same shooter as step 3 is the only way the two are comparable: same route, same width, same label shape.
 5. Look at the pictures yourself - open the PNGs. If the page is blank, the app is not up or the route needs auth; check the server's log and the URL before blaming the CSS. A screenshot of a blank page proves nothing, so never hand one over as evidence.
 6. Save both under `.bench/evidence/` as `<before|after>-<route>-<width>.png`, add `.bench/evidence/` to `.gitignore`, and show them to the person: the paths, which route and width each is, and what actually differs. If the before is identical to the after, say so - the change did not reach the page.
-7. For the mechanical rules, run the gate in the same skill folder against the same URL. It answers 0 pass, 1 a defect it names, 2 it could not look. The two together are the proof a UI change is usually held to: it renders, it moved as asked, and it still passes the rules.
+7. For the mechanical rules, run the gate in the same skill folder against the same URL. It answers 0 pass, 1 a defect it names, 2 it could not look, and lists reflex and finish warnings beside the verdict. The two together are the proof a UI change is usually held to: it renders, it moved as asked, and it still passes the rules.
+8. A change that moves: say what you checked of it against `$(bench pack)/references/motion.md` - that it answers an action, its easing and duration are the tokens', and it stops under reduced motion. Screenshots cannot show motion; a showcase export is checked frame by frame (`references/showcase-motion.md`).
 
 **Reply:** the before and after screenshots, what they show, the commands that produced them, and what you could not render.

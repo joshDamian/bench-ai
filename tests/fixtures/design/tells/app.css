@@ -1,0 +1,35 @@
+/* A page that keeps every floor rule and falls into the reflex tells - one planted per tell,
+   each marked - plus the finish details left undone. The gate must pass it (exit 0) and still
+   name every tell as a warning. */
+body { margin: 0; padding: var(--space-3); background-color: var(--bg); color: var(--ink); font-family: Inter, sans-serif; font-size: 16px; line-height: 1.5; } /* overused-font */
+h1 { font-size: 40px; line-height: 48px; max-width: 400px; overflow-wrap: break-word; margin: 0 0 var(--space-2); } /* long-headline: a sentence held to 400px */
+h1 em { color: var(--violet); } /* accent-word */
+h2 { font-family: Georgia, serif; font-size: 20px; margin: 0 0 var(--space-2); }
+h3 { font-size: 20px; margin: 0; } /* heading-skip: h1 straight to h3 below */
+p { margin: 0 0 var(--space-2); }
+a, button { display: inline-block; padding: var(--space-1); font-size: 16px; }
+a { color: var(--focus); transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); } /* bounce-easing */
+button { min-height: 40px; color: var(--on-violet); background-color: var(--violet); border: 0; transition: background-color 400ms ease; } /* ai-palette; slow-feedback */
+a:focus-visible, button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.serif { font-family: "Times New Roman", serif; } /* font-count: a third face */
+.grad { background-image: linear-gradient(90deg, var(--violet), var(--focus)); -webkit-background-clip: text; background-clip: text; color: transparent; } /* gradient-text */
+.row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-3); }
+.tile { flex: 1 0 160px; max-width: 200px; padding: var(--space-2); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px var(--shadow); transition: all 200ms ease; } /* border-shadow-card; transition-all */
+.icon { width: 40px; height: 40px; margin: 0 0 var(--space-1); border-radius: 8px; background-color: var(--line); } /* icon-tile-grid */
+.label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; } /* tracked-caps */
+.caption { font-family: "Courier New", monospace; font-size: 16px; } /* mono-costume */
+.stat { flex: 1 0 96px; max-width: 160px; }
+.stat b { display: block; font-size: 40px; } /* hero-metric */
+.stat span { font-size: 16px; }
+.outer { padding: var(--space-2); border-radius: 12px; background-color: var(--line); }
+.inner { padding: var(--space-2); border-radius: 12px; background-color: var(--bg); min-height: 64px; } /* nested-cards; concentric-radius */
+.glass { padding: var(--space-1); background-color: var(--glass); backdrop-filter: blur(8px); } /* glass */
+.callout { padding: var(--space-2); border-left: 4px solid var(--violet); } /* side-tab */
+.glow { padding: var(--space-2); box-shadow: 0 0 24px var(--glow); } /* dark-glow */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: var(--violet); animation: pulse 2s infinite; } /* pulsing-dot */
+.track { width: 120px; overflow: hidden; }
+.strip { width: 200px; animation: slide 8s linear infinite; } /* marquee */
+.odd { font-size: 17px; } /* off-scale-type */
+@keyframes pulse { 50% { opacity: 0.4; } }
+@keyframes slide { to { transform: translateX(-80px); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

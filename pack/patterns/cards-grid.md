@@ -28,6 +28,7 @@ A collection whose items are recognised by a picture or a visual preview - templ
 
 ## What to avoid
 - Three equal cards side by side when one thing is the point.
+- A row of same-size cards each led by an icon in a rounded tile, a card nested inside a card, or every card in a hairline border and a wide soft shadow (the tells reference).
 - Cards with no image at all - a grid of text boxes is a list wearing a costume.
 - Cards with title, description, four tags, two buttons and a footer, all at the same weight.
 - Mixed aspect ratios so rows are ragged, or text overlaid on photos without a scrim.

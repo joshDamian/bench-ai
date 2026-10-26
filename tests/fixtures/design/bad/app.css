@@ -23,3 +23,7 @@ button:disabled { opacity: 0.35; } /* contrast: off, so its label is none of the
 .spin { width: 40px; height: 40px; background-color: var(--brand); animation: pulse 2s infinite; } /* motion: spins regardless */
 @keyframes pulse { from { opacity: 1 } to { opacity: 0.4 } }
 /* semantics: the div with onclick in index.html - a click target that is not a button */
+.kicker { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; } /* eyebrow: a tracked label announcing the heading */
+h2 { font-size: 24px; margin: 0 0 var(--space-2); }
+.reveal { opacity: 0; } /* hidden-at-rest: waits for a script that never comes */
+/* placeholder: the lorem ipsum in index.html. alt: the img with none. no-zoom: maximum-scale=1 */

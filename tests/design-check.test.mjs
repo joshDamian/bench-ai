@@ -70,7 +70,7 @@ function copy(name) {
 }
 
 before(async () => {
-  for (const name of ['good', 'bad', 'plain', 'small', 'hash', 'theme', 'scroll']) await serve(name);
+  for (const name of ['good', 'bad', 'plain', 'small', 'hash', 'theme', 'scroll', 'tells']) await serve(name);
 });
 
 after(() => {
@@ -125,10 +125,17 @@ test('a planted defect is caught for every rule the gate keeps', looking, async 
     // nothing in the DOM says whose it is, so it is judged until the config names it.
     ['tokens', '.widget-ink', /\(vendor\.css\)/],
     ['motion', 'div.spin', /still moving/],
+    // The floor added for honesty and access: never waived, always a defect.
+    ['eyebrow', 'p.kicker', /announces the heading/],
+    ['placeholder', 'p', /Lorem ipsum/],
+    ['alt', 'img', /no alt attribute/],
+    ['no-zoom', 'meta[name=viewport]', /maximum-scale=1/],
+    ['hidden-at-rest', 'p', /invisible until a script shows it/],
   ];
   for (const [rule, selector, detail] of planted) {
     const hit = found.find((/** @type {any} */ f) => f.rule === rule && f.selector.includes(selector) && detail.test(f.detail));
     assert.ok(hit, `${rule}: nothing matched ${selector} ${detail} in\n${found.map((/** @type {any} */ f) => `${f.rule} ${f.selector} ${f.detail}`).join('\n')}`);
+    assert.equal(hit.tier, 'floor', `${rule} is a floor rule, so it is a defect`);
   }
   // The contrast rule is asked of the dark theme too: ink written for a white page is
   // unreadable on midnight, and only a run in the dark theme can see that.
@@ -290,4 +297,28 @@ test('a page it could not look at is never a pass', async () => {
     assert.equal(code, 2, `${c.why}: expected 2, got ${code}:\n${out}`);
     assert.match(out, /could not look/, c.why);
   }
+});
+
+test('the reflex tells are named as warnings, never as defects, and a project waives or ignores them on the record', looking, async () => {
+  // A page that keeps every floor rule and falls into every tell: it passes, and the pass
+  // names each tell with what replaces it. Its Design.md waives one with a reason and tries
+  // to waive a floor rule; its config ignores one and tries to ignore a floor rule.
+  const { url } = /** @type {any} */ (served.get('tells'));
+  const { code, out } = await gate(path.join(FIXTURES, 'tells'), ['--url', url, '--json']);
+  assert.equal(code, 0, `warnings are not defects, got:\n${out}`);
+  const report = JSON.parse(out);
+  assert.deepEqual(report.findings, []);
+  const named = new Set(report.warnings.map((/** @type {any} */ w) => w.rule));
+  const reflex = ['icon-tile-grid', 'nested-cards', 'hero-metric', 'gradient-text', 'ai-palette', 'mono-costume', 'section-numbers', 'tracked-caps', 'side-tab', 'border-shadow-card', 'dark-glow', 'bounce-easing', 'pulsing-dot', 'middle-dot-meta', 'arrow-link', 'accent-word', 'overused-font', 'font-count', 'off-scale-type', 'long-headline', 'stock-phrase', 'generic-label', 'em-dash', 'emoji-icons', 'transition-all'];
+  const finish = ['text-wrap', 'tabular-nums', 'browser-surfaces', 'concentric-radius', 'heading-skip', 'slow-feedback', 'typography-marks'];
+  for (const rule of reflex) assert.ok(named.has(rule), `${rule} is named; got ${[...named].join(', ')}`);
+  for (const rule of finish) assert.ok(named.has(rule), `${rule} is noted; got ${[...named].join(', ')}`);
+  for (const w of report.warnings) assert.equal(w.tier, finish.includes(w.rule) ? 'finish' : 'reflex', `${w.rule} carries its tier`);
+  assert.deepEqual(report.waived.map((/** @type {any} */ w) => [w.rule, w.waived]), [['glass', 'the bar and the sheet float over a moving map, the only two blurred surfaces']], 'the waiver in Design.md is applied, with its reason');
+  assert.ok(!named.has('glass') && !named.has('marquee'), 'what is waived and what is ignored are not warned about');
+  assert.ok(report.notes.some((/** @type {string} */ n) => /eyebrow: a floor rule is never waived/.test(n)), 'a waiver naming a floor rule is refused, and says so');
+  assert.ok(report.notes.some((/** @type {string} */ n) => /contrast: a floor rule cannot be ignored/.test(n)), 'and so is an ignore');
+  const text = await gate(path.join(FIXTURES, 'tells'), ['--url', url]);
+  assert.match(text.out, /clean - .*; \d+ reflex warnings, \d+ finish notes/);
+  assert.match(text.out, /reflex {2}transition-all .*Instead: /, 'each warning says what replaces it');
 });

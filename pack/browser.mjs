@@ -422,6 +422,15 @@ export class Browser {
     await this.#cdp.send('Emulation.setEmulatedMedia', { features }, this.#session);
   }
 
+  /**
+   * Whether the page's own scripts run, for every load after this one - off is how a page is
+   * seen by someone whose script failed. DevTools evaluation still works either way.
+   * @param {boolean} enabled
+   */
+  async setScripts(enabled) {
+    await this.#cdp.send('Emulation.setScriptExecutionDisabled', { value: !enabled }, this.#session);
+  }
+
   /** Runs before every page's own scripts, on this navigation and later ones. @param {string} source */
   async addInitScript(source) {
     if (this.#initScripts.has(source)) return;
