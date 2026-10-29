@@ -64,7 +64,13 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test -project Bench.xcodeproj -scheme Bench -destination 'platform=macOS' \
+            -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$RUNNER_TEMP/test.log" | xcbeautify --renderer github-actions
+
+      - name: Why the test step failed
+        if: failure()
+        run: |
+          grep -E "error:|error -|failed|Fatal|cannot" "$RUNNER_TEMP/test.log" | grep -v "^ *$" | sort -u | head -30 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
 
       - name: Signing identity
         id: sign
