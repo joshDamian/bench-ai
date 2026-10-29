@@ -66,7 +66,17 @@ jobs:
           BENCH_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BENCH_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           BENCH_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon testDebugUnitTest assembleRelease -PbenchVersion=${{ steps.v.outputs.name }} -PbenchCode=${{ steps.v.outputs.code }}
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease -PbenchVersion=${{ steps.v.outputs.name }} -PbenchCode=${{ steps.v.outputs.code }} 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+
+      # Compiler and test failures as annotations, so they show on the PR's Files tab.
+      - name: Report failures
+        if: failure()
+        run: |
+          grep -E '^e: |error:|FAILED|What went wrong' -A3 "$RUNNER_TEMP/gradle.log" | head -120 | while IFS= read -r line; do
+            echo "::error::${line//%/%25}"
+          done
 
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk "bench-android-${{ steps.v.outputs.name }}.apk"
