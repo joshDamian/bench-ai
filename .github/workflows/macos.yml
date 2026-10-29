@@ -67,11 +67,6 @@ jobs:
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$RUNNER_TEMP/test.log" | xcbeautify --renderer github-actions
 
-      - name: Why the test step failed
-        if: failure()
-        run: |
-          grep -E "error:|error -|failed|Fatal|cannot" "$RUNNER_TEMP/test.log" | grep -v "^ *$" | sort -u | head -30 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
-
       - name: Signing identity
         id: sign
         env:
@@ -98,6 +93,11 @@ jobs:
             CODE_SIGN_IDENTITY="${{ steps.sign.outputs.identity }}" DEVELOPMENT_TEAM="${{ secrets.MACOS_TEAM_ID }}" \
             OTHER_CODE_SIGN_FLAGS="--timestamp" build 2>&1 | tee "$RUNNER_TEMP/build.log" | xcbeautify --renderer github-actions
           cp -R "$RUNNER_TEMP/dd/Build/Products/Release/Bench.app" .
+
+      - name: Why the build failed
+        if: failure()
+        run: |
+          cat "$RUNNER_TEMP"/test.log "$RUNNER_TEMP"/build.log 2>/dev/null | grep -E "error:|error -|\*\* .* FAILED|Command .* failed" | sort -u | head -30 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
 
       - name: Disk image
         run: |
