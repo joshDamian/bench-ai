@@ -69,6 +69,8 @@ targets:
       - target: Bench
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ai.bench.app.tests
         BUNDLE_LOADER: $(TEST_HOST)
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/Bench.app/Contents/MacOS/Bench
 
