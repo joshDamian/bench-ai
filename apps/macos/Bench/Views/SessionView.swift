@@ -114,18 +114,17 @@ struct SessionView: View {
                     }
                     ScrollView {
                         ApprovalCard(approval: a, cwd: cwd, busy: model.busyApprovals.contains(a.id)) { body in model.answer(a, body) }
+                            .padding(4)
                             .id(a.id)
                     }
                     .scrollBounceBehavior(.basedOnSize)
                     .frame(maxHeight: 460)
                     .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: 860)
-                .padding(Space.md)
-                .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: theme.radius))
-                .overlay(RoundedRectangle(cornerRadius: theme.radius).strokeBorder(theme.colors.warn.opacity(0.5)))
-                .padding(.horizontal, Space.xl)
-                .padding(.bottom, Space.md)
+                .frame(maxWidth: 728)
+                .padding(.horizontal, 28)
+                .padding(.top, Space.md)
+                .padding(.bottom, Space.lg)
                 .frame(maxWidth: .infinity)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
@@ -161,9 +160,9 @@ struct SessionView: View {
                     Text(session?.title ?? "Session")
                         .font(.system(size: TypeScale.md, weight: .semibold))
                         .lineLimit(1)
-                    Text(subtitle(session))
+                    Text(session?.status == "waiting" || !approvals.isEmpty ? "Needs you" : subtitle(session))
                         .font(.system(size: TypeScale.xs))
-                        .foregroundStyle(theme.colors.muted)
+                        .foregroundStyle(session?.status == "waiting" || !approvals.isEmpty ? theme.colors.warn : theme.colors.muted)
                         .lineLimit(1)
                 }
                 .padding(.leading, Space.sm)

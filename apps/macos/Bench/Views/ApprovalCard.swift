@@ -19,21 +19,22 @@ struct ApprovalCard: View {
             if let sessionTitle { Text(sessionTitle).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted).lineLimit(1) }
             switch approval.tool {
             case "ExitPlanMode":
-                Text("Claude has a plan").font(.headline)
+                Text("Review the plan").font(.system(size: TypeScale.md, weight: .semibold))
                 ScrollView { BenchMarkdown(text: i["plan"].string ?? "").frame(maxWidth: .infinity, alignment: .leading) }
                     .frame(maxHeight: compact ? 160 : 420)
                 HStack {
-                    Button("Approve, accept edits") { onAnswer(["allow": true, "mode": "acceptEdits"]) }
-                        .buttonStyle(.borderedProminent)
+                    Button("Approve, Accept Edits") { onAnswer(["allow": true, "mode": "acceptEdits"]) }
+                        .buttonStyle(CapsuleButton(kind: .primary))
                         .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: [.command, .shift]))
-                    Button("Approve, ask before edits") { onAnswer(["allow": true, "mode": "default"]) }
+                    Button("Approve, Ask Before Edits") { onAnswer(["allow": true, "mode": "default"]) }
+                        .buttonStyle(CapsuleButton(kind: .outline))
                 }
                 HStack {
                     TextField("What should change?", text: $note).textFieldStyle(.roundedBorder)
-                    Button("Keep planning") { onAnswer(["allow": false, "message": note.isEmpty ? "Keep planning." : note]) }
+                    Button("Keep Planning") { onAnswer(["allow": false, "message": note.isEmpty ? "Keep planning." : note]) }
                 }
             case "AskUserQuestion":
-                Text("Claude is asking").font(.headline)
+                Text("Answer a question").font(.system(size: TypeScale.md, weight: .semibold))
                 let qs = i["questions"].array
                 ForEach(Array(qs.enumerated()), id: \.offset) { _, q in
                     questionView(q)
@@ -41,33 +42,63 @@ struct ApprovalCard: View {
                 let done = qs.allSatisfy { !(answers[$0["question"].string ?? ""] ?? "").isEmpty }
                 HStack {
                     Button("Answer") { onAnswer(["allow": true, "answers": answers]) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(CapsuleButton(kind: .primary))
                         .disabled(!done)
                     Button("Skip") { onAnswer(["allow": false, "message": "The user declined to answer."]) }
+                        .buttonStyle(CapsuleButton(kind: .outline))
                 }
             default:
-                Text(approval.title ?? "Claude wants to use \(approval.tool)").font(.headline)
+                HStack(spacing: 10) {
+                    Circle().fill(theme.colors.warn).frame(width: 8, height: 8)
+                    Text(Self.ask(approval)).font(.system(size: TypeScale.md, weight: .semibold))
+                    Spacer()
+                    Text(approval.tool).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted)
+                }
                 if let r = approval.reason { Text(r).foregroundStyle(theme.colors.muted).font(.system(size: TypeScale.sm)) }
                 preview(i)
-                HStack {
-                    Button("Allow") { onAnswer(["allow": true]) }
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: [.command, .shift]))
-                        .help("Allow (⇧⌘Return)")
-                    Button("Always allow") { onAnswer(["allow": true, "always": true]) }
-                        .help("Don't ask again for this in this session")
-                    Button("Deny", role: .destructive) { onAnswer(["allow": false, "message": note]) }
-                }
                 if !compact {
-                    TextField("Optional: tell Claude why, or what to do instead", text: $note).textFieldStyle(.roundedBorder)
+                    TextField("", text: $note, prompt: Text("Optional: tell Claude why, or what to do instead"))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.colors.line))
+                }
+                HStack(spacing: Space.sm) {
+                    Button("Allow") { onAnswer(["allow": true]) }
+                        .buttonStyle(CapsuleButton(kind: .primary))
+                        .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: [.command, .shift]))
+                    Button("Allow for This Session") { onAnswer(["allow": true, "always": true]) }
+                        .buttonStyle(CapsuleButton(kind: .outline))
+                    Button("Deny") { onAnswer(["allow": false, "message": note]) }
+                        .buttonStyle(CapsuleButton(kind: .danger))
+                        .keyboardShortcut(compact ? nil : KeyboardShortcut(.delete, modifiers: .command))
+                    Spacer()
+                    if !compact {
+                        Text("⇧⌘↩ allow · ⌘⌫ deny").font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted)
+                    }
                 }
             }
         }
         .disabled(busy)
-        .padding(Space.md)
+        .padding(Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: theme.radius))
-        .overlay(RoundedRectangle(cornerRadius: theme.radius).strokeBorder(theme.colors.warn.opacity(0.5)))
+        .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.colors.warn.opacity(0.35)))
+        .background(RoundedRectangle(cornerRadius: 20).fill(theme.colors.warn.opacity(0.06)).padding(-4))
+    }
+
+    /// What Claude is asking to do, as a short verb phrase.
+    static func ask(_ a: Approval) -> String {
+        switch a.tool {
+        case "Bash": "Run a command"
+        case "Edit", "MultiEdit": "Edit a file"
+        case "Write": "Create a file"
+        case "WebFetch": "Open a web page"
+        case "WebSearch": "Search the web"
+        case "NotebookEdit": "Edit a notebook"
+        default: a.title ?? "Use \(a.tool)"
+        }
     }
 
     @ViewBuilder
@@ -100,7 +131,14 @@ struct ApprovalCard: View {
     @ViewBuilder
     private func preview(_ i: JSONValue?) -> some View {
         switch approval.tool {
-        case "Bash": CodeBlock(text: "$ " + (i["command"].string ?? ""))
+        case "Bash":
+            Text(i["command"].string ?? "")
+                .font(.system(size: TypeScale.sm, design: .monospaced))
+                .foregroundStyle(theme.colors.wellText)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Space.md).padding(.vertical, 10)
+                .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: 8))
         case "Edit", "MultiEdit":
             Text(Transcript.rel(i["file_path"].string, cwd: cwd)).font(.system(size: TypeScale.sm)).foregroundStyle(theme.colors.muted)
             let edits = approval.tool == "MultiEdit" ? i["edits"].array : (i.map { [$0] } ?? [])
@@ -166,5 +204,25 @@ struct FlowLayout: Layout {
             x += size.width + spacing
             line = max(line, size.height)
         }
+    }
+}
+
+/// The design's pill buttons: filled accent, outlined, and outlined in the danger colour.
+struct CapsuleButton: ButtonStyle {
+    enum Kind { case primary, outline, danger }
+    @Environment(\.theme) private var theme
+    @Environment(\.isEnabled) private var enabled
+    let kind: Kind
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: kind == .primary ? .semibold : .regular))
+            .foregroundStyle(kind == .primary ? theme.colors.onAccent : kind == .danger ? theme.colors.bad : theme.colors.text)
+            .padding(.horizontal, kind == .primary ? 16 : 14)
+            .frame(height: 30)
+            .background(kind == .primary ? theme.colors.accent : .clear, in: Capsule())
+            .overlay { if kind != .primary { Capsule().strokeBorder(theme.colors.lineStrong) } }
+            .opacity(configuration.isPressed ? 0.75 : enabled ? 1 : 0.45)
+            .contentShape(Capsule())
     }
 }
