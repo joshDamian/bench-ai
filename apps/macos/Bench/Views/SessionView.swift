@@ -56,10 +56,6 @@ struct SessionView: View {
                             }
                             .id("stream")
                         }
-                        ForEach(approvals) { a in
-                            ApprovalCard(approval: a, cwd: cwd, busy: model.busyApprovals.contains(a.id)) { body in model.answer(a, body) }
-                                .id("approval-\(a.id)")
-                        }
                         Color.clear.frame(height: 1).id("bottom")
                             .onAppear { follow = true }
                             .onDisappear { follow = false }
@@ -97,8 +93,35 @@ struct SessionView: View {
                     .padding(.vertical, Space.sm)
                     .background(theme.colors.warn.opacity(0.10))
             }
-            Composer(model: model, draft: $draft, running: running, focused: $composerFocused)
+            // What Claude is waiting on takes the composer's place until it is answered.
+            if let a = approvals.first {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    if approvals.count > 1 {
+                        Text("1 of \(approvals.count) waiting")
+                            .font(.system(size: TypeScale.xs))
+                            .foregroundStyle(theme.colors.muted)
+                    }
+                    ScrollView {
+                        ApprovalCard(approval: a, cwd: cwd, busy: model.busyApprovals.contains(a.id)) { body in model.answer(a, body) }
+                            .id(a.id)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(maxHeight: 460)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: 860)
+                .padding(Space.md)
+                .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: theme.radius))
+                .overlay(RoundedRectangle(cornerRadius: theme.radius).strokeBorder(theme.colors.warn.opacity(0.5)))
+                .padding(.horizontal, Space.xl)
+                .padding(.bottom, Space.md)
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                Composer(model: model, draft: $draft, running: running, focused: $composerFocused)
+            }
         }
+        .animation(.snappy, value: approvals.first?.id)
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             for p in providers {
                 _ = p.loadObject(ofClass: URL.self) { url, _ in

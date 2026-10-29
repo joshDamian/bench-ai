@@ -117,6 +117,31 @@ struct PlaceView: View {
                 ContentUnavailableView(place == .needs ? "Nothing needs you" : "Nothing is running",
                                        systemImage: place == .needs ? "checkmark.circle" : "moon.zzz",
                                        description: Text(place == .needs ? "Questions and approvals show up here." : "Sessions Claude is working on show up here."))
+            } else if place == .needs {
+                ScrollView {
+                    LazyVStack(spacing: Space.md) {
+                        ForEach(store.approvals) { a in
+                            let s = store.session(a.session_id)
+                            VStack(alignment: .leading, spacing: Space.sm) {
+                                HStack {
+                                    Text([store.project(s?.project_id)?.name ?? "Ask Bench", s?.title].compactMap { $0 }.joined(separator: " · "))
+                                        .font(.system(size: TypeScale.sm, weight: .medium))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Button("Open Session") { open(a.session_id) }.buttonStyle(.link)
+                                }
+                                ApprovalCard(approval: a, cwd: s?.cwd ?? "", busy: false) { body in
+                                    Task { try? await store.answer(a, body) }
+                                }
+                            }
+                            .padding(Space.md)
+                            .background(theme.colors.surface1, in: RoundedRectangle(cornerRadius: theme.radius))
+                        }
+                    }
+                    .frame(maxWidth: 860)
+                    .padding(Space.xl)
+                    .frame(maxWidth: .infinity)
+                }
             } else {
                 List(rows, id: \.0.id) { s, line in
                     Button { open(s.id) } label: {

@@ -15,7 +15,7 @@ struct MenuBarView: View {
                     Circle().fill(store.connected ? theme.colors.good : theme.colors.warn).frame(width: 7, height: 7)
                 }
                 if store.approvals.isEmpty {
-                    Text("Nothing needs you.").foregroundStyle(theme.colors.muted)
+                    Text("Nothing needs you").foregroundStyle(theme.colors.muted)
                 } else {
                     ScrollView {
                         VStack(spacing: Space.sm) {
@@ -43,14 +43,15 @@ struct MenuBarView: View {
                     }
                 }
             } else {
-                Text("Not connected").foregroundStyle(theme.colors.muted)
+                Text("Not connected to a server").foregroundStyle(theme.colors.muted)
             }
             Divider()
             HStack {
-                Button("Open Bench") { open(nil) }
+                Button("New Session…") { model.showNewSession = true; open(nil) }
                 Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
+                Button("Open Bench") { open(nil) }
             }
+            .buttonStyle(.borderless)
         }
         .padding(Space.md)
         .frame(width: 360)
