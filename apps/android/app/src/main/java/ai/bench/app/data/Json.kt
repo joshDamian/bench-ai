@@ -33,8 +33,8 @@ fun parseServerMessage(text: String): ServerMessage? {
     return runCatching {
         when (o["type"].str()) {
             "hello" -> ServerMessage.Hello(
-                j.decodeFromJsonElement(o["sessions"] ?: JsonArray(emptyList())),
-                j.decodeFromJsonElement(o["approvals"] ?: JsonArray(emptyList())),
+                o["sessions"].arr().orEmpty().mapNotNull { runCatching { j.decodeFromJsonElement<Session>(it) }.getOrNull() },
+                o["approvals"].arr().orEmpty().mapNotNull { runCatching { j.decodeFromJsonElement<Approval>(it) }.getOrNull() },
             )
             "session" -> ServerMessage.SessionChanged(j.decodeFromJsonElement(o["session"]!!))
             "session-removed" -> ServerMessage.SessionRemoved(o["id"].str()!!)

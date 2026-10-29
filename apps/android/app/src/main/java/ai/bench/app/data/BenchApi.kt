@@ -79,7 +79,25 @@ class BenchApi(val config: ServerConfig) {
 
     // -- calls ------------------------------------------------------------------------------
 
-    suspend fun state(): StateSnapshot = get("/api/state").decode()
+    /**
+     * The state, read list by list and item by item: one record this client cannot read
+     * (a newer server's shape) is skipped, not the reason nothing shows.
+     */
+    suspend fun state(): StateSnapshot {
+        val raw = get("/api/state").obj() ?: throw BenchError(500, "Unexpected answer from the server")
+        return StateSnapshot(
+            version = raw["version"].str(),
+            projects = raw["projects"].lossy(),
+            tasks = raw["tasks"].lossy(),
+            sessions = raw["sessions"].lossy(),
+            approvals = raw["approvals"].lossy(),
+            defaults = runCatching { BenchJson.decodeFromJsonElement<Defaults>(raw["defaults"]!!) }.getOrDefault(Defaults()),
+            me = runCatching { BenchJson.decodeFromJsonElement<Me>(raw["me"]!!) }.getOrNull(),
+        )
+    }
+
+    private inline fun <reified T> JsonElement?.lossy(): List<T> =
+        arr().orEmpty().mapNotNull { runCatching { BenchJson.decodeFromJsonElement<T>(it) }.getOrNull() }
     suspend fun session(id: String, after: Long? = null): SessionDetail =
         get("/api/sessions/${enc(id)}" + (after?.let { "?after=$it" } ?: "")).decode()
     suspend fun olderEvents(id: String, before: Long): List<SessionEvent> =

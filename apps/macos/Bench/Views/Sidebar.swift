@@ -20,6 +20,21 @@ struct Sidebar: View {
                     }
                 }
             }
+            // Sessions outside any project (the server's "ask" sessions) and any whose
+            // project this list does not have.
+            let known = Set(store.projects.map(\.id))
+            let loose = store.sessions
+                .filter { ($0.project_id == nil || !known.contains($0.project_id!)) && (showArchived || $0.archived_at == nil) }
+                .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+            if !loose.isEmpty {
+                Section("Ask") {
+                    ForEach(loose) { s in
+                        SessionRowView(session: s, project: nil, detail: nil)
+                            .tag(s.id)
+                            .contextMenu { SessionMenu(store: store, session: s) }
+                    }
+                }
+            }
             ForEach(store.projects) { p in
                 let sessions = store.sessions
                     .filter { $0.project_id == p.id && (showArchived || $0.archived_at == nil) }
@@ -45,6 +60,14 @@ struct Sidebar: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
+            VStack(alignment: .leading, spacing: Space.xs) {
+            if let err = store.error {
+                Text(err)
+                    .font(.system(size: TypeScale.xs))
+                    .foregroundStyle(theme.colors.bad)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+            }
             HStack {
                 Circle().fill(store.connected ? theme.colors.good : theme.colors.warn).frame(width: 7, height: 7)
                 Text(store.connected ? host : "Connecting…")
@@ -55,6 +78,7 @@ struct Sidebar: View {
                 Toggle("Archived", isOn: $showArchived)
                     .toggleStyle(.button)
                     .controlSize(.small)
+            }
             }
             .padding(.horizontal, Space.md)
             .padding(.vertical, Space.sm)

@@ -11,7 +11,7 @@ struct Project: Codable, Identifiable, Hashable {
 
 struct BenchTask: Codable, Identifiable, Hashable {
     let id: String
-    let project_id: String
+    let project_id: String?
     var title: String
     var branch: String?
     var base_branch: String?
@@ -21,7 +21,8 @@ struct BenchTask: Codable, Identifiable, Hashable {
 
 struct Session: Codable, Identifiable, Hashable {
     let id: String
-    let project_id: String
+    /// Nil for a session outside any project: the server's "ask" sessions.
+    let project_id: String?
     var task_id: String?
     var title: String
     var cwd: String?
@@ -74,7 +75,9 @@ struct Defaults: Codable, Hashable {
     var mode: String?
 }
 
-struct StateSnapshot: Codable {
+/// Read list by list and item by item: one record this client cannot read (a newer
+/// server's shape) is skipped, not the reason nothing shows.
+struct StateSnapshot: Decodable {
     let version: String?
     let projects: [Project]
     let tasks: [BenchTask]
@@ -82,6 +85,32 @@ struct StateSnapshot: Codable {
     let approvals: [Approval]
     let defaults: Defaults?
     let me: Me?
+
+    enum CodingKeys: String, CodingKey { case version, projects, tasks, sessions, approvals, defaults, me }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try? c.decodeIfPresent(String.self, forKey: .version)
+        projects = (try? c.decodeIfPresent(Lossy<Project>.self, forKey: .projects))?.items ?? []
+        tasks = (try? c.decodeIfPresent(Lossy<BenchTask>.self, forKey: .tasks))?.items ?? []
+        sessions = (try? c.decodeIfPresent(Lossy<Session>.self, forKey: .sessions))?.items ?? []
+        approvals = (try? c.decodeIfPresent(Lossy<Approval>.self, forKey: .approvals))?.items ?? []
+        defaults = try? c.decodeIfPresent(Defaults.self, forKey: .defaults)
+        me = try? c.decodeIfPresent(Me.self, forKey: .me)
+    }
+}
+
+/// An array whose unreadable elements are dropped instead of failing the whole array.
+struct Lossy<T: Decodable>: Decodable {
+    let items: [T]
+    init(from decoder: Decoder) throws {
+        var c = try decoder.unkeyedContainer()
+        var out: [T] = []
+        while !c.isAtEnd {
+            if let v = try? c.decode(T.self) { out.append(v) } else { _ = try? c.decode(JSONValue.self) }
+        }
+        items = out
+    }
 }
 
 struct SessionDetail: Codable {
@@ -132,7 +161,7 @@ enum ServerMessage {
             return try? dec.decode(T.self, from: d)
         }
         switch type {
-        case "hello": return .hello(sessions: field("sessions", [Session].self) ?? [], approvals: field("approvals", [Approval].self) ?? [])
+        case "hello": return .hello(sessions: field("sessions", Lossy<Session>.self)?.items ?? [], approvals: field("approvals", Lossy<Approval>.self)?.items ?? [])
         case "session": return field("session", Session.self).map(ServerMessage.session)
         case "session-removed": return raw["id"].string.map(ServerMessage.sessionRemoved)
         case "task": return field("task", BenchTask.self).map(ServerMessage.task)

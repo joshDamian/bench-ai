@@ -19,7 +19,7 @@ val BenchJson = Json {
 @Serializable
 data class Project(
     val id: String,
-    val name: String,
+    val name: String = "Project",
     val path: String = "",
     val check_command: String? = null,
 )
@@ -36,8 +36,8 @@ data class TaskLoop(
 @Serializable
 data class BenchTask(
     val id: String,
-    val project_id: String,
-    val title: String,
+    val project_id: String? = null,
+    val title: String = "Task",
     val description: String? = null,
     val base_branch: String = "",
     val branch: String = "",
@@ -53,9 +53,10 @@ data class BenchTask(
 @Serializable
 data class Session(
     val id: String,
-    val project_id: String,
+    /** Null for a session outside any project: the server's "ask" sessions. */
+    val project_id: String? = null,
     val task_id: String? = null,
-    val title: String,
+    val title: String = "Session",
     val cwd: String = "",
     val provider_id: String = "",
     val model_id: String? = null,
