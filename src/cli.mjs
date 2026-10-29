@@ -651,7 +651,6 @@ async function main() {
       const url = tailscaleUrl(sharePort);
       out(
         `Shared on your tailnet: ${url || '(see `tailscale serve status`)'}\n` +
-          (sharePort === 443 ? '' : `Devices reach it on that port, so set BENCH_PUBLIC_URL=${url} or the pairing link will point at 443.\n`) +
           'Next: `bench pair` to let a device in.'
       );
     }

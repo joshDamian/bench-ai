@@ -551,16 +551,43 @@ async function publicUrls() {
   const urls = [];
   const configured = env('PUBLIC_URL');
   if (configured) urls.push(configured.replace(/\/$/, ''));
-  const ts = await new Promise((resolve) => execFile('tailscale', ['status', '--json'], { timeout: 5000 }, (err, out) => resolve(err ? null : out)));
-  if (ts) {
+  const ts = (args) => new Promise((resolve) => execFile('tailscale', args, { timeout: 5000 }, (err, out) => resolve(err ? null : out)));
+  const [status, served] = await Promise.all([ts(['status', '--json']), ts(['serve', 'status', '--json'])]);
+  if (status) {
     try {
-      const name = JSON.parse(String(ts))?.Self?.DNSName?.replace(/\.$/, '');
-      if (name) urls.push(`https://${name}`);
+      const name = JSON.parse(String(status))?.Self?.DNSName?.replace(/\.$/, '');
+      // Every service on a node shares one hostname, so the port is what tells them apart;
+      // a server shared on 8443 has to advertise 8443, not the 443 default.
+      const httpsPort = servedPort(served);
+      if (name) urls.push(`https://${name}${httpsPort ? `:${httpsPort}` : ''}`);
     } catch {
       /* not running */
     }
   }
   return [...new Set(urls)];
+}
+
+/**
+ * The HTTPS port `tailscale serve` points at this server's backend, or null when nothing
+ * does - nothing served, someone else's port, or an answer in a shape we do not know.
+ * @param {string|null} raw
+ */
+function servedPort(raw) {
+  if (!raw) return null;
+  try {
+    const backend = `http://127.0.0.1:${port}`;
+    for (const [hostPort, entry] of Object.entries(JSON.parse(raw)?.Web || {})) {
+      const root = entry?.Handlers?.['/'];
+      const target = root?.Proxy || root?.Text || root?.Path || null;
+      if (target === backend) {
+        const httpsPort = String(hostPort).slice(String(hostPort).lastIndexOf(':') + 1);
+        return httpsPort === '443' ? null : Number(httpsPort);
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // -- routes -----------------------------------------------------------------------------
