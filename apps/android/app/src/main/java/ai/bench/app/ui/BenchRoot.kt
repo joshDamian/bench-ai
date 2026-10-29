@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import androidx.navigation.navArgument
 import ai.bench.app.BenchApp
 import ai.bench.app.MainActivity
@@ -90,7 +91,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
 
     val back by nav.currentBackStackEntryAsState()
     val route = back?.destination?.route
-    val tabs = listOf("home", "sessions", "projects", "settings")
+    val tabs = listOf("home", "projects", "settings")
     var newSession by remember { mutableStateOf(false) }
     var addProject by remember { mutableStateOf(false) }
     val open: (String) -> Unit = { nav.navigate("session/$it") }
@@ -105,8 +106,8 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             popEnterTransition = { fadeIn() },
             popExitTransition = { slideOutHorizontally { it / 4 } + fadeOut() },
         ) {
-            composable("home") { HomeScreen(store, onOpen = open, onNew = { newSession = true }) }
-            composable("sessions") { SessionsScreen(store, onOpen = open, onNew = { newSession = true }) }
+            composable("home") { HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }) }
+            composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }) }
             composable("settings") { SettingsScreen(store) }
             composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
@@ -145,10 +146,9 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
 @Composable
 fun BenchNav(active: String, onPick: (String) -> Unit) {
     val c = Bench.colors
-    NavigationBar(containerColor = c.surface1) {
+    NavigationBar(containerColor = c.bg, tonalElevation = 0.dp) {
         listOf(
             Triple("home", "Home", Icons.Outlined.Home),
-            Triple("sessions", "Sessions", Icons.AutoMirrored.Outlined.List),
             Triple("projects", "Projects", Icons.Outlined.Folder),
             Triple("settings", "Settings", Icons.Outlined.Settings),
         ).forEach { (id, label, icon) ->
@@ -156,10 +156,10 @@ fun BenchNav(active: String, onPick: (String) -> Unit) {
                 selected = active == id,
                 onClick = { onPick(id) },
                 icon = { Icon(icon, null) },
-                label = { Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium) },
+                label = { Text(label, fontSize = 12.sp, fontWeight = if (active == id) FontWeight.SemiBold else FontWeight.Medium) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = c.accent, selectedTextColor = c.accent,
-                    indicatorColor = c.accent.copy(alpha = 0.18f),
+                    selectedIconColor = c.accent, selectedTextColor = c.text,
+                    indicatorColor = c.accent.copy(alpha = 0.15f),
                     unselectedIconColor = c.muted, unselectedTextColor = c.muted,
                 ),
             )

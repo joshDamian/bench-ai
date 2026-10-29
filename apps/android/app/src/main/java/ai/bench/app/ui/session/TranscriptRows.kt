@@ -26,6 +26,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -85,8 +87,8 @@ private fun UserBubble(row: Row.User) {
         Column(
             Modifier
                 .widthIn(max = 300.dp)
-                .background(Bench.colors.surface3, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .background(Bench.colors.surface3, RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp))
+                .padding(horizontal = 16.dp, vertical = 11.dp),
             verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
             if (row.attachments.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
@@ -110,9 +112,12 @@ fun TurnBlock(turn: Block.Turn, live: Boolean, cwd: String, thinking: Map<String
         val n = turn.stepCount
         if (turn.done || n > 0) {
             Row(
-                Modifier.heightIn(min = 32.dp).clickable { open = !open },
+                Modifier.heightIn(min = 30.dp)
+                    .background(if (live && !turn.done) androidx.compose.ui.graphics.Color.Transparent else c.surface1, RoundedCornerShape(15.dp))
+                    .clickable { open = !open }
+                    .padding(horizontal = if (live && !turn.done) 0.dp else 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 val current = turn.current
                 if (live && !turn.done) {
@@ -128,10 +133,10 @@ fun TurnBlock(turn: Block.Turn, live: Boolean, cwd: String, thinking: Map<String
                     )
                     Text("step $n", fontSize = 13.5.sp, color = c.muted)
                 } else {
-                    Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.muted, modifier = Modifier.size(16.dp))
+                    Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.muted, modifier = Modifier.size(14.dp))
                     Text(
                         listOfNotNull(turn.label, if (n > 0) "$n step${if (n == 1) "" else "s"}" else null).joinToString(" · "),
-                        fontSize = 13.5.sp, color = if (turn.ok) c.muted else c.bad,
+                        fontSize = 12.5.sp, color = if (turn.ok) c.muted else c.bad,
                     )
                 }
             }
@@ -149,10 +154,13 @@ fun TurnBlock(turn: Block.Turn, live: Boolean, cwd: String, thinking: Map<String
         }
         turn.prose.forEach { MarkdownText(it) }
         if (turn.reply.isNotEmpty()) MarkdownText(turn.reply)
-        if (turn.done && (turn.cost != null || turn.reply.isNotEmpty())) Row(verticalAlignment = Alignment.CenterVertically) {
+        if (turn.done && (turn.cost != null || turn.reply.isNotEmpty())) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             turn.cost?.let { Text(it, fontSize = 12.5.sp, color = c.muted) }
-            if (turn.reply.isNotEmpty()) IconButton(onClick = { clip.setText(AnnotatedString(turn.reply)) }, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.ContentCopy, "Copy reply", tint = c.muted, modifier = Modifier.size(14.dp))
+            if (turn.reply.isNotEmpty()) {
+                var copied by remember(turn.key) { mutableStateOf(false) }
+                LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(1500); copied = false } }
+                Text(if (copied) "Copied" else "Copy reply", fontSize = 12.5.sp, color = c.muted,
+                    modifier = Modifier.clickable { clip.setText(AnnotatedString(turn.reply)); copied = true }.padding(vertical = 6.dp))
             }
         }
     }

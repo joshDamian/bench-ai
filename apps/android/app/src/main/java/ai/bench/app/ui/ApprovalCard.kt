@@ -3,6 +3,7 @@ package ai.bench.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -91,17 +92,15 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
     Column(
         Modifier
             .fillMaxWidth()
-            .shadow(24.dp, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-            .background(c.surface2, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-            .border(BorderStroke(1.dp, c.warn.copy(alpha = 0.35f)), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+            .shadow(24.dp, RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
+            .background(c.surface2, RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
             .navigationBarsPadding()
             .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Box(Modifier.align(Alignment.CenterHorizontally).size(32.dp, 4.dp).background(c.lineStrong, RoundedCornerShape(2.dp)))
+        Box(Modifier.align(Alignment.CenterHorizontally).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp)))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(8.dp).background(c.warn, CircleShape))
-            Text(askLine(approval), fontSize = 18.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            Text(askLine(approval), fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
             if (waiting > 1) Text("1 of $waiting", fontSize = 12.5.sp, color = c.muted)
         }
         when (approval.tool) {
@@ -118,7 +117,7 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
                 Preview(approval, cwd, big = true)
                 BigButton("Allow", primary = true, enabled = !busy) { onAnswer(answer(true)) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    BigButton("Allow for session", Modifier.weight(1f), height = 48.dp, enabled = !busy) { onAnswer(answer(true) { put("always", true) }) }
+                    BigButton("Always allow", Modifier.weight(1f), height = 48.dp, enabled = !busy) { onAnswer(answer(true) { put("always", true) }) }
                     BigButton("Deny…", Modifier.weight(1f), height = 48.dp, danger = true, enabled = !busy) { denying = true }
                 }
             }
@@ -144,36 +143,28 @@ fun ApprovalCard(
     onOpen: () -> Unit = {},
 ) {
     val c = Bench.colors
-    var more by remember { mutableStateOf(false) }
     Column(
         modifier
             .fillMaxWidth()
-            .background(c.surface2, RoundedCornerShape(20.dp))
-            .border(1.dp, c.warn.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
-            .padding(Space.lg),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .background(c.surface2, RoundedCornerShape(24.dp))
+            .clickable(onClick = onOpen)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        sessionTitle?.let { Text(it, fontSize = 12.sp, color = c.muted, maxLines = 1) }
-        Text(askLine(approval), fontSize = 15.sp, fontWeight = FontWeight.Medium)
-        when (approval.tool) {
-            "ExitPlanMode", "AskUserQuestion" -> {
-                if (approval.tool == "ExitPlanMode") Column(Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState())) { MarkdownText(approval.input["plan"].str().orEmpty()) }
-                BigButton("Open", primary = true, height = 44.dp, size = 14.sp, onClick = onOpen)
+        sessionTitle?.let {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(8.dp).background(c.warn, CircleShape))
+                Text(it, fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
+        }
+        Text(askLine(approval), fontSize = 17.sp, fontWeight = FontWeight.Medium)
+        when (approval.tool) {
+            "ExitPlanMode", "AskUserQuestion" -> BigButton("Open", primary = true, height = 48.dp, size = 15.sp, onClick = onOpen)
             else -> {
                 Preview(approval, cwd, big = false)
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                    BigButton("Allow", Modifier.weight(1f), primary = true, height = 44.dp, size = 14.sp, enabled = !busy) { onAnswer(answer(true)) }
-                    BigButton("Deny", height = 44.dp, size = 14.sp, danger = true, enabled = !busy, fill = false) { onAnswer(answer(false) { put("message", "") }) }
-                    Box {
-                        OutlinedIconButton(onClick = { more = true }, modifier = Modifier.size(44.dp), border = BorderStroke(1.dp, c.lineStrong)) {
-                            Icon(Icons.Default.MoreHoriz, "More options", tint = c.text.copy(alpha = 0.8f))
-                        }
-                        DropdownMenu(more, { more = false }) {
-                            DropdownMenuItem({ Text("Allow for session") }, onClick = { more = false; onAnswer(answer(true) { put("always", true) }) })
-                            DropdownMenuItem({ Text("Open session") }, onClick = { more = false; onOpen() })
-                        }
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {
+                    BigButton("Allow", Modifier.weight(1f), primary = true, height = 48.dp, size = 15.sp, enabled = !busy) { onAnswer(answer(true)) }
+                    BigButton("Deny", height = 48.dp, size = 15.sp, enabled = !busy, fill = false) { onAnswer(answer(false) { put("message", "") }) }
                 }
             }
         }
@@ -186,7 +177,7 @@ private fun Preview(a: Approval, cwd: String, big: Boolean) {
     val i = a.input
     when (a.tool) {
         "Bash" -> Box(
-            Modifier.fillMaxWidth().background(c.wellBg, RoundedCornerShape(if (big) 12.dp else 10.dp))
+            Modifier.fillMaxWidth().background(c.wellBg, RoundedCornerShape(if (big) 16.dp else 14.dp))
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = if (big) 14.dp else 12.dp, vertical = if (big) 12.dp else 10.dp),
         ) {
@@ -270,13 +261,13 @@ fun BigButton(
     val m = modifier.then(if (fill) Modifier.fillMaxWidth() else Modifier).height(height)
     if (primary) {
         Button(onClick, m, enabled = enabled, shape = RoundedCornerShape(50), colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.onAccent)) {
-            Text(text, fontSize = size, fontWeight = FontWeight.Medium)
+            Text(text, fontSize = size, fontWeight = FontWeight.SemiBold)
         }
     } else {
-        OutlinedButton(
+        // Secondary actions are tonal, never outlined (Material 3 Expressive).
+        Button(
             onClick, m, enabled = enabled, shape = RoundedCornerShape(50),
-            border = BorderStroke(1.dp, c.lineStrong),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = if (danger) c.bad else c.text),
-        ) { Text(text, fontSize = size) }
+            colors = ButtonDefaults.buttonColors(containerColor = c.surface3, contentColor = if (danger) c.bad else c.text),
+        ) { Text(text, fontSize = size, fontWeight = FontWeight.Medium) }
     }
 }

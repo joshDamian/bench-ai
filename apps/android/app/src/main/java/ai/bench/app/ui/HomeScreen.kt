@@ -27,6 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
@@ -50,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -106,10 +110,10 @@ fun SectionLabel(text: String, color: Color = Bench.colors.muted, top: Boolean =
 /** Rows on one rounded surface, divided by hairlines. */
 @Composable
 fun <T> Grouped(items: List<T>, row: @Composable (T) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Bench.colors.surface1, RoundedCornerShape(20.dp))) {
+    Column(Modifier.fillMaxWidth().background(Bench.colors.surface1, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp))) {
         items.forEachIndexed { i, it ->
             row(it)
-            if (i < items.size - 1) HorizontalDivider(color = Bench.colors.line.copy(alpha = 0.6f))
+            if (i < items.size - 1) HorizontalDivider(color = Bench.colors.line.copy(alpha = 0.5f), modifier = Modifier.padding(start = 50.dp))
         }
     }
 }
@@ -151,9 +155,24 @@ private fun where(s: Session, store: BenchStore, extra: String?): String {
 
 // -- Home ------------------------------------------------------------------------------------
 
+/** Sessions by day: Today, Yesterday, then the date. */
+private fun dayOf(iso: String): String {
+    val t = runCatching { java.time.OffsetDateTime.parse(iso).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDate() }.getOrNull() ?: return "Earlier"
+    val today = java.time.LocalDate.now()
+    return when (t) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> t.format(java.time.format.DateTimeFormatter.ofPattern(if (t.year == today.year) "EEE d MMM" else "d MMM yyyy"))
+    }
+}
+
+/**
+ * Home, as the Android v2 board draws it: what needs you as one card you can answer here,
+ * what is working with its live step, then sessions by day. One filled action: New session.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit) {
+fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit) {
     val s by store.state.collectAsState()
     val c = Bench.colors
     val scope = rememberCoroutineScope()
@@ -162,18 +181,25 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit) {
     var answering by remember { mutableStateOf(setOf<String>()) }
     val shared by BenchApp.instance.pendingShare.collectAsState()
 
+    val needs = s.approvals.map { it.session_id }.toSet()
     val working = s.sessions.filter { it.status == "running" && it.archived_at == null }.sortedByDescending { it.updated_at }
-    val recent = s.sessions.filter { it.status != "running" && it.archived_at == null && s.approvals.none { a -> a.session_id == it.id } }
-        .sortedByDescending { it.updated_at }.take(6)
+    val rest = s.sessions.filter { it.status != "running" && it.archived_at == null && it.id !in needs }
+        .sortedByDescending { it.updated_at }.take(30)
+    val byDay = rest.groupBy { dayOf(it.updated_at) }
 
     Scaffold(
         containerColor = c.bg,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             Column {
-                TabTitle("Bench") {
-                    Box(Modifier.size(8.dp).background(if (s.connected) c.good else c.warn, CircleShape))
-                    Text(host(store), fontSize = 12.sp, color = c.muted)
+                Row(
+                    Modifier.fillMaxWidth().statusBarsPadding().padding(start = 22.dp, end = 16.dp, top = 10.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Bench", fontSize = 30.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.5).sp, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onSearch, modifier = Modifier.size(44.dp).background(c.surface1, CircleShape)) {
+                        Icon(Icons.Default.Search, "Search sessions", tint = c.text)
+                    }
                 }
                 ConnectionBanner(s.connected, s.dropped, s.error)
             }
@@ -182,8 +208,8 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit) {
             ExtendedFloatingActionButton(
                 onClick = onNew,
                 icon = { Icon(Icons.Default.Add, null) },
-                text = { Text("New session", fontSize = 15.sp, fontWeight = FontWeight.Medium) },
-                containerColor = c.accent.copy(alpha = 0.22f).compositeOver(c.surface1), contentColor = c.accent,
+                text = { Text("New session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) },
+                containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(18.dp),
             )
         },
     ) { pad ->
@@ -193,16 +219,15 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit) {
             modifier = Modifier.fillMaxSize().padding(pad),
         ) {
             LazyColumn(
-                contentPadding = PaddingValues(start = Space.lg, end = Space.lg, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 112.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 if (shared.isNotEmpty()) item("share") {
                     Text("Choose a session to attach ${shared.size} shared file${if (shared.size == 1) "" else "s"} to", color = c.info, fontSize = 14.sp,
-                        modifier = Modifier.fillMaxWidth().background(c.info.copy(alpha = 0.10f), RoundedCornerShape(16.dp)).padding(Space.md))
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).background(c.info.copy(alpha = 0.10f), RoundedCornerShape(18.dp)).padding(16.dp))
                 }
                 if (s.approvals.isNotEmpty()) {
-                    item("needs") { SectionLabel("Needs you · ${s.approvals.size}", c.warn, top = false) }
+                    item("needs") { Label("Needs you", c.warn, "${s.approvals.size}") }
                     items(s.approvals, key = { "a-${it.id}" }) { a ->
                         val session = s.sessions.firstOrNull { it.id == a.session_id }
                         ApprovalCard(
@@ -211,6 +236,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit) {
                             sessionTitle = listOfNotNull(s.projects.firstOrNull { it.id == session?.project_id }?.name ?: "Ask Bench", session?.title).joinToString(" · "),
                             busy = a.id in answering,
                             onOpen = { onOpen(a.session_id) },
+                            modifier = Modifier.padding(bottom = 10.dp).animateItem(),
                             onAnswer = { body ->
                                 answering = answering + a.id
                                 scope.launch {
@@ -223,18 +249,27 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit) {
                     }
                 }
                 if (working.isNotEmpty()) {
-                    item("working") { SectionLabel("Working · ${working.size}", top = s.approvals.isNotEmpty()) }
-                    item("working-list") { Grouped(working) { w -> ListRow(w.title, where(w, store, Format.ago(w.updated_at)), "running") { onOpen(w.id) } } }
+                    item("working") { Label("Working", c.muted, "${working.size}") }
+                    item("working-list") { Grouped(working) { w -> ListRow(w.title, where(w, store, "Working · ${Format.ago(w.updated_at)}"), "running") { onOpen(w.id) } } }
                 }
-                if (recent.isNotEmpty()) {
-                    item("recent") { SectionLabel("Recent", top = s.approvals.isNotEmpty() || working.isNotEmpty()) }
-                    item("recent-list") { Grouped(recent) { r -> ListRow(r.title, where(r, store, Format.ago(r.updated_at)), r.status) { onOpen(r.id) } } }
+                byDay.forEach { (day, list) ->
+                    item("day-$day") { Label(day) }
+                    item("list-$day") { Grouped(list) { r -> ListRow(r.title, where(r, store, null), r.status, Format.ago(r.updated_at)) { onOpen(r.id) } } }
                 }
                 if (s.ready && s.sessions.isEmpty()) item("empty") {
-                    MutedText(if (s.projects.isEmpty()) "Add a project from the Projects tab to get started." else "Start a session to give Claude some work.")
+                    Text(if (s.projects.isEmpty()) "Add a project to get started." else "No sessions yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(top = 32.dp, start = 6.dp))
                 }
             }
         }
+    }
+}
+
+/** A section label: more space above than below, so it belongs to what follows. */
+@Composable
+private fun Label(text: String, color: Color = Bench.colors.muted, trailing: String? = null) {
+    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 22.dp, bottom = 10.dp)) {
+        Text(text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = color, modifier = Modifier.weight(1f))
+        trailing?.let { Text(it, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = color) }
     }
 }
 
@@ -242,50 +277,46 @@ private fun Color.compositeOver(bg: Color) = Color(
     red = red * alpha + bg.red * (1 - alpha), green = green * alpha + bg.green * (1 - alpha), blue = blue * alpha + bg.blue * (1 - alpha), alpha = 1f,
 )
 
-// -- Sessions --------------------------------------------------------------------------------
-
+/** Every session, searchable by title or project. Opened from Home's search button. */
 @Composable
-fun SessionsScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit) {
+fun SessionsScreen(store: BenchStore, onOpen: (String) -> Unit, onBack: () -> Unit) {
     val s by store.state.collectAsState()
     val c = Bench.colors
-    var show by rememberSaveable { mutableStateOf("open") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var archived by rememberSaveable { mutableStateOf(false) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val needs = s.approvals.map { it.session_id }.toSet()
-    val open = s.sessions.filter { it.archived_at == null }
-    val rows = when (show) {
-        "needs" -> open.filter { it.id in needs }
-        "all" -> s.sessions
-        else -> open
-    }.sortedByDescending { it.updated_at }
-
-    Scaffold(
-        containerColor = c.bg,
-        topBar = {
-            Column {
-                TabTitle("Sessions")
-                Segmented(
-                    listOf("open" to "Open · ${open.size}", "needs" to "Needs you · ${needs.size}", "all" to "All"),
-                    show, { show = it }, Modifier.padding(start = Space.lg, end = Space.lg, bottom = 14.dp),
+    val rows = s.sessions.filter { (archived || it.archived_at == null) && (query.isBlank() || it.title.contains(query, true) || where(it, store, null).contains(query, true)) }
+        .sortedByDescending { it.updated_at }
+    Scaffold(containerColor = c.bg, topBar = {
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 6.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+            Row(Modifier.weight(1f).height(48.dp).background(c.surface1, RoundedCornerShape(24.dp)).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.text.BasicTextField(
+                    query, { query = it }, singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = c.text),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+                    modifier = Modifier.weight(1f).focusRequester(focus),
+                    decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search sessions", fontSize = 16.sp, color = c.muted); inner() } },
                 )
             }
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = onNew, containerColor = c.accent.copy(alpha = 0.22f).compositeOver(c.surface1), contentColor = c.accent) {
-                Icon(Icons.Default.Add, "New session")
-            }
-        },
-    ) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = Space.lg, end = Space.lg, bottom = 96.dp)) {
-            if (rows.isEmpty()) item { MutedText(if (show == "needs") "Nothing needs you." else "No sessions yet.") }
+        }
+    }) { pad ->
+        LazyColumn(Modifier.fillMaxSize().padding(pad).imePadding(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
+            item { Segmented(listOf("open" to "Open", "all" to "Include archived"), if (archived) "all" else "open", { archived = it == "all" }, Modifier.padding(vertical = 8.dp)) }
+            if (rows.isEmpty()) item { Text(if (query.isBlank()) "No sessions yet." else "Nothing matches \u201C$query\u201D.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(top = 24.dp, start = 6.dp)) }
             else item {
-                Grouped(rows) { r ->
-                    val (state, color) = when {
-                        r.id in needs -> "Needs you" to c.warn
-                        r.status == "running" -> "Working" to c.accent
-                        r.pause != null -> "Paused" to c.muted
-                        r.archived_at != null -> "Archived" to c.muted
-                        else -> "Idle" to c.muted
+                Box(Modifier.padding(top = 10.dp)) {
+                    Grouped(rows) { r ->
+                        val (state, color) = when {
+                            r.id in needs -> "Needs you" to c.warn
+                            r.status == "running" -> "Working" to c.accent
+                            r.archived_at != null -> "Archived" to c.muted
+                            else -> Format.ago(r.updated_at) to c.muted
+                        }
+                        ListRow(r.title, where(r, store, null), if (r.id in needs) "waiting" else r.status, state, color) { onOpen(r.id) }
                     }
-                    ListRow(r.title, where(r, store, Format.ago(r.updated_at)), if (r.id in needs) "waiting" else r.status, state, color) { onOpen(r.id) }
                 }
             }
         }
@@ -294,24 +325,18 @@ fun SessionsScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Uni
 
 /** The boards' segmented control: a pill of equal parts, the chosen one filled. */
 @Composable
-fun Segmented(options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit, modifier: Modifier = Modifier, height: androidx.compose.ui.unit.Dp = 40.dp) {
+fun Segmented(options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit, modifier: Modifier = Modifier, height: androidx.compose.ui.unit.Dp = 44.dp) {
     val c = Bench.colors
-    Row(
-        modifier.fillMaxWidth().height(height).border(1.dp, c.lineStrong, RoundedCornerShape(50)),
-    ) {
-        options.forEachIndexed { i, (id, label) ->
+    // A tonal track with the chosen part raised: quiet, so it never competes with the primary button.
+    Row(modifier.fillMaxWidth().height(height).background(c.surface1, RoundedCornerShape(50)).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        options.forEach { (id, label) ->
             val on = id == selected
+            val bg by androidx.compose.animation.animateColorAsState(if (on) c.surface3 else Color.Transparent, label = "seg")
             Box(
-                Modifier.weight(1f).fillMaxSize()
-                    .background(if (on) c.accent.copy(alpha = 0.22f) else Color.Transparent, when (i) {
-                        0 -> RoundedCornerShape(topStartPercent = 50, bottomStartPercent = 50)
-                        options.size - 1 -> RoundedCornerShape(topEndPercent = 50, bottomEndPercent = 50)
-                        else -> RoundedCornerShape(0.dp)
-                    })
-                    .clickable { onPick(id) },
+                Modifier.weight(1f).fillMaxSize().background(bg, RoundedCornerShape(50)).clickable { onPick(id) },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, fontSize = 14.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = if (on) c.accent else c.text.copy(alpha = 0.8f), maxLines = 1)
+                Text(label, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = if (on) c.text else c.muted, maxLines = 1)
             }
         }
     }

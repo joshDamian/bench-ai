@@ -340,17 +340,16 @@ private fun modelLine(s: ai.bench.app.data.Session, providers: List<ai.bench.app
 @Composable
 private fun ModelSheet(s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>, onDismiss: () -> Unit, onSet: (kotlinx.serialization.json.JsonObject) -> Unit) {
     val c = Bench.colors
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp), dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Model", fontSize = 22.sp)
-            Text("Applies from the next message.", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(bottom = 8.dp))
+            Text("Model", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 6.dp, bottom = 4.dp))
             providers.filter { it.enabled }.forEach { p ->
-                Text(if (p.ready) p.name else "${p.name} · not set up", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (p.ready) c.accent else c.muted, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+                Text(if (p.ready) p.name else "${p.name} · not set up", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 4.dp))
                 p.models.filter { it.enabled }.forEach { m ->
                     val on = m.id == s.model_id
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            .background(if (on) c.accent.copy(alpha = 0.14f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(14.dp))
+                        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                            .background(if (on) c.accent.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(16.dp))
                             .then(if (p.ready) Modifier.clickable { onSet(kotlinx.serialization.json.buildJsonObject { put("providerId", p.id); put("modelId", m.id) }) } else Modifier)
                             .padding(horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -360,18 +359,13 @@ private fun ModelSheet(s: ai.bench.app.data.Session, providers: List<ai.bench.ap
                     }
                 }
             }
-            Text("Effort", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.accent, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                (listOf<Pair<String?, String>>(null to "Default") + ai.bench.app.data.Effort.entries.map { it.wire to it.label }).forEach { (wire, label) ->
-                    androidx.compose.material3.FilterChip(
-                        selected = s.effort == wire,
-                        onClick = { onSet(kotlinx.serialization.json.buildJsonObject { if (wire == null) put("effort", kotlinx.serialization.json.JsonNull) else put("effort", wire) }) },
-                        label = { Text(label, fontSize = 14.sp) },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(selectedContainerColor = c.accent.copy(alpha = 0.22f), selectedLabelColor = c.accent),
-                    )
-                }
-            }
+            Text("Effort", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 18.dp, bottom = 8.dp))
+            ai.bench.app.ui.Segmented(
+                listOf("" to "Auto") + listOf("low", "medium", "high", "max").map { it to ai.bench.app.data.Effort.of(it)!!.label },
+                s.effort ?: "",
+                { e -> onSet(kotlinx.serialization.json.buildJsonObject { if (e.isEmpty()) put("effort", kotlinx.serialization.json.JsonNull) else put("effort", e) }) },
+            )
+            Text("Applies from your next message.", fontSize = 12.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 10.dp))
         }
     }
 }
@@ -394,16 +388,15 @@ private fun Composer(
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 12.dp)
-            .background(c.surface2, RoundedCornerShape(26.dp))
-            .border(1.dp, c.line, RoundedCornerShape(26.dp))
-            .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 6.dp),
+            .background(c.surface2, RoundedCornerShape(28.dp))
+            .padding(6.dp),
     ) {
         androidx.compose.foundation.text.BasicTextField(
             value = draft,
             onValueChange = onDraft,
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 22.sp, color = c.text),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp, max = 180.dp).padding(horizontal = 12.dp, vertical = 11.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp, max = 180.dp).padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 6.dp),
             decorationBox = { inner ->
                 Box {
                     if (draft.isEmpty()) Text(if (running) "Queue a message" else "Message Claude", fontSize = 16.sp, color = c.muted)
@@ -423,13 +416,13 @@ private fun Composer(
             }
             Box(Modifier.weight(1f))
             if (running && !canSend) {
-                FilledIconButton(onClick = onStop, modifier = Modifier.size(40.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
+                FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
                     Box(Modifier.size(12.dp).background(c.bad, RoundedCornerShape(3.dp)))
                 }
             } else {
                 FilledIconButton(
-                    onClick = onSend, enabled = canSend, modifier = Modifier.size(40.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent, contentColor = c.onAccent, disabledContainerColor = c.text.copy(alpha = 0.08f), disabledContentColor = c.muted),
+                    onClick = onSend, enabled = canSend, modifier = Modifier.size(44.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent, contentColor = c.onAccent, disabledContainerColor = c.surface3, disabledContentColor = c.muted),
                 ) { Icon(Icons.Default.ArrowUpward, "Send", modifier = Modifier.size(20.dp)) }
             }
         }
