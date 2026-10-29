@@ -149,6 +149,13 @@ final class BenchAPI: @unchecked Sendable {
         return UploadRef(file: file, name: v["name"].string ?? name, type: type)
     }
 
+    /// A shell on the server: `task=`, `project=`, or `session=&shell=1` (src/server.mjs terminalSpec).
+    func terminalRequest(_ query: String) -> URLRequest {
+        var r = request("/api/terminal?\(query)")
+        r.url = URL(string: config.baseURL.replacingOccurrences(of: "^http", with: "ws", options: .regularExpression) + "/api/terminal?\(query)")
+        return r
+    }
+
     var socketURL: URL {
         URL(string: config.baseURL.replacingOccurrences(of: "^http", with: "ws", options: .regularExpression) + "/api/ws")!
     }

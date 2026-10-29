@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// What a task tab shows besides its sessions.
-enum TaskPane: Hashable { case session(String), changes, log, loop }
+enum TaskPane: Hashable { case session(String), changes, log, loop, terminal }
 
 @MainActor @Observable
 final class TaskModel {
@@ -72,6 +72,7 @@ struct TaskView: View {
                 case .changes: ChangesView(files: model.diff)
                 case .log: LogView(entries: model.log)
                 case .loop: LoopView(model: model)
+                case .terminal: RemoteTerminalView(store: store, query: "task=\(taskId)", place: model.task?.branch ?? "Worktree")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -139,6 +140,7 @@ struct TaskView: View {
             tab(model.diff.isEmpty ? "Changes" : "Changes \(model.diff.count)", .changes)
             tab("Log", .log)
             tab("Loop", .loop)
+            tab("Terminal", .terminal)
             Spacer()
         }
         .padding(.horizontal, Space.lg)
