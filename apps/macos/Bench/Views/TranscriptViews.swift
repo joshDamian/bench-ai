@@ -123,20 +123,43 @@ struct Disclosure<Head: View, Content: View>: View {
     }
 }
 
+/// What Claude did between two pieces of prose, folded to one quiet line. While it runs,
+/// the line is the step in progress; open, it lists every step.
 struct ToolRunView: View {
     @Environment(\.theme) private var theme
     let calls: [ToolCall]
     let cwd: String
+    @State private var open = false
 
     var body: some View {
-        if calls.count == 1 {
-            ToolCallView(call: calls[0], cwd: cwd)
-        } else {
-            Disclosure(head: { Text(Transcript.summary(calls)).font(.system(size: TypeScale.sm, weight: .medium)).foregroundStyle(theme.colors.muted) },
-                       flag: AnyView(RunFlag(pending: calls.contains(where: \.pending), failed: calls.contains(where: \.failed)))) {
+        let current = calls.last(where: \.pending)
+        VStack(alignment: .leading, spacing: Space.sm) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } } label: {
+                HStack(spacing: Space.sm) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    if let current {
+                        StatusDot(status: "running")
+                        Text(Transcript.headline(current, cwd: cwd))
+                            .font(.system(size: TypeScale.sm, design: current.name == "Bash" ? .monospaced : .default))
+                            .lineLimit(1)
+                        Text("· step \(calls.filter { $0.name != "Thinking" }.count)")
+                    } else {
+                        Text(Transcript.summary(calls))
+                        if calls.contains(where: \.failed) { Pill(text: "error", color: theme.colors.bad) }
+                    }
+                }
+                .font(.system(size: TypeScale.sm))
+                .foregroundStyle(theme.colors.muted)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if open {
                 VStack(alignment: .leading, spacing: Space.xs) {
                     ForEach(calls) { ToolCallView(call: $0, cwd: cwd) }
                 }
+                .padding(.leading, Space.lg)
             }
         }
     }

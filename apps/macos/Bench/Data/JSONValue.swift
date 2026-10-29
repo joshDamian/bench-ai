@@ -41,6 +41,7 @@ enum JSONValue: Codable, Equatable, Hashable {
     var string: String? { if case .string(let s) = self { return s }; return nil }
     var bool: Bool { if case .bool(let b) = self { return b }; return false }
     var int: Int? { if case .number(let n) = self { return Int(n) }; return nil }
+    var number: Double? { if case .number(let n) = self { return n }; return nil }
     var array: [JSONValue] { if case .array(let a) = self { return a }; return [] }
     var object: [String: JSONValue] { if case .object(let o) = self { return o }; return [:] }
     var isNull: Bool { if case .null = self { return true }; return false }
@@ -57,5 +58,6 @@ extension Optional where Wrapped == JSONValue {
     var string: String? { self?.string }
     var bool: Bool { self?.bool ?? false }
     var int: Int? { self?.int }
+    var number: Double? { self?.number }
     var array: [JSONValue] { self?.array ?? [] }
 }

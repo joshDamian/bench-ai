@@ -60,8 +60,22 @@ enum Transcript {
         }
         var out: [Row] = []
         var reply: [String] = []
+        // Everything Claude did between two pieces of prose - tool calls and thinking,
+        // which Claude Code sends as a message each - folds into one run.
+        var run: [ToolCall] = []
+        var runId = ""
+        var runSub = false
+        func flush() {
+            if !run.isEmpty { out.append(.tools(id: runId, calls: run, subagent: runSub)) }
+            run = []
+        }
+        func step(_ c: ToolCall, _ id: String, _ sub: Bool) {
+            if run.isEmpty { runId = id; runSub = sub }
+            run.append(c)
+        }
         for e in events {
             let d = e.data
+            if e.kind != "assistant" && e.kind != "tool_result" { flush() }
             switch e.kind {
             case "user":
                 reply = []
@@ -71,37 +85,33 @@ enum Transcript {
                 out.append(.user(id: "e\(e.id)", text: d["text"].string ?? "", attachments: chips))
             case "assistant":
                 let sub = d["parent"].string != nil
-                if let err = d["error"].string { out.append(.system(id: "e\(e.id)-err", text: "API error: \(err)", tone: .bad)) }
-                var run: [ToolCall] = []
-                func flush(_ i: Int) {
-                    if !run.isEmpty { out.append(.tools(id: "e\(e.id)-t\(i)", calls: run, subagent: sub)) }
-                    run = []
-                }
+                if let err = d["error"].string { flush(); out.append(.system(id: "e\(e.id)-err", text: "API error: \(err)", tone: .bad)) }
                 for (i, b) in d["content"].array.enumerated() {
                     switch b["type"].string {
                     case "tool_use":
                         let id = b["id"].string ?? "\(i)"
-                        run.append(ToolCall(id: id, name: b["name"].string ?? "tool", input: b["input"] ?? .object([:]), result: results[id]))
+                        step(ToolCall(id: id, name: b["name"].string ?? "tool", input: b["input"] ?? .object([:]), result: results[id]), "e\(e.id)-t\(i)", sub)
                     case "text":
-                        flush(i)
+                        let t0 = b["text"].string ?? ""
+                        if !t0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { flush() }
                         let t = b["text"].string ?? ""
                         if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             out.append(.text(id: "e\(e.id)-\(i)", text: t, subagent: sub))
                             if !sub { reply.append(t.trimmingCharacters(in: .whitespacesAndNewlines)) }
                         }
                     case "thinking":
-                        flush(i)
-                        let text = b["truncated"].bool ? nil : b["thinking"].string
-                        out.append(.thinking(id: "e\(e.id)-\(i)", eventId: e.id, index: i, length: b["length"].int ?? text?.count ?? 0, text: text))
+                        // A step like any other: folded with the run, its length as its result.
+                        let len = b["length"].int ?? b["thinking"].string?.count ?? 0
+                        step(ToolCall(id: "think-\(e.id)-\(i)", name: "Thinking", input: .object(["length": .number(Double(len)), "event": .number(Double(e.id)), "index": .number(Double(i))]), result: ToolResult(text: "", isError: false)), "e\(e.id)-t\(i)", sub)
                     default:
-                        flush(i)
+                        break
                     }
                 }
-                flush(Int.max)
             case "result":
                 let isError = d["is_error"].bool
-                var label = !isError ? "Done" : d["subtype"].string == "error_during_execution" ? "Stopped" : "Failed" + (d["text"].string.map { ": \($0)" } ?? "")
-                if let ms = d["duration_ms"].int { label += " · " + Format.duration(ms) }
+                var label = !isError ? "Worked" : d["subtype"].string == "error_during_execution" ? "Stopped" : "Failed" + (d["text"].string.map { ": \($0)" } ?? "")
+                if let ms = d["duration_ms"].int { label += (isError ? " · " : " for ") + Format.duration(ms) }
+                if let c = d["cost"].number, c > 0 { label += " · " + Format.cost(c) }
                 out.append(.turnEnd(id: "e\(e.id)", ok: !isError, label: label, reply: reply.joined(separator: "\n\n")))
                 reply = []
             case "init":
@@ -124,6 +134,7 @@ enum Transcript {
                 break
             }
         }
+        flush()
         return out
     }
 
@@ -148,6 +159,7 @@ enum Transcript {
         case "Read": return "Read " + rel(i["file_path"].string, cwd: cwd)
         case "Glob", "Grep": return "\(c.name) \(i["pattern"].string ?? "")" + (i["path"].string.map { " in " + rel($0, cwd: cwd) } ?? "")
         case "TodoWrite": return "Todos"
+        case "Thinking": return "Thinking" + ((i["length"].int ?? 0) > 0 ? " · \(i["length"].int!) characters" : "")
         case "Task", "Agent": return "Subagent: " + (i["description"].string ?? i["subagent_type"].string ?? "")
         case "WebFetch": return "Fetch " + (i["url"].string ?? "")
         case "WebSearch": return "Search " + (i["query"].string ?? "")
@@ -156,8 +168,10 @@ enum Transcript {
         }
     }
 
-    static func summary(_ calls: [ToolCall]) -> String {
-        var parts = ["\(calls.count) steps"]
+    static func summary(_ all: [ToolCall]) -> String {
+        let work = all.filter { $0.name != "Thinking" }
+        var parts = [work.isEmpty ? "Thought" : "\(work.count) step\(work.count == 1 ? "" : "s")"]
+        let calls = work
         let cmds = calls.filter { $0.name == "Bash" }.count
         let edits = calls.filter { ["Edit", "MultiEdit", "Write", "NotebookEdit"].contains($0.name) }.count
         let failed = calls.filter(\.failed).count

@@ -44,7 +44,7 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(Transcript.summary(calls), "2 steps · 1 command · 1 edit · 1 error")
         XCTAssertEqual(Transcript.headline(calls[1], cwd: "/w"), "Edit x.swift")
         guard case .turnEnd(_, _, let label, let reply) = rows.last! else { return XCTFail() }
-        XCTAssertEqual(label, "Done · 1m 5s")
+        XCTAssertEqual(label, "Worked for 1m 5s")
         XCTAssertEqual(reply, "Looking.\n\nFixed.")
     }
 

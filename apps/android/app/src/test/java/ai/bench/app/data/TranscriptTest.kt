@@ -28,7 +28,7 @@ class TranscriptTest {
         assertEquals("2 steps · 1 command · 1 edit · 1 error", Transcript.summary(tools.calls))
         assertEquals("Edit x.kt", Transcript.headline(tools.calls[1], "/w"))
         val end = rows.last() as Row.TurnEnd
-        assertEquals("Done · 1m 5s", end.label)
+        assertEquals("Worked for 1m 5s", end.label)
         assertEquals("Looking.\n\nFixed.", end.reply)
     }
 
@@ -59,7 +59,7 @@ class FixtureTest {
         val d = BenchJson.decodeFromString(SessionDetail.serializer(), fixture("session.json"))
         val rows = Transcript.rows(d.events, d.session.cwd)
         assertTrue(rows.any { it is Row.TurnEnd })
-        assertTrue(rows.any { it is Row.Thinking })
+        assertTrue(rows.filterIsInstance<Row.Tools>().any { r -> r.calls.any { it.name == "Thinking" } })
     }
 
     @Test fun readsEveryRecordedSocketFrame() {

@@ -60,8 +60,22 @@ object Transcript {
         }
         val out = ArrayList<Row>()
         val reply = StringBuilder()
+        // Everything Claude did between two pieces of prose - tool calls and thinking,
+        // which Claude Code sends as a message each - folds into one run.
+        val run = ArrayList<ToolCall>()
+        var runKey = ""
+        var runSub = false
+        fun flush() {
+            if (run.isNotEmpty()) out += Row.Tools(runKey, run.toList(), runSub)
+            run.clear()
+        }
+        fun step(c: ToolCall, key: String, sub: Boolean) {
+            if (run.isEmpty()) { runKey = key; runSub = sub }
+            run += c
+        }
         for (e in events) {
             val d = e.data
+            if (e.kind != "assistant" && e.kind != "tool_result") flush()
             when (e.kind) {
                 "user" -> {
                     reply.clear()
@@ -75,49 +89,47 @@ object Transcript {
                 }
                 "assistant" -> {
                     val sub = d["parent"] != null && d["parent"].str() != null
-                    d["error"].str()?.let { out += Row.System("e${e.id}-err", "API error: $it", Tone.Bad) }
-                    val run = ArrayList<ToolCall>()
-                    fun flush(i: Int) {
-                        if (run.isNotEmpty()) out += Row.Tools("e${e.id}-t$i", run.toList(), sub)
-                        run.clear()
-                    }
+                    d["error"].str()?.let { flush(); out += Row.System("e${e.id}-err", "API error: $it", Tone.Bad) }
                     d["content"].arr().orEmpty().forEachIndexed { i, b ->
                         when (b["type"].str()) {
                             "tool_use" -> {
                                 val id = b["id"].str() ?: "$i"
-                                run += ToolCall(id, b["name"].str() ?: "tool", b["input"].obj() ?: JsonObject(emptyMap()), results[id])
+                                step(ToolCall(id, b["name"].str() ?: "tool", b["input"].obj() ?: JsonObject(emptyMap()), results[id]), "e${e.id}-t$i", sub)
                             }
                             "text" -> {
-                                flush(i)
                                 val t = b["text"].str().orEmpty()
                                 if (t.isNotBlank()) {
+                                    flush()
                                     out += Row.Text("e${e.id}-$i", t, sub)
                                     if (!sub) reply.append(if (reply.isEmpty()) "" else "\n\n").append(t.trim())
                                 }
                             }
                             "thinking" -> {
-                                flush(i)
-                                val truncated = b["truncated"].bool()
-                                val text = if (truncated) null else b["thinking"].str()
-                                val len = b["length"].long()?.toInt() ?: text?.length ?: 0
-                                out += Row.Thinking("e${e.id}-$i", e.id, i, len, text)
+                                // A step like any other: folded with the run.
+                                val len = b["length"].long()?.toInt() ?: b["thinking"].str()?.length ?: 0
+                                val input = kotlinx.serialization.json.buildJsonObject {
+                                    put("length", kotlinx.serialization.json.JsonPrimitive(len))
+                                    put("event", kotlinx.serialization.json.JsonPrimitive(e.id))
+                                    put("index", kotlinx.serialization.json.JsonPrimitive(i))
+                                }
+                                step(ToolCall("think-${e.id}-$i", "Thinking", input, ToolResult("", false)), "e${e.id}-t$i", sub)
                             }
-                            else -> flush(i)
+                            else -> Unit
                         }
                     }
-                    flush(Int.MAX_VALUE)
                 }
                 "result" -> {
                     val isError = d["is_error"].bool()
                     val label = buildString {
                         append(
                             when {
-                                !isError -> "Done"
+                                !isError -> "Worked"
                                 d["subtype"].str() == "error_during_execution" -> "Stopped"
                                 else -> "Failed" + (d["text"].str()?.let { ": $it" } ?: "")
                             },
                         )
-                        d["duration_ms"].long()?.let { append(" · ").append(Format.duration(it)) }
+                        d["duration_ms"].long()?.let { append(if (isError) " · " else " for ").append(Format.duration(it)) }
+                        (d["cost"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()?.takeIf { it > 0 }?.let { append(" · ").append(Format.cost(it)) }
                     }
                     out += Row.TurnEnd("e${e.id}", !isError, label, reply.toString())
                     reply.clear()
@@ -141,6 +153,7 @@ object Transcript {
                 "error" -> out += Row.System("e${e.id}", d["message"].str().orEmpty(), Tone.Bad)
             }
         }
+        flush()
         return out
     }
 
@@ -167,6 +180,7 @@ object Transcript {
             "Read" -> "Read ${rel(i["file_path"].str(), cwd)}"
             "Glob", "Grep" -> "${c.name} ${i["pattern"].str().orEmpty()}" + (i["path"].str()?.let { " in ${rel(it, cwd)}" } ?: "")
             "TodoWrite" -> "Todos"
+            "Thinking" -> "Thinking" + (i["length"].long()?.takeIf { it > 0 }?.let { " · $it characters" } ?: "")
             "Task", "Agent" -> "Subagent: ${i["description"].str() ?: i["subagent_type"].str().orEmpty()}"
             "WebFetch" -> "Fetch ${i["url"].str().orEmpty()}"
             "WebSearch" -> "Search ${i["query"].str().orEmpty()}"
@@ -175,8 +189,9 @@ object Transcript {
     }
 
     /** "6 steps · 3 commands · 2 edits · 1 error" for a folded run. */
-    fun summary(calls: List<ToolCall>): String {
-        val parts = mutableListOf("${calls.size} steps")
+    fun summary(all: List<ToolCall>): String {
+        val calls = all.filter { it.name != "Thinking" }
+        val parts = mutableListOf(if (calls.isEmpty()) "Thought" else "${calls.size} step${if (calls.size == 1) "" else "s"}")
         val cmds = calls.count { it.name == "Bash" }
         val edits = calls.count { it.name in setOf("Edit", "MultiEdit", "Write", "NotebookEdit") }
         val failed = calls.count { it.failed }
