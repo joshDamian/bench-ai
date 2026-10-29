@@ -1,0 +1,215 @@
+{
+ "session": {
+  "id": "id-5",
+  "project_id": "id-1",
+  "task_id": null,
+  "title": "Checkout session",
+  "cwd": "/root/repo",
+  "provider_id": "anthropic-claude-code",
+  "model_id": null,
+  "permission_mode": "default",
+  "effort": null,
+  "claude_session_id": "claude-2rvea3wj",
+  "status": "waiting",
+  "error": null,
+  "cost": 0.02,
+  "input_tokens": 10,
+  "output_tokens": 5,
+  "created_at": "2026-10-29T12:00:00.000Z",
+  "updated_at": "2026-10-29T12:00:00.000Z",
+  "archived_at": null,
+  "started_by_session": null,
+  "purpose": null
+ },
+ "events": [
+  {
+   "id": 1,
+   "session_id": "id-5",
+   "kind": "user",
+   "data": {
+    "text": "hello there",
+    "images": 0,
+    "files": []
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 2,
+   "session_id": "id-5",
+   "kind": "init",
+   "data": {
+    "model": "default",
+    "permissionMode": "default",
+    "cwd": "/root/repo"
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 3,
+   "session_id": "id-5",
+   "kind": "assistant",
+   "data": {
+    "id": "msg_571mllgxzidt",
+    "content": [
+     {
+      "type": "thinking",
+      "length": 1244,
+      "truncated": true
+     }
+    ],
+    "parent": null,
+    "error": null
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 4,
+   "session_id": "id-5",
+   "kind": "assistant",
+   "data": {
+    "id": "msg_571mllgxzidb",
+    "content": [
+     {
+      "type": "text",
+      "text": "echo: hello there"
+     }
+    ],
+    "parent": null,
+    "error": null
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 5,
+   "session_id": "id-5",
+   "kind": "result",
+   "data": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 5,
+    "turns": 1,
+    "cost": 0.01
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 6,
+   "session_id": "id-5",
+   "kind": "user",
+   "data": {
+    "text": "suggest run the tests",
+    "images": 0,
+    "files": []
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 7,
+   "session_id": "id-5",
+   "kind": "assistant",
+   "data": {
+    "id": "msg_rpvb04qb6st",
+    "content": [
+     {
+      "type": "thinking",
+      "length": 1254,
+      "truncated": true
+     }
+    ],
+    "parent": null,
+    "error": null
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 8,
+   "session_id": "id-5",
+   "kind": "assistant",
+   "data": {
+    "id": "msg_rpvb04qb6sb",
+    "content": [
+     {
+      "type": "text",
+      "text": "echo: suggest run the tests"
+     }
+    ],
+    "parent": null,
+    "error": null
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 9,
+   "session_id": "id-5",
+   "kind": "result",
+   "data": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 5,
+    "turns": 1,
+    "cost": 0.02
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 10,
+   "session_id": "id-5",
+   "kind": "user",
+   "data": {
+    "text": "write notes.md some notes",
+    "images": 0,
+    "files": []
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  },
+  {
+   "id": 11,
+   "session_id": "id-5",
+   "kind": "assistant",
+   "data": {
+    "id": "msg_jc4h0xx1y1s",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "tu1",
+      "name": "Write",
+      "input": {
+       "file_path": "/root/repo/notes.md",
+       "content": "some notes"
+      }
+     }
+    ],
+    "parent": null,
+    "error": null
+   },
+   "created_at": "2026-10-29T12:00:00.000Z"
+  }
+ ],
+ "approvals": [
+  {
+   "id": "id-6",
+   "session_id": "id-5",
+   "tool": "Write",
+   "input": {
+    "file_path": "/root/repo/notes.md",
+    "content": "some notes"
+   },
+   "title": "Claude wants to write notes.md",
+   "reason": null,
+   "created_at": "2026-10-29T12:00:00.000Z"
+  }
+ ],
+ "live": true,
+ "commands": [
+  {
+   "name": "compact",
+   "description": "Free up context by summarizing the conversation so far",
+   "argumentHint": "<optional custom summarization instructions>"
+  },
+  {
+   "name": "bench:make-verify",
+   "description": "(bench) Writes a verify skill for this project",
+   "argumentHint": ""
+  }
+ ]
+}

@@ -70,7 +70,12 @@ class BenchApi(val config: ServerConfig) {
         call(request(path).patch(body.toString().toRequestBody(jsonType)).build())
     suspend fun delete(path: String) = call(request(path).delete().build())
 
-    private inline fun <reified T> JsonElement?.decode(): T = BenchJson.decodeFromJsonElement(this ?: JsonObject(emptyMap()))
+    /** A shape this client cannot read is a BenchError the screen shows, never a crash. */
+    private inline fun <reified T> JsonElement?.decode(): T = try {
+        BenchJson.decodeFromJsonElement(this ?: JsonObject(emptyMap()))
+    } catch (e: Exception) {
+        throw BenchError(500, "Unexpected answer from the server: ${e.message}")
+    }
 
     // -- calls ------------------------------------------------------------------------------
 
