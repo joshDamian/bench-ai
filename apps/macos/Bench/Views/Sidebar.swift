@@ -34,7 +34,12 @@ struct Sidebar: View {
                         }
                     } header: {
                         Button { selection = "project:\(p.id)" } label: {
-                            Text(p.name).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            HStack(spacing: 4) {
+                                Text(p.name).textCase(nil)
+                                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .help("Open \(p.name)")

@@ -84,6 +84,9 @@ struct Session: Codable, Identifiable, Hashable {
     var title: String
     var cwd: String?
     var permission_mode: String?
+    var provider_id: String?
+    var model_id: String?
+    var effort: String?
     var claude_session_id: String?
     var status: String
     var error: String?
@@ -244,4 +247,28 @@ enum ServerMessage {
         default: return nil
         }
     }
+}
+
+/// A model provider and its models (GET /api/providers).
+struct ProviderInfo: Codable, Identifiable, Hashable {
+    let id: String
+    var name: String
+    var enabled: Bool
+    var ready: Bool?
+    var reason: String?
+    var models: [ModelInfo]
+}
+
+struct ModelInfo: Codable, Identifiable, Hashable {
+    let id: String
+    var name: String
+    var display_name: String?
+    var enabled: Bool
+    var label: String { display_name ?? name }
+}
+
+enum Effort: String, CaseIterable, Identifiable {
+    case low, medium, high, xhigh, max
+    var id: String { rawValue }
+    var label: String { self == .xhigh ? "Extra high" : rawValue.capitalized }
 }

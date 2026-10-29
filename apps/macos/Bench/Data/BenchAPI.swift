@@ -113,6 +113,11 @@ final class BenchAPI: @unchecked Sendable {
         return try decode(TaskCreated.self, await call("/api/tasks", method: "POST", body: body)).session
     }
 
+    func providers() async throws -> [ProviderInfo] { try decode(Lossy<ProviderInfo>.self, await call("/api/providers")).items }
+    func patchSession(_ id: String, _ body: [String: Any]) async throws {
+        try await call("/api/sessions/\(Self.enc(id))", method: "PATCH", body: body)
+    }
+
     // Tasks and projects.
     func task(_ id: String) async throws -> TaskDetail { try decode(TaskDetail.self, await call("/api/tasks/\(Self.enc(id))")) }
     func taskDiff(_ id: String) async throws -> String {

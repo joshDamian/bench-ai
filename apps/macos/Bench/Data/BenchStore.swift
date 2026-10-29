@@ -19,6 +19,7 @@ final class BenchStore {
     var sessions: [Session] = []
     var approvals: [Approval] = []
     var defaults = Defaults()
+    var providers: [ProviderInfo] = []
     var me: Me?
     var version: String?
 
@@ -38,6 +39,14 @@ final class BenchStore {
     }
 
     var needsYouCount: Int { approvals.count }
+    /// "Opus · high effort": the session's model and effort, in words.
+    func modelLine(_ s: Session) -> String {
+        let m = providers.flatMap(\.models).first { $0.id == s.model_id }
+        let p = providers.first { $0.id == s.provider_id }
+        let name = m?.label ?? (p.map { $0.name } ?? "Default model")
+        guard let e = s.effort, let eff = Effort(rawValue: e) else { return name }
+        return "\(name) · \(eff.label.lowercased()) effort"
+    }
     func session(_ id: String) -> Session? { sessions.first { $0.id == id } }
     func project(_ id: String?) -> Project? { projects.first { $0.id == id } }
     func task(_ id: String?) -> BenchTask? { tasks.first { $0.id == id } }
@@ -74,6 +83,7 @@ final class BenchStore {
             defaults = s.defaults ?? Defaults()
             me = s.me
             version = s.version
+            if let p = try? await api.providers() { providers = p }
             ready = true
             unauthorized = false
             error = nil

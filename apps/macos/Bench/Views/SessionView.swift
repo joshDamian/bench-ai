@@ -143,10 +143,18 @@ struct SessionView: View {
         .toolbar {
             ToolbarItemGroup {
                 if let session {
-                    Picker("Mode", selection: Binding(get: { session.mode }, set: { m in Task { try? await store.api.setMode(session.id, m) } })) {
-                        ForEach(Mode.allCases) { Text($0.label).tag($0) }
-                    }
-                    .help("Permission mode")
+                    Menu {
+                        ForEach(Mode.allCases) { m in
+                            Button { Task { try? await store.api.setMode(session.id, m) } } label: {
+                                if m == session.mode { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
+                            }
+                        }
+                    } label: { Text(session.mode.label) }
+                    .menuStyle(.button)
+                    .buttonStyle(.bordered)
+                    .clipShape(Capsule())
+                    .fixedSize()
+                    .help("Permission Mode")
                     Button { TerminalLauncher.open(session, store: store) } label: { Label("Open in Terminal", systemImage: "terminal") }
                         .disabled(session.claude_session_id == nil)
                         .help(store.api.config.isLoopback ? "Open in Terminal with claude --resume" : "Copy the claude --resume command")
@@ -217,37 +225,55 @@ struct Composer: View {
                     }
                 }
             }
-            HStack(alignment: .bottom, spacing: Space.sm) {
-                Button { importing = true } label: { Image(systemName: "paperclip") }
-                    .buttonStyle(.borderless)
-                    .help("Attach files (or drop them on the session)")
-                TextField(running ? "Queue a message…" : "Message Claude", text: $draft, axis: .vertical)
+            VStack(alignment: .leading, spacing: Space.sm) {
+                TextField(running ? "Queue a message" : "Message Claude", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .lineLimit(1...10)
+                    .font(.system(size: TypeScale.md))
+                    .lineLimit(2...10)
                     .focused(focused)
                     .onSubmit(send)
-                    .padding(Space.sm)
-                    .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: theme.radius))
-                if running && !canSend {
-                    Button(action: model.interrupt) { Image(systemName: "stop.fill") }
+                HStack(spacing: Space.sm) {
+                    Button { importing = true } label: { Image(systemName: "plus") }
+                        .buttonStyle(.borderless)
+                        .help("Attach Files")
+                    if let s = model.session { ModelMenu(store: model.store, session: s) }
+                    Spacer()
+                    if running {
+                        Button(action: model.interrupt) {
+                            HStack(spacing: 6) {
+                                RoundedRectangle(cornerRadius: 2).fill(theme.colors.bad).frame(width: 8, height: 8)
+                                Text("Stop")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .clipShape(Capsule())
                         .keyboardShortcut(".", modifiers: .command)
-                        .tint(theme.colors.bad)
-                        .buttonStyle(.borderedProminent)
                         .help("Stop (⌘.)")
-                } else {
-                    Button(action: send) { Image(systemName: "arrow.up") }
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canSend)
-                        .help("Send (Return, or ⌘Return)")
+                    }
+                    Button(action: send) {
+                        Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(theme.colors.onAccent)
+                            .frame(width: 26, height: 26)
+                            .background(canSend ? theme.colors.accent : theme.colors.accent.opacity(0.35), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(!canSend)
+                    .help("Send (Return)")
                 }
+                .controlSize(.small)
             }
-            Text("Return sends · ⌥Return for a new line")
-                .font(.system(size: TypeScale.xs))
-                .foregroundStyle(theme.colors.muted)
+            .padding(.leading, Space.lg)
+            .padding([.top, .trailing], Space.md)
+            .padding(.bottom, Space.sm)
+            .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.colors.line))
         }
-        .padding(Space.md)
-        .background(theme.colors.surfaceRail)
+        .frame(maxWidth: 720)
+        .padding(.horizontal, Space.xl)
+        .padding(.top, Space.md)
+        .padding(.bottom, Space.lg)
+        .frame(maxWidth: .infinity)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { model.attach(urls) }
         }
@@ -258,5 +284,48 @@ struct Composer: View {
         guard canSend else { return }
         draft = ""
         Task { if !(await model.send(text)) { draft = text } }
+    }
+}
+
+/// "Opus · high effort": choose the session's model and effort. Applies from the next turn.
+struct ModelMenu: View {
+    @Environment(\.theme) private var theme
+    let store: BenchStore
+    let session: Session
+
+    var body: some View {
+        Menu {
+            ForEach(store.providers.filter { $0.enabled }) { p in
+                Section(p.ready == false ? "\(p.name) (not set up)" : p.name) {
+                    ForEach(p.models.filter(\.enabled)) { m in
+                        Button { set(["providerId": p.id, "modelId": m.id]) } label: {
+                            if m.id == session.model_id { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
+                        }
+                        .disabled(p.ready == false)
+                    }
+                }
+            }
+            Divider()
+            Menu("Effort") {
+                Button { set(["effort": NSNull()]) } label: {
+                    if session.effort == nil { Label("Model default", systemImage: "checkmark") } else { Text("Model default") }
+                }
+                ForEach(Effort.allCases) { e in
+                    Button { set(["effort": e.rawValue]) } label: {
+                        if session.effort == e.rawValue { Label(e.label, systemImage: "checkmark") } else { Text(e.label) }
+                    }
+                }
+            }
+        } label: {
+            Text(store.modelLine(session)).font(.system(size: TypeScale.xs))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .foregroundStyle(theme.colors.muted)
+        .help("Model and Effort")
+    }
+
+    private func set(_ body: [String: Any]) {
+        Task { try? await store.api.patchSession(session.id, body) }
     }
 }
