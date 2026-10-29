@@ -91,6 +91,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/dd" -destination 'generic/platform=macOS' \
             MARKETING_VERSION=${{ steps.v.outputs.name }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGN_IDENTITY="${{ steps.sign.outputs.identity }}" DEVELOPMENT_TEAM="${{ secrets.MACOS_TEAM_ID }}" \
+            -skipPackagePluginValidation -skipMacroValidation \
             OTHER_CODE_SIGN_FLAGS="--timestamp" build 2>&1 | tee "$RUNNER_TEMP/build.log" | xcbeautify --renderer github-actions
           cp -R "$RUNNER_TEMP/dd/Build/Products/Release/Bench.app" .
 
