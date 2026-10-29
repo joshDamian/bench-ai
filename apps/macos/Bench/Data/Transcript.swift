@@ -200,6 +200,12 @@ enum Format {
         return f
     }()
 
+    /// Seconds since a timestamp; very large when there is none.
+    static func age(_ s: String?, now: Date = Date()) -> TimeInterval {
+        guard let s, let t = iso.date(from: s) ?? ISO8601DateFormatter().date(from: s) else { return .greatestFiniteMagnitude }
+        return now.timeIntervalSince(t)
+    }
+
     static func ago(_ s: String?, now: Date = Date()) -> String {
         guard let s, let t = iso.date(from: s) ?? ISO8601DateFormatter().date(from: s) else { return "" }
         let m = Int(now.timeIntervalSince(t) / 60)

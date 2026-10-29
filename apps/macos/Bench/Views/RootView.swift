@@ -90,78 +90,95 @@ private struct EmptyDetail: View {
     }
 }
 
-/// Needs you and Working: the sessions in that state, newest first.
+/// Needs you and Working, as the Needs you board draws them: answerable cards, then
+/// what finished recently.
 struct PlaceView: View {
     @Environment(\.theme) private var theme
     let store: BenchStore
     let place: Place
     let open: (String) -> Void
 
-    private var rows: [(Session, String?)] {
-        switch place {
-        case .needs:
-            store.approvals.compactMap { a in store.session(a.session_id).map { ($0, Self.waiting(a)) } }
-        case .working:
-            store.sessions.filter { $0.status == "running" }
-                .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
-                .map { ($0, nil) }
-        }
-    }
-
-    static func waiting(_ a: Approval) -> String {
-        switch a.tool {
-        case "AskUserQuestion": "Asking a question"
-        case "ExitPlanMode": "Has a plan for you to review"
-        default: a.title ?? "Wants to use \(a.tool)"
-        }
+    private func context(_ s: Session?, _ when: String?) -> String {
+        [store.project(s?.project_id)?.name ?? "Ask Bench", s?.title, Format.ago(when)].compactMap { $0 }.joined(separator: " · ")
     }
 
     var body: some View {
-        let rows = rows
-        Group {
-            if rows.isEmpty {
-                ContentUnavailableView(place == .needs ? "Nothing needs you" : "Nothing is running",
-                                       systemImage: place == .needs ? "checkmark.circle" : "moon.zzz",
-                                       description: Text(place == .needs ? "Questions and approvals show up here." : "Sessions Claude is working on show up here."))
-            } else if place == .needs {
-                ScrollView {
-                    LazyVStack(spacing: Space.md) {
+        let working = store.sessions.filter { $0.status == "running" }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+        let finished = store.sessions
+            .filter { $0.status == "idle" && $0.archived_at == nil && Format.age($0.updated_at) < 3 * 86400 }
+            .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+            .prefix(6)
+        let count = place == .needs ? store.approvals.count : working.count
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Text(place == .needs ? "Needs you" : "Working").font(.system(size: 15, weight: .semibold))
+                if count > 0 {
+                    let c = place == .needs ? theme.colors.warn : theme.colors.accent
+                    Text("\(count)").font(.system(size: 11)).foregroundStyle(c)
+                        .padding(.horizontal, 7).padding(.vertical, 1)
+                        .overlay(Capsule().strokeBorder(c.opacity(0.4)))
+                }
+            }
+            .padding(.horizontal, Space.xl)
+            .padding(.top, 18)
+            .padding(.bottom, Space.md)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.lg) {
+                    if place == .needs {
+                        if store.approvals.isEmpty {
+                            Text("Nothing needs you. Questions, plans and permission requests show up here.")
+                                .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
+                        }
                         ForEach(store.approvals) { a in
                             let s = store.session(a.session_id)
-                            VStack(alignment: .leading, spacing: Space.sm) {
-                                HStack {
-                                    Text([store.project(s?.project_id)?.name ?? "Ask Bench", s?.title].compactMap { $0 }.joined(separator: " · "))
-                                        .font(.system(size: TypeScale.sm, weight: .medium))
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Button("Open Session") { open(a.session_id) }.buttonStyle(.link)
-                                }
-                                ApprovalCard(approval: a, cwd: s?.cwd ?? "", busy: false) { body in
-                                    Task { try? await store.answer(a, body) }
-                                }
+                            ApprovalCard(approval: a, cwd: s?.cwd ?? "", sessionTitle: context(s, a.created_at ?? s?.updated_at),
+                                         inbox: true, openSession: { open(a.session_id) }, busy: false) { body in
+                                Task { try? await store.answer(a, body) }
                             }
-                            .padding(Space.md)
-                            .background(theme.colors.surface1, in: RoundedRectangle(cornerRadius: theme.radius))
+                        }
+                    } else {
+                        if working.isEmpty {
+                            Text("Nothing is running.").font(.system(size: 13)).foregroundStyle(theme.colors.muted)
+                        }
+                        VStack(spacing: 6) {
+                            ForEach(working) { s in row(s, dot: s.status) }
                         }
                     }
-                    .frame(maxWidth: 860)
-                    .padding(Space.xl)
-                    .frame(maxWidth: .infinity)
-                }
-            } else {
-                List(rows, id: \.0.id) { s, line in
-                    Button { open(s.id) } label: {
-                        SessionRowView(session: s, project: store.project(s.project_id)?.name ?? (s.project_id == nil ? "Ask Bench" : nil), detail: line)
-                            .padding(.vertical, Space.xs)
-                            .contentShape(Rectangle())
+                    if !finished.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Finished recently").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.colors.muted).padding(.bottom, 4)
+                            ForEach(Array(finished)) { s in row(s, dot: "done") }
+                        }
+                        .padding(.top, Space.sm)
                     }
-                    .buttonStyle(.plain)
                 }
-                .scrollContentBackground(.hidden)
+                .frame(maxWidth: 760, alignment: .leading)
+                .padding(.horizontal, 32)
+                .padding(.top, Space.sm)
+                .padding(.bottom, Space.xl)
+                .frame(maxWidth: .infinity)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(theme.colors.bg)
         .navigationTitle(place == .needs ? "Needs You" : "Working")
+        .hideToolbarTitle()
+    }
+
+    private func row(_ s: Session, dot: String) -> some View {
+        Button { open(s.id) } label: {
+            HStack(spacing: Space.md) {
+                if dot == "done" { Circle().fill(theme.colors.good).frame(width: 7, height: 7).frame(width: 13) }
+                else { StatusDot(status: dot) }
+                Text(s.title).font(.system(size: 13)).lineLimit(1)
+                Spacer()
+                Text(Format.ago(s.updated_at)).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+            }
+            .padding(.horizontal, Space.md)
+            .frame(height: 36)
+            .background(theme.colors.surface1, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

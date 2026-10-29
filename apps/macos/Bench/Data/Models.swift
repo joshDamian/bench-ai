@@ -59,6 +59,12 @@ struct GitState: Codable, Hashable {
     var dirty: [String]
     var conflicted: [String]
     var hasRemote: Bool?
+    var branches: [GitBranch]?
+}
+
+struct GitBranch: Codable, Hashable {
+    var name: String
+    var current: Bool?
 }
 
 struct TaskLogEntry: Codable, Identifiable, Hashable {
@@ -120,6 +126,7 @@ struct Approval: Codable, Identifiable, Hashable {
     let input: JSONValue?
     let title: String?
     let reason: String?
+    var created_at: String?
 }
 
 struct SlashCommand: Codable, Hashable {

@@ -8,6 +8,9 @@ struct ApprovalCard: View {
     let cwd: String
     var sessionTitle: String? = nil
     var compact = false
+    /// The Needs you list: context line on top, no note field or shortcut hint.
+    var inbox = false
+    var openSession: (() -> Void)? = nil
     let busy: Bool
     let onAnswer: ([String: Any]) -> Void
     @State private var note = ""
@@ -15,23 +18,39 @@ struct ApprovalCard: View {
 
     var body: some View {
         let i = approval.input
-        VStack(alignment: .leading, spacing: Space.sm) {
-            if let sessionTitle { Text(sessionTitle).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted).lineLimit(1) }
+        VStack(alignment: .leading, spacing: inbox ? 10 : 12) {
+            if let sessionTitle {
+                Button { openSession?() } label: {
+                    Text(sessionTitle).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .disabled(openSession == nil)
+            }
             switch approval.tool {
             case "ExitPlanMode":
-                Text("Review the plan").font(.system(size: TypeScale.md, weight: .semibold))
+                Text("Claude has a plan").font(.system(size: TypeScale.md, weight: .semibold))
                 ScrollView { BenchMarkdown(text: i["plan"].string ?? "").frame(maxWidth: .infinity, alignment: .leading) }
                     .frame(maxHeight: compact ? 160 : 420)
-                HStack {
-                    Button("Approve, Accept Edits") { onAnswer(["allow": true, "mode": "acceptEdits"]) }
-                        .buttonStyle(CapsuleButton(kind: .primary))
-                        .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: [.command, .shift]))
-                    Button("Approve, Ask Before Edits") { onAnswer(["allow": true, "mode": "default"]) }
-                        .buttonStyle(CapsuleButton(kind: .outline))
+                    .fixedSize(horizontal: false, vertical: true)
+                if !compact && !inbox {
+                    TextField("", text: $note, prompt: Text("Optional: what should change?"))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.colors.line))
                 }
-                HStack {
-                    TextField("What should change?", text: $note).textFieldStyle(.roundedBorder)
+                HStack(spacing: Space.sm) {
+                    Button("Approve · Accept Edits") { onAnswer(["allow": true, "mode": "acceptEdits"]) }
+                        .buttonStyle(CapsuleButton(kind: inbox ? .outline : .primary))
+                        .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: [.command, .shift]))
+                    Button("Approve · Ask Before Edits") { onAnswer(["allow": true, "mode": "default"]) }
+                        .buttonStyle(CapsuleButton(kind: .outline))
                     Button("Keep Planning") { onAnswer(["allow": false, "message": note.isEmpty ? "Keep planning." : note]) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.colors.muted)
+                        .padding(.horizontal, Space.sm)
                 }
             case "AskUserQuestion":
                 Text("Answer a question").font(.system(size: TypeScale.md, weight: .semibold))
@@ -49,14 +68,14 @@ struct ApprovalCard: View {
                 }
             default:
                 HStack(spacing: 10) {
-                    Circle().fill(theme.colors.warn).frame(width: 8, height: 8)
+                    if !inbox { Circle().fill(theme.colors.warn).frame(width: 8, height: 8) }
                     Text(Self.ask(approval)).font(.system(size: TypeScale.md, weight: .semibold))
                     Spacer()
-                    Text(approval.tool).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted)
+                    if !inbox { Text(approval.tool).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) }
                 }
                 if let r = approval.reason { Text(r).foregroundStyle(theme.colors.muted).font(.system(size: TypeScale.sm)) }
                 preview(i)
-                if !compact {
+                if !compact && !inbox {
                     TextField("", text: $note, prompt: Text("Optional: tell Claude why, or what to do instead"))
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
@@ -74,18 +93,19 @@ struct ApprovalCard: View {
                         .buttonStyle(CapsuleButton(kind: .danger))
                         .keyboardShortcut(compact ? nil : KeyboardShortcut(.delete, modifiers: .command))
                     Spacer()
-                    if !compact {
+                    if !compact && !inbox {
                         Text("⇧⌘↩ allow · ⌘⌫ deny").font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted)
                     }
                 }
             }
         }
         .disabled(busy)
-        .padding(Space.lg)
+        .padding(.horizontal, Space.lg)
+        .padding(.vertical, inbox ? 14 : Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.colors.warn.opacity(0.35)))
-        .background(RoundedRectangle(cornerRadius: 20).fill(theme.colors.warn.opacity(0.06)).padding(-4))
+        .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: inbox ? 14 : 16))
+        .overlay(RoundedRectangle(cornerRadius: inbox ? 14 : 16).strokeBorder(approval.tool == "ExitPlanMode" && inbox ? theme.colors.line : theme.colors.warn.opacity(0.35)))
+        .background { if !inbox { RoundedRectangle(cornerRadius: 20).fill(theme.colors.warn.opacity(0.06)).padding(-4) } }
     }
 
     /// What Claude is asking to do, as a short verb phrase.
