@@ -57,6 +57,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -140,19 +141,28 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
         if (uris.isNotEmpty()) vm.attach(context.contentResolver, uris)
     }
 
-    // The transcript sticks to the bottom while you are at the bottom, and leaves you be
-    // when you have scrolled up to read.
-    val total = rows.size + (if (stream.text.isNotEmpty() || stream.thinking.isNotEmpty()) 1 else 0) + approvals.size
-    val atBottom by remember { derivedStateOf { !list.canScrollForward } }
-    var follow by remember { mutableStateOf(true) }
-    LaunchedEffect(list) {
-        snapshotFlow { list.isScrollInProgress to atBottom }.distinctUntilChanged().collect { (scrolling, bottom) ->
-            if (scrolling) follow = bottom
-        }
+    // The transcript is drawn bottom-up (reverseLayout): it opens on the latest message, and
+    // while you are at the bottom, new messages and streaming text keep it there without any
+    // scrolling of ours. Scrolled up to read, it stays put. Where you were reading is kept per
+    // session and restored next time; at the bottom, nothing is kept and it opens at the end.
+    val bl = remember(rows) { blocks(rows) }
+    val atBottom by remember { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 48 } }
+    val memory = remember { BenchApp.instance.getSharedPreferences("scroll", 0) }
+    var restored by remember(vm.sessionId) { mutableStateOf(false) }
+    LaunchedEffect(bl.isNotEmpty(), loading) {
+        if (restored || bl.isEmpty() || loading) return@LaunchedEffect
+        restored = true
+        val key = memory.getString(vm.sessionId, null)
+        val i = key?.substringBefore('|')?.let { k -> listKeys(bl, stream.text.isNotEmpty()).indexOf(k) } ?: -1
+        if (i > 0) list.scrollToItem(i, key!!.substringAfter('|').toIntOrNull() ?: 0) else list.scrollToItem(0)
     }
-    LaunchedEffect(total, stream.text.length / 80, loading) {
-        val last = list.layoutInfo.totalItemsCount - 1
-        if (follow && last >= 0) list.scrollToItem(last, Int.MAX_VALUE / 2)
+    DisposableEffect(vm.sessionId) {
+        onDispose {
+            val e = memory.edit()
+            if (list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 48) e.remove(vm.sessionId)
+            else list.layoutInfo.visibleItemsInfo.firstOrNull()?.let { e.putString(vm.sessionId, "${it.key}|${list.firstVisibleItemScrollOffset}") }
+            e.apply()
+        }
     }
 
     Scaffold(
@@ -204,39 +214,48 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             Box(Modifier.weight(1f)) {
                 LazyColumn(
                     state = list,
+                    reverseLayout = true,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.md),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    contentPadding = PaddingValues(start = Space.lg, end = Space.lg, top = Space.md, bottom = Space.lg),
+                    verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.Bottom),
                 ) {
-                    if (hasOlder) item("older") {
-                        TextButton(onClick = vm::loadOlder, modifier = Modifier.fillMaxWidth()) { Text("Show earlier messages") }
-                    }
-                    if (loading && rows.isEmpty()) item("loading") {
-                        Box(Modifier.fillMaxWidth().padding(Space.xl), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
-                    }
-                    if (!loading && rows.isEmpty()) item("empty") {
-                        MutedText("Nothing here yet. Tell Claude what to work on.", Modifier.fillMaxWidth().padding(Space.xl))
-                    }
-                    val bl = blocks(rows)
-                    items(bl, key = { it.key }, contentType = { it::class }) { b ->
-                        when (b) {
-                            is Block.User -> TranscriptRow(b.row, cwd, thinking, vm::openThinking)
-                            is Block.Note -> TranscriptRow(b.row, cwd, thinking, vm::openThinking)
-                            is Block.Turn -> TurnBlock(b, running && b.key == bl.lastOrNull()?.key, cwd, thinking, vm::openThinking)
-                        }
-                    }
+                    // Newest first: item 0 sits at the bottom of the screen.
                     if (stream.text.isNotEmpty() || stream.thinking.isNotEmpty()) item("stream") {
-                        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                        Column(Modifier.animateItem(), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                             if (stream.thinking.isNotEmpty() && stream.text.isEmpty()) MutedText("Thinking…")
                             if (stream.text.isNotEmpty()) MarkdownText(stream.text)
                         }
                     }
+                    items(bl.asReversed(), key = { it.key }, contentType = { it::class }) { b ->
+                        Box(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(180), placementSpec = null, fadeOutSpec = null)) {
+                            when (b) {
+                                is Block.User -> TranscriptRow(b.row, cwd, thinking, vm::openThinking)
+                                is Block.Note -> TranscriptRow(b.row, cwd, thinking, vm::openThinking)
+                                is Block.Turn -> TurnBlock(b, running && b.key == bl.lastOrNull()?.key, cwd, thinking, vm::openThinking)
+                            }
+                        }
+                    }
+                    if (!loading && rows.isEmpty()) item("empty") {
+                        MutedText("Nothing here yet. Tell Claude what to work on.", Modifier.fillMaxWidth().padding(Space.xl))
+                    }
+                    if (loading && rows.isEmpty()) item("loading") {
+                        Box(Modifier.fillMaxWidth().padding(Space.xl), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
+                    }
+                    if (hasOlder) item("older") {
+                        // Reaching the top loads the earlier part on its own.
+                        LaunchedEffect(Unit) { vm.loadOlder() }
+                        Box(Modifier.fillMaxWidth().padding(Space.md), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) }
+                    }
                 }
-                androidx.compose.animation.AnimatedVisibility(!follow, Modifier.align(Alignment.BottomEnd).padding(Space.lg)) {
-                    SmallFloatingActionButton(onClick = {
-                        follow = true
-                        scope.launch { if (total > 0) list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE / 2) }
-                    }, shape = CircleShape, containerColor = Bench.colors.surface3, contentColor = Bench.colors.text) { Icon(Icons.Default.KeyboardArrowDown, "Jump to latest") }
+                androidx.compose.animation.AnimatedVisibility(
+                    !atBottom, Modifier.align(Alignment.BottomCenter).padding(Space.md),
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
+                ) {
+                    SmallFloatingActionButton(
+                        onClick = { scope.launch { list.animateScrollToItem(0) } },
+                        shape = CircleShape, containerColor = Bench.colors.surface3, contentColor = Bench.colors.text,
+                    ) { Icon(Icons.Default.KeyboardArrowDown, "Jump to latest") }
                 }
             }
 
@@ -286,8 +305,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 onSend = {
                     val text = draft
                     draft = ""
-                    follow = true
-                    scope.launch { if (!vm.send(text)) draft = text }
+                    scope.launch { list.scrollToItem(0); if (!vm.send(text)) draft = text }
                 },
                 onStop = { vm.interrupt() },
             )
@@ -417,3 +435,7 @@ private fun Composer(
         }
     }
 }
+
+/** The list's keys in drawing order (newest first), for finding a remembered item again. */
+private fun listKeys(bl: List<Block>, streaming: Boolean): List<String> =
+    (if (streaming) listOf("stream") else emptyList()) + bl.asReversed().map { it.key }

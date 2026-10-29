@@ -150,7 +150,9 @@ fun SettingsScreen(store: BenchStore) {
             put(buildJsonObject { if (e.isEmpty()) put("effort", JsonNull) else put("effort", e) })
         }
         "mode" -> Choose("Default mode", Mode.entries.map { it.wire to it.label }, mode.wire, { page = null }) { m -> put(buildJsonObject { put("mode", m) }) }
-        "models" -> ModelsDialog(providers, onDismiss = { page = null }) { id, on -> scope.launch { runCatching { store.api.setModel(id, on) }; load() } }
+        "models" -> ModelsDialog(providers, onDismiss = { page = null },
+            onProvider = { id, on -> scope.launch { runCatching { store.api.patch("/api/providers/${ai.bench.app.data.BenchApi.enc(id)}", buildJsonObject { put("enabled", on) }) }; load() } },
+        ) { id, on -> scope.launch { runCatching { store.api.setModel(id, on) }; load() } }
     }
 
     pairLink?.let { link ->
@@ -237,7 +239,7 @@ private fun Choose(title: String, options: List<Pair<String, String>>, current: 
 }
 
 @Composable
-private fun ModelsDialog(providers: List<ProviderInfo>, onDismiss: () -> Unit, onToggle: (String, Boolean) -> Unit) {
+private fun ModelsDialog(providers: List<ProviderInfo>, onDismiss: () -> Unit, onProvider: (String, Boolean) -> Unit, onToggle: (String, Boolean) -> Unit) {
     val c = Bench.colors
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -245,11 +247,20 @@ private fun ModelsDialog(providers: List<ProviderInfo>, onDismiss: () -> Unit, o
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 providers.forEach { p ->
-                    Text(p.name + if (!p.ready) " · ${p.reason ?: "not set up"}" else "", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (p.ready) c.accent else c.warn, modifier = Modifier.padding(top = Space.sm))
-                    p.models.forEach { m ->
+                    Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(p.name, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            Text(
+                                when { !p.enabled -> "Off"; !p.ready -> p.reason ?: "Not set up"; else -> "${p.models.count { it.enabled }} of ${p.models.size} models on" },
+                                fontSize = 12.5.sp, color = if (p.enabled && !p.ready) c.warn else c.muted,
+                            )
+                        }
+                        Switch(p.enabled, { onProvider(p.id, it) }, colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.onAccent))
+                    }
+                    if (p.enabled) p.models.forEach { m ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(m.label, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                            Switch(m.enabled, { onToggle(m.id, it) }, enabled = p.enabled, colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.onAccent))
+                            Text(m.label, fontSize = 15.sp, color = c.text.copy(alpha = 0.85f), modifier = Modifier.weight(1f).padding(start = Space.md))
+                            Switch(m.enabled, { onToggle(m.id, it) }, colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.onAccent))
                         }
                     }
                     HorizontalDivider(color = c.line)

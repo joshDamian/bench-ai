@@ -108,8 +108,11 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
         }
     }
 
+    private var loadingOlder = false
     fun loadOlder() {
         val first = events.value.firstOrNull()?.id ?: return
+        if (loadingOlder) return
+        loadingOlder = true
         viewModelScope.launch {
             runCatching { api.olderEvents(sessionId, first) }
                 .onSuccess { older ->
@@ -117,6 +120,7 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
                     events.update { (older + it).distinctBy { e -> e.id }.sortedBy { e -> e.id } }
                 }
                 .onFailure { _errors.tryEmit(it.message ?: "Could not load earlier messages") }
+            loadingOlder = false
         }
     }
 

@@ -126,6 +126,17 @@ fun BenchTheme(themeId: String, content: @Composable () -> Unit) {
         medium = RoundedCornerShape(spec.radius.dp),
         large = RoundedCornerShape(spec.radius.dp),
     )
+    // Status and navigation bar icons follow the theme, not the phone's dark mode: dark icons
+    // on a light theme, light icons on a dark one.
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) androidx.compose.runtime.SideEffect {
+        (view.context as? android.app.Activity)?.window?.let { w ->
+            androidx.core.view.WindowCompat.getInsetsController(w, view).apply {
+                isAppearanceLightStatusBars = !spec.dark
+                isAppearanceLightNavigationBars = !spec.dark
+            }
+        }
+    }
     CompositionLocalProvider(LocalBench provides spec) {
         MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
     }
