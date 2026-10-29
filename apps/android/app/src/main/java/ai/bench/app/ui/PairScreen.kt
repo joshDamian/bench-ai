@@ -1,5 +1,17 @@
 package ai.bench.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.sp
+
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -83,35 +95,59 @@ fun PairScreen() {
         r.contents?.let { link = it; pair(it) }
     }
 
-    Surface(color = Bench.colors.bg, modifier = Modifier.fillMaxSize()) {
+    var pasting by rememberSaveable { mutableStateOf(false) }
+    val c = Bench.colors
+    val scanNow = { scan.launch(ScanOptions().setPrompt("Scan the Bench pairing code").setBeepEnabled(false).setOrientationLocked(false)) }
+
+    Surface(color = c.bg, modifier = Modifier.fillMaxSize()) {
         Column(
-            Modifier.fillMaxSize().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(Space.xl),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Space.lg, Alignment.CenterVertically),
+            Modifier.fillMaxSize().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = Space.xl, vertical = 32.dp),
         ) {
-            Column(Modifier.widthIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
-                Text("Pair with Bench", style = MaterialTheme.typography.titleLarge)
-                MutedText("On the machine running Bench, run `bench pair` or open Settings → Pair a device. Scan the code it shows, or paste its link.")
-                Button(onClick = {
-                    scan.launch(ScanOptions().setPrompt("Scan the Bench pairing code").setBeepEnabled(false).setOrientationLocked(false))
-                }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.QrCodeScanner, null, Modifier.padding(end = Space.sm))
-                    Text("Scan pairing code")
+            Column(Modifier.weight(1f).widthIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterVertically)) {
+                Box(
+                    Modifier.size(72.dp).background(c.surface3, RoundedCornerShape(22.dp)).border(1.dp, c.line, RoundedCornerShape(22.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.QrCodeScanner, null, tint = c.accent, modifier = Modifier.size(32.dp)) }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Connect to Bench", fontSize = 32.sp, lineHeight = 37.sp)
+                    Text(
+                        buildAnnotatedString {
+                            append("On the machine running Bench, run ")
+                            withStyle(SpanStyle(fontFamily = ai.bench.app.ui.theme.Mono, color = c.text.copy(alpha = 0.8f))) { append("bench pair") }
+                            append(" and scan the code it shows.")
+                        },
+                        fontSize = 16.sp, lineHeight = 24.sp, color = c.muted,
+                    )
                 }
-                HorizontalDivider(color = Bench.colors.line)
-                OutlinedTextField(
-                    link, { link = it }, Modifier.fillMaxWidth(),
-                    label = { Text("Pairing link") },
-                    placeholder = { Text("https://machine.tailnet.ts.net/#/pair/…") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    singleLine = true,
-                )
-                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("This device's name") }, singleLine = true)
-                OutlinedButton(onClick = { pair(link) }, enabled = !busy && link.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Pair")
+                if (pasting) {
+                    OutlinedTextField(
+                        link, { link = it }, Modifier.fillMaxWidth(),
+                        label = { Text("Pairing link") },
+                        placeholder = { Text("https://machine.tailnet.ts.net/#/pair/…") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                    )
+                    OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("This phone's name") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                } else {
+                    Box(
+                        Modifier.fillMaxWidth().height(220.dp).background(c.surface1, RoundedCornerShape(28.dp)).border(1.dp, c.line, RoundedCornerShape(28.dp)).clickable { scanNow() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(Modifier.size(140.dp).border(3.dp, c.accent.copy(alpha = 0.8f), RoundedCornerShape(20.dp)))
+                        Text("Camera", fontSize = 13.sp, color = c.muted, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp))
+                    }
                 }
-                error?.let { Text(it, color = Bench.colors.bad, style = MaterialTheme.typography.bodySmall) }
-                MutedText("The link is good for ten minutes and works once. Your phone reaches the server over Tailscale (`bench share`).")
+                error?.let { Text(it, color = c.bad, fontSize = 13.sp) }
+            }
+            Column(Modifier.widthIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (pasting) {
+                    BigButton(if (busy) "Connecting…" else "Connect", primary = true, height = 56.dp, enabled = !busy && link.isNotBlank()) { pair(link) }
+                    TextButton(onClick = { pasting = false }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Scan a code instead", fontSize = 15.sp, color = c.text.copy(alpha = 0.8f)) }
+                } else {
+                    BigButton("Scan code", primary = true, height = 56.dp, enabled = !busy) { scanNow() }
+                    TextButton(onClick = { pasting = true }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Paste a link instead", fontSize = 15.sp, color = c.text.copy(alpha = 0.8f)) }
+                }
             }
         }
     }

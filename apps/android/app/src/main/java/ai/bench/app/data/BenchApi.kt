@@ -150,6 +150,21 @@ class BenchApi(val config: ServerConfig) {
         return BenchJson.decodeFromJsonElement(r["session"] ?: throw BenchError(500, "The server made the task but sent no session"))
     }
 
+    // -- tasks, projects, providers, pairing ---------------------------------------------------
+
+    suspend fun taskGit(id: String): TaskGit? = runCatching { get("/api/tasks/${enc(id)}")["git"].let { BenchJson.decodeFromJsonElement<TaskGit>(it!!) } }.getOrNull()
+    suspend fun taskDiff(id: String): List<DiffFile> = DiffFile.parse(get("/api/tasks/${enc(id)}/diff")["diff"].str().orEmpty())
+    suspend fun taskLog(id: String): List<JsonElement> = get("/api/tasks/${enc(id)}/log").arr().orEmpty()
+    suspend fun taskAction(id: String, action: String, body: JsonObject = JsonObject(emptyMap())) = post("/api/tasks/${enc(id)}/$action", body)
+    suspend fun projectGit(id: String): GitState? = runCatching { get("/api/projects/${enc(id)}/git").decode<GitState>() }.getOrNull()
+    suspend fun projectAction(id: String, action: String) = post("/api/projects/${enc(id)}/$action")
+    suspend fun providers(): List<ProviderInfo> = get("/api/providers").lossy()
+    suspend fun defaults(): JsonElement? = get("/api/defaults")
+    suspend fun putDefaults(body: JsonObject) = call(request("/api/defaults").put(body.toString().toRequestBody(jsonType)).build())
+    suspend fun setModel(id: String, on: Boolean) = patch("/api/models/${enc(id)}", buildJsonObject { put("enabled", on) })
+    suspend fun repos(): List<GitRepo> = get("/api/github/repos")["repos"].lossy()
+    suspend fun pairing(): JsonElement? = post("/api/pairing")
+
     suspend fun answer(approvalId: String, body: JsonObject) = post("/api/approvals/${enc(approvalId)}", body)
 
     /**

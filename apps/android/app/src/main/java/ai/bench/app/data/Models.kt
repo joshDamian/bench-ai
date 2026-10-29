@@ -135,6 +135,66 @@ data class SessionDetail(
     val commands: List<SlashCommand>? = null,
 )
 
+@Serializable
+data class TaskGit(
+    val ahead: Int = 0,
+    val behind: Int = 0,
+    val files: Int = 0,
+    val added: Int = 0,
+    val removed: Int = 0,
+    val merged: Boolean = false,
+    val canMerge: CanMerge? = null,
+) {
+    @Serializable data class CanMerge(val ok: Boolean = true, val reason: String? = null)
+}
+
+@Serializable
+data class GitState(val branch: String? = null, val ahead: Int = 0, val behind: Int = 0, val dirty: List<String> = emptyList())
+
+@Serializable
+data class ModelInfo(val id: String, val name: String = "", val display_name: String? = null, val enabled: Boolean = true) {
+    val label get() = display_name ?: name
+}
+
+@Serializable
+data class ProviderInfo(val id: String, val name: String = "", val enabled: Boolean = true, val ready: Boolean = true, val reason: String? = null, val models: List<ModelInfo> = emptyList())
+
+@Serializable
+data class GitRepo(val name: String, val description: String = "", val private: Boolean = false, val updatedAt: String? = null)
+
+/** One file in a task's diff, its hunks kept as lines. */
+data class DiffFile(val path: String, val lines: List<String>, val status: String) {
+    val added get() = lines.count { it.startsWith("+") }
+    val removed get() = lines.count { it.startsWith("-") }
+
+    companion object {
+        fun parse(diff: String): List<DiffFile> {
+            val out = mutableListOf<DiffFile>()
+            var path: String? = null
+            var status = "M"
+            val lines = mutableListOf<String>()
+            fun flush() { path?.let { out += DiffFile(it, lines.toList(), status) }; lines.clear(); status = "M" }
+            for (l in diff.lines()) {
+                when {
+                    l.startsWith("diff --git ") -> { flush(); path = l.substringAfterLast(" b/") }
+                    l.startsWith("new file mode") -> status = "A"
+                    l.startsWith("deleted file mode") -> status = "D"
+                    path == null || l.startsWith("index ") || l.startsWith("--- ") || l.startsWith("+++ ") -> Unit
+                    else -> lines += l
+                }
+            }
+            flush()
+            return out
+        }
+    }
+}
+
+/** Reasoning effort, as src/service.mjs EFFORTS lists it. */
+enum class Effort(val wire: String, val label: String) {
+    Low("low", "Low"), Medium("medium", "Medium"), High("high", "High"), XHigh("xhigh", "Extra high"), Max("max", "Max");
+    companion object { fun of(wire: String) = entries.firstOrNull { it.wire == wire } }
+}
+
 /** Permission modes, in the order the web picker shows them. */
 enum class Mode(val wire: String, val label: String) {
     Default("default", "Ask before edits"),

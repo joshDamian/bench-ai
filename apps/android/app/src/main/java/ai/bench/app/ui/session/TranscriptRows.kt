@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.unit.sp
+import ai.bench.app.data.Block
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -80,15 +84,76 @@ private fun UserBubble(row: Row.User) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
         Column(
             Modifier
-                .widthIn(max = 520.dp)
-                .background(Bench.colors.surface3, RoundedCornerShape(Bench.spec.radius.dp))
-                .padding(horizontal = Space.md, vertical = Space.sm),
+                .widthIn(max = 300.dp)
+                .background(Bench.colors.surface3, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
             if (row.attachments.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 row.attachments.forEach { Pill(it, Bench.colors.info) }
             }
-            if (row.text.isNotEmpty()) MarkdownText(row.text)
+            if (row.text.isNotEmpty()) Text(row.text, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 22.sp))
+        }
+    }
+}
+
+/**
+ * One turn as the session board draws it: "› Worked for 2m 54s · 14 steps", the reply,
+ * then its cost. While Claude works the line is the step in progress.
+ */
+@Composable
+fun TurnBlock(turn: Block.Turn, live: Boolean, cwd: String, thinking: Map<String, String>, onOpenThinking: (Row.Thinking) -> Unit) {
+    val c = Bench.colors
+    var open by rememberSaveable(turn.key) { mutableStateOf(false) }
+    val clip = LocalClipboardManager.current
+    Column(Modifier.fillMaxWidth().animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        val n = turn.stepCount
+        if (turn.done || n > 0) {
+            Row(
+                Modifier.heightIn(min = 32.dp).clickable { open = !open },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                val current = turn.current
+                if (live && !turn.done) {
+                    Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(16.dp).background(c.accent.copy(alpha = 0.2f), CircleShape))
+                        Box(Modifier.size(8.dp).background(c.accent, CircleShape))
+                    }
+                    Text(
+                        current?.let { (if (it.name == "Bash") "$ " else "") + Transcript.headline(it, cwd) } ?: "Working",
+                        fontFamily = if (current?.name == "Bash") Mono else null,
+                        fontSize = 13.sp, color = c.text.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Text("step $n", fontSize = 13.5.sp, color = c.muted)
+                } else {
+                    Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.muted, modifier = Modifier.size(16.dp))
+                    Text(
+                        listOfNotNull(turn.label, if (n > 0) "$n step${if (n == 1) "" else "s"}" else null).joinToString(" · "),
+                        fontSize = 13.5.sp, color = if (turn.ok) c.muted else c.bad,
+                    )
+                }
+            }
+        }
+        if (open) Column(
+            Modifier.padding(start = Space.sm).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            turn.steps.forEach { r ->
+                when (r) {
+                    is Row.Tools -> r.calls.forEach { ToolCallRow(it, cwd, Modifier) }
+                    else -> TranscriptRow(r, cwd, thinking, onOpenThinking)
+                }
+            }
+        }
+        turn.prose.forEach { MarkdownText(it) }
+        if (turn.reply.isNotEmpty()) MarkdownText(turn.reply)
+        if (turn.done && (turn.cost != null || turn.reply.isNotEmpty())) Row(verticalAlignment = Alignment.CenterVertically) {
+            turn.cost?.let { Text(it, fontSize = 12.5.sp, color = c.muted) }
+            if (turn.reply.isNotEmpty()) IconButton(onClick = { clip.setText(AnnotatedString(turn.reply)) }, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.ContentCopy, "Copy reply", tint = c.muted, modifier = Modifier.size(14.dp))
+            }
         }
     }
 }

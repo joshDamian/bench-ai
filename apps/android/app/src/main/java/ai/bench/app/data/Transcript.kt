@@ -15,7 +15,7 @@ sealed interface Row {
     data class Text(override val key: String, val text: String, val subagent: Boolean) : Row
     data class Thinking(override val key: String, val eventId: Long, val index: Int, val length: Int, val text: String?) : Row
     data class Tools(override val key: String, val calls: List<ToolCall>, val subagent: Boolean) : Row
-    data class TurnEnd(override val key: String, val ok: Boolean, val label: String, val reply: String) : Row
+    data class TurnEnd(override val key: String, val ok: Boolean, val label: String, val reply: String, val cost: String? = null) : Row
     data class System(override val key: String, val text: String, val tone: Tone = Tone.Muted) : Row
     data class Check(override val key: String, val ok: Boolean, val head: String, val command: String, val output: String) : Row
 }
@@ -129,16 +129,12 @@ object Transcript {
                             },
                         )
                         d["duration_ms"].long()?.let { append(if (isError) " · " else " for ").append(Format.duration(it)) }
-                        (d["cost"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()?.takeIf { it > 0 }?.let { append(" · ").append(Format.cost(it)) }
                     }
-                    out += Row.TurnEnd("e${e.id}", !isError, label, reply.toString())
+                    val cost = (d["cost"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()?.takeIf { it > 0 }?.let { Format.cost(it) }
+                    out += Row.TurnEnd("e${e.id}", !isError, label, reply.toString(), cost)
                     reply.clear()
                 }
-                "init" -> out += Row.System(
-                    "e${e.id}",
-                    listOfNotNull("Claude Code ${d["version"].str().orEmpty()}".trim(), d["model"].str(), d["permissionMode"].str()?.let { Mode.of(it).label })
-                        .joinToString(" · "),
-                )
+                "init" -> Unit // which Claude Code started is not news in the transcript
                 "notice", "loop" -> out += Row.System("e${e.id}", d["text"].str().orEmpty(), if (e.kind == "loop") Tone.Info else Tone.Muted)
                 "log" -> out += Row.System("e${e.id}", "Logged: ${d["decision"].str().orEmpty()}", Tone.Info)
                 "check" -> {
@@ -226,4 +222,41 @@ object Format {
             else -> "${m / (60 * 24)}d"
         }
     }
+}
+
+/** One block as the designs draw it: your message, or a turn folded to one line with its reply and cost. */
+sealed interface Block {
+    val key: String
+    data class User(val row: Row.User) : Block { override val key get() = row.key }
+    data class Note(val row: Row) : Block { override val key get() = row.key }
+    data class Turn(override val key: String, val steps: List<Row>, val reply: String, val label: String?, val ok: Boolean, val cost: String?) : Block {
+        val done get() = label != null
+        val stepCount get() = steps.sumOf { r -> when (r) { is Row.Tools -> r.calls.size; is Row.Thinking -> 1; else -> 0 } }
+        val current get() = steps.asReversed().firstNotNullOfOrNull { r -> (r as? Row.Tools)?.calls?.lastOrNull { it.pending } }
+        /** Prose written so far in a turn still running. */
+        val prose get() = if (done) emptyList() else steps.mapNotNull { (it as? Row.Text)?.takeIf { t -> !t.subagent }?.text }
+    }
+}
+
+fun blocks(rows: List<Row>): List<Block> {
+    val out = mutableListOf<Block>()
+    val steps = mutableListOf<Row>()
+    fun flush(end: Row.TurnEnd?) {
+        if (steps.isEmpty() && end == null) return
+        val key = steps.firstOrNull()?.key ?: end!!.key
+        if (end != null) {
+            val kept = if (end.reply.isEmpty()) steps.toList() else steps.filterNot { it is Row.Text && !it.subagent }
+            out += Block.Turn(key, kept, end.reply, end.label, end.ok, end.cost)
+        } else out += Block.Turn(key, steps.toList(), "", null, true, null)
+        steps.clear()
+    }
+    for (r in rows) when {
+        r is Row.User -> { flush(null); out += Block.User(r) }
+        r is Row.TurnEnd -> flush(r)
+        r is Row.System && r.tone == Tone.Bad -> { flush(null); out += Block.Note(r) }
+        r is Row.Check -> { flush(null); out += Block.Note(r) }
+        else -> steps += r
+    }
+    flush(null)
+    return out
 }

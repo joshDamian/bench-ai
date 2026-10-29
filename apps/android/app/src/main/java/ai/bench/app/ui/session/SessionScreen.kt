@@ -72,7 +72,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ai.bench.app.BenchApp
 import ai.bench.app.data.Mode
-import ai.bench.app.ui.ApprovalCard
+import ai.bench.app.ui.ApprovalSheet
+import ai.bench.app.data.Block
+import ai.bench.app.data.blocks
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
 import ai.bench.app.ui.MarkdownText
 import ai.bench.app.ui.MutedText
 import ai.bench.app.ui.StatusDot
@@ -84,7 +92,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit) {
+fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}) {
     val session by vm.session.collectAsState()
     val rows by vm.rows.collectAsState()
     val stream by vm.stream.collectAsState()
@@ -144,18 +152,22 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bench.colors.bg),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 title = {
-                    Column {
-                        Text(session?.title ?: "Session", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                            StatusDot(session?.status ?: "idle")
-                            MutedText(statusLabel(session?.status ?: "idle") + (session?.let { " · " + Mode.of(it.permission_mode).label } ?: ""), maxLines = 1)
-                        }
+                    val st = session?.status ?: "idle"
+                    val waiting = approvals.isNotEmpty() || st == "waiting"
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(session?.title ?: "Session", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            if (waiting) "Needs you" else statusLabel(st) + (session?.let { " · " + Mode.of(it.permission_mode).label } ?: ""),
+                            fontSize = 12.5.sp, maxLines = 1,
+                            color = when { waiting -> Bench.colors.warn; st == "running" -> Bench.colors.accent; st == "error" -> Bench.colors.bad; else -> Bench.colors.muted },
+                        )
                     }
                 },
                 actions = {
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                         DropdownMenu(menu, { menu = false }) {
+                            session?.task_id?.let { t -> DropdownMenuItem({ Text("Changes") }, onClick = { menu = false; onTask(t) }) }
                             DropdownMenuItem({ Text("Permission mode…") }, onClick = { menu = false; modeMenu = true })
                             DropdownMenuItem({ Text("Rename") }, onClick = { menu = false; renaming = true })
                             DropdownMenuItem({ Text("Archive") }, onClick = { menu = false; vm.archive(onBack) })
@@ -180,7 +192,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit) {
                     state = list,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.md),
-                    verticalArrangement = Arrangement.spacedBy(Space.md),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     if (hasOlder) item("older") {
                         TextButton(onClick = vm::loadOlder, modifier = Modifier.fillMaxWidth()) { Text("Show earlier messages") }
@@ -191,17 +203,19 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit) {
                     if (!loading && rows.isEmpty()) item("empty") {
                         MutedText("Nothing here yet. Tell Claude what to work on.", Modifier.fillMaxWidth().padding(Space.xl))
                     }
-                    items(rows, key = { it.key }, contentType = { it::class }) { row ->
-                        TranscriptRow(row, cwd, thinking, vm::openThinking)
+                    val bl = blocks(rows)
+                    items(bl, key = { it.key }, contentType = { it::class }) { b ->
+                        when (b) {
+                            is Block.User -> TranscriptRow(b.row, cwd, thinking, vm::openThinking)
+                            is Block.Note -> TranscriptRow(b.row, cwd, thinking, vm::openThinking)
+                            is Block.Turn -> TurnBlock(b, running && b.key == bl.lastOrNull()?.key, cwd, thinking, vm::openThinking)
+                        }
                     }
                     if (stream.text.isNotEmpty() || stream.thinking.isNotEmpty()) item("stream") {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                             if (stream.thinking.isNotEmpty() && stream.text.isEmpty()) MutedText("Thinking…")
                             if (stream.text.isNotEmpty()) MarkdownText(stream.text)
                         }
-                    }
-                    items(approvals, key = { "approval-${it.id}" }) { a ->
-                        ApprovalCard(a, cwd, onAnswer = { vm.answer(a.id, it) }, busy = a.id in busy)
                     }
                 }
                 androidx.compose.animation.AnimatedVisibility(!follow, Modifier.align(Alignment.BottomEnd).padding(Space.lg)) {
@@ -244,7 +258,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit) {
                 }
             }
 
-            Composer(
+            val pending = approvals.firstOrNull()
+            if (pending != null) {
+                ApprovalSheet(pending, cwd, onAnswer = { vm.answer(pending.id, it) }, busy = pending.id in busy, waiting = approvals.size)
+            } else Composer(
                 draft = draft,
                 onDraft = { draft = it },
                 running = running,
@@ -284,34 +301,38 @@ private fun Composer(
     onStop: () -> Unit,
 ) {
     val c = Bench.colors
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(c.surfaceRail)
-            .navigationBarsPadding()
-            .padding(horizontal = Space.sm, vertical = Space.sm),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        IconButton(onClick = onAttach) { Icon(Icons.Default.AttachFile, "Attach", tint = c.muted) }
-        TextField(
-            value = draft,
-            onValueChange = onDraft,
-            modifier = Modifier.weight(1f).heightIn(min = 48.dp, max = 180.dp).verticalScroll(rememberScrollState()),
-            placeholder = { Text(if (running) "Queue a message…" else "Message Claude") },
-            shape = RoundedCornerShape(Bench.spec.radius.dp),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = c.surface2, unfocusedContainerColor = c.surface2,
-                focusedIndicatorColor = c.accent.copy(alpha = 0f), unfocusedIndicatorColor = c.accent.copy(alpha = 0f),
-                cursorColor = c.accent,
-            ),
-        )
-        if (running && !canSend) {
-            FilledIconButton(onClick = onStop, colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad, contentColor = c.bg), modifier = Modifier.padding(start = Space.xs)) {
-                Icon(Icons.Default.Stop, "Stop")
-            }
-        } else {
-            FilledIconButton(onClick = onSend, enabled = canSend, modifier = Modifier.padding(start = Space.xs)) {
-                Icon(Icons.AutoMirrored.Filled.Send, "Send")
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 16.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(c.surface2, RoundedCornerShape(28.dp))
+                .border(1.dp, c.line, RoundedCornerShape(28.dp))
+                .padding(6.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            IconButton(onClick = onAttach, modifier = Modifier.size(44.dp)) { Icon(Icons.Default.Add, "Attach", tint = c.muted) }
+            TextField(
+                value = draft,
+                onValueChange = onDraft,
+                modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 180.dp).verticalScroll(rememberScrollState()),
+                placeholder = { Text(if (running) "Queue a message" else "Message Claude", fontSize = 16.sp) },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = c.surface2.copy(alpha = 0f), unfocusedContainerColor = c.surface2.copy(alpha = 0f),
+                    focusedIndicatorColor = c.accent.copy(alpha = 0f), unfocusedIndicatorColor = c.accent.copy(alpha = 0f),
+                    cursorColor = c.accent,
+                ),
+            )
+            if (running && !canSend) {
+                FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
+                    Box(Modifier.size(12.dp).background(c.bad, RoundedCornerShape(3.dp)))
+                }
+            } else {
+                FilledIconButton(
+                    onClick = onSend, enabled = canSend, modifier = Modifier.size(44.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent, contentColor = c.onAccent, disabledContainerColor = c.accent.copy(alpha = 0.3f), disabledContentColor = c.onAccent),
+                ) { Icon(Icons.Default.ArrowUpward, "Send") }
             }
         }
     }

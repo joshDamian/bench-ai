@@ -22,6 +22,23 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.navigation.navArgument
 import ai.bench.app.BenchApp
 import ai.bench.app.MainActivity
@@ -71,23 +88,77 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         if (MainActivity.needsNotificationPermission) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    NavHost(
-        nav,
-        startDestination = "home",
-        enterTransition = { slideInHorizontally { it / 4 } + fadeIn() },
-        exitTransition = { fadeOut() },
-        popEnterTransition = { fadeIn() },
-        popExitTransition = { slideOutHorizontally { it / 4 } + fadeOut() },
-    ) {
-        composable("home") {
-            HomeScreen(store, onOpen = { nav.navigate("session/$it") }, onSettings = { nav.navigate("settings") })
+    val back by nav.currentBackStackEntryAsState()
+    val route = back?.destination?.route
+    val tabs = listOf("home", "sessions", "projects", "settings")
+    var newSession by remember { mutableStateOf(false) }
+    var addProject by remember { mutableStateOf(false) }
+    val open: (String) -> Unit = { nav.navigate("session/$it") }
+
+    Column(Modifier.fillMaxSize()) {
+        NavHost(
+            nav,
+            startDestination = "home",
+            modifier = Modifier.weight(1f),
+            enterTransition = { if (initialState.destination.route in tabs && targetState.destination.route in tabs) fadeIn() else slideInHorizontally { it / 4 } + fadeIn() },
+            exitTransition = { fadeOut() },
+            popEnterTransition = { fadeIn() },
+            popExitTransition = { slideOutHorizontally { it / 4 } + fadeOut() },
+        ) {
+            composable("home") { HomeScreen(store, onOpen = open, onNew = { newSession = true }) }
+            composable("sessions") { SessionsScreen(store, onOpen = open, onNew = { newSession = true }) }
+            composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }) }
+            composable("settings") { SettingsScreen(store) }
+            composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                val id = entry.arguments?.getString("id") ?: return@composable
+                val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })
+                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") })
+            }
+            composable("task/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                val id = entry.arguments?.getString("id") ?: return@composable
+                TaskScreen(store, id, onBack = { nav.popBackStack() }, onOpen = open)
+            }
+            composable("project/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                val id = entry.arguments?.getString("id") ?: return@composable
+                ProjectScreen(store, id, onBack = { nav.popBackStack() }, onOpen = open, onTask = { nav.navigate("task/$it") })
+            }
         }
-        composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
-            val id = entry.arguments?.getString("id") ?: return@composable
-            val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })
-            SessionScreen(vm, onBack = { nav.popBackStack() })
+        if (route in tabs) BenchNav(route ?: "home") { t ->
+            nav.navigate(t) {
+                popUpTo("home") { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
         }
-        composable("settings") { SettingsScreen(store, onBack = { nav.popBackStack() }) }
+    }
+
+    if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) })
+    if (addProject) AddProjectSheet(store, onDismiss = { addProject = false }, onAdded = { addProject = false; nav.navigate("project/$it") })
+}
+
+/** The navigation bar every tab shares, as its board draws it. */
+@Composable
+fun BenchNav(active: String, onPick: (String) -> Unit) {
+    val c = Bench.colors
+    NavigationBar(containerColor = c.surface1) {
+        listOf(
+            Triple("home", "Home", Icons.Outlined.Home),
+            Triple("sessions", "Sessions", Icons.AutoMirrored.Outlined.List),
+            Triple("projects", "Projects", Icons.Outlined.Folder),
+            Triple("settings", "Settings", Icons.Outlined.Settings),
+        ).forEach { (id, label, icon) ->
+            NavigationBarItem(
+                selected = active == id,
+                onClick = { onPick(id) },
+                icon = { Icon(icon, null) },
+                label = { Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = c.accent, selectedTextColor = c.accent,
+                    indicatorColor = c.accent.copy(alpha = 0.18f),
+                    unselectedIconColor = c.muted, unselectedTextColor = c.muted,
+                ),
+            )
+        }
     }
 }
 
