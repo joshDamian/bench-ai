@@ -1,6 +1,9 @@
 package ai.bench.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -78,15 +81,7 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("New session", fontSize = 22.sp)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Project", fontSize = 13.sp, color = c.muted)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(projectId == null, { projectId = null }, { Text("Ask Bench", fontSize = 14.sp) }, shape = RoundedCornerShape(10.dp), colors = chipColors())
-                    s.projects.forEach { p ->
-                        FilterChip(projectId == p.id, { projectId = p.id }, { Text(p.name, fontSize = 14.sp) }, shape = RoundedCornerShape(10.dp), colors = chipColors())
-                    }
-                }
-            }
+            ProjectPicker(s, projectId) { projectId = it }
             if (projectId != null) Segmented(listOf("task" to "New task", "checkout" to "Checkout"), where, { where = it }, height = 44.dp)
             OutlinedTextField(
                 prompt, { prompt = it }, Modifier.fillMaxWidth().heightIn(min = 140.dp),
@@ -119,6 +114,55 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
                     } catch (e: BenchError) {
                         error = e.message
                     } finally { busy = false }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Where the session runs: one row showing the choice, opening to a searchable list with the
+ * projects used most recently first. Scales to any number of projects.
+ */
+@Composable
+private fun ProjectPicker(s: ai.bench.app.data.BenchState, selected: String?, onPick: (String?) -> Unit) {
+    val c = Bench.colors
+    var open by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val lastUsed = s.sessions.groupBy { it.project_id }.mapValues { (_, v) -> v.maxOf { it.updated_at } }
+    val ordered = s.projects.sortedByDescending { lastUsed[it.id].orEmpty() }
+    val name = s.projects.firstOrNull { it.id == selected }?.name ?: "Ask Bench"
+    Column(Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(16.dp))) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { open = !open }.padding(horizontal = 16.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Project", fontSize = 12.sp, color = c.muted)
+                Text(name, fontSize = 16.sp)
+            }
+            androidx.compose.material3.Icon(if (open) androidx.compose.material.icons.Icons.Default.KeyboardArrowUp else androidx.compose.material.icons.Icons.Default.KeyboardArrowDown, null, tint = c.muted)
+        }
+        if (open) {
+            androidx.compose.material3.HorizontalDivider(color = c.line)
+            if (s.projects.size > 6) androidx.compose.foundation.text.BasicTextField(
+                query, { query = it }, singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = c.text),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                decorationBox = { inner -> androidx.compose.foundation.layout.Box { if (query.isEmpty()) Text("Search projects", fontSize = 15.sp, color = c.muted); inner() } },
+            )
+            val rows = listOf<Pair<String?, String>>(null to "Ask Bench") + ordered.map { it.id to it.name }
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 280.dp)) {
+                items(rows.filter { query.isBlank() || it.second.contains(query, ignoreCase = true) }.size) { i ->
+                    val (id, label) = rows.filter { query.isBlank() || it.second.contains(query, ignoreCase = true) }[i]
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(id); open = false; query = "" }.padding(horizontal = 16.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Text(label, fontSize = 15.sp, color = if (id == selected) c.accent else c.text, modifier = Modifier.weight(1f))
+                        if (id == selected) androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
         }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -155,6 +156,9 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     }
 
     Scaffold(
+        // The screen handles the bottom itself: the message box sits on the keyboard when it is
+        // up and above the navigation bar when it is down, never both.
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
@@ -196,7 +200,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
         },
         containerColor = Bench.colors.bg,
     ) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad).imePadding()) {
+        Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
             Box(Modifier.weight(1f)) {
                 LazyColumn(
                     state = list,
@@ -308,8 +312,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
 
 /** "Opus 4.7 · High": the session's model and effort, in words. */
 private fun modelLine(s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>): String {
-    val m = providers.flatMap { it.models }.firstOrNull { it.id == s.model_id }?.label
-        ?: providers.firstOrNull { it.id == s.provider_id }?.name ?: "Default model"
+    val m = providers.flatMap { it.models }.firstOrNull { it.id == s.model_id }?.label ?: "Default model"
     val e = s.effort?.let { ai.bench.app.data.Effort.of(it)?.label }
     return listOfNotNull(m, e).joinToString(" · ")
 }

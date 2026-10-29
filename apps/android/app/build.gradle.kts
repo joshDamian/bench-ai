@@ -25,6 +25,14 @@ android {
     // debug key, so a fork or a first run still produces an installable APK.
     val ks = System.getenv("BENCH_KEYSTORE")
     signingConfigs {
+        // One fixed key for builds without a release keystore, checked in so every CI run
+        // signs the same way and a new APK installs over the old one.
+        getByName("debug") {
+            storeFile = rootProject.file("ci-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (ks != null && file(ks).exists()) {
             create("release") {
                 storeFile = file(ks)
@@ -71,6 +79,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.zxing.embedded)
     implementation(libs.markdown.m3)
+    implementation(libs.markdown.code)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(kotlin("test"))

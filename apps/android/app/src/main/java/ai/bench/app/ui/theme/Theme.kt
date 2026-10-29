@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.luminance
 
 // Bench's tokens, as Compose reads them. A screen takes colours from Bench.colors and
 // sizes from Space and Type below, never from a literal - the same rule CLAUDE.md sets
@@ -50,9 +51,38 @@ val Mono = FontFamily.Monospace
 
 fun themeById(id: String): BenchThemeSpec = BenchThemes.firstOrNull { it.id == id } ?: BenchThemes.first()
 
+private fun contrast(a: androidx.compose.ui.graphics.Color, b: androidx.compose.ui.graphics.Color): Float {
+    val l1 = a.luminance() + 0.05f
+    val l2 = b.luminance() + 0.05f
+    return if (l1 > l2) l1 / l2 else l2 / l1
+}
+
+/** Moves `fg` toward `toward` until it reads at `min`:1 on `bg` (WCAG). */
+private fun readable(fg: androidx.compose.ui.graphics.Color, bg: androidx.compose.ui.graphics.Color, toward: androidx.compose.ui.graphics.Color, min: Float): androidx.compose.ui.graphics.Color {
+    var t = 0f
+    var c = fg
+    while (contrast(c, bg) < min && t < 1f) { t += 0.05f; c = androidx.compose.ui.graphics.lerp(fg, toward, t) }
+    return c
+}
+
+/**
+ * The stylesheet's colours with contrast guaranteed: text on the accent picks black or white
+ * by what reads, and muted text is lifted until it reaches 4.5:1 on the surfaces it sits on.
+ */
+private fun legible(c: BenchColors): BenchColors {
+    val onAccent = if (contrast(androidx.compose.ui.graphics.Color.Black, c.accent) >= contrast(androidx.compose.ui.graphics.Color.White, c.accent))
+        androidx.compose.ui.graphics.Color(0xFF0B0D10) else androidx.compose.ui.graphics.Color.White
+    return c.copy(
+        onAccent = onAccent,
+        muted = readable(c.muted, c.surface2, c.text, 4.5f),
+        text = readable(c.text, c.surface2, if (c.bg.luminance() < 0.5f) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Black, 7f),
+    )
+}
+
 @Composable
 fun BenchTheme(themeId: String, content: @Composable () -> Unit) {
-    val spec = themeById(themeId)
+    val raw = themeById(themeId)
+    val spec = raw.copy(colors = legible(raw.colors))
     val c = spec.colors
     val scheme = if (spec.dark) {
         darkColorScheme(

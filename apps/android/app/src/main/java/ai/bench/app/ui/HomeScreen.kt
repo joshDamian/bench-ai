@@ -451,14 +451,14 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
             Column {
                 BackHeader(t?.title ?: "Task", {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("→ $base ·", fontSize = 12.sp, color = c.muted, fontFamily = Mono)
+                        Text("into $base ·", fontSize = 12.5.sp, color = c.muted)
                         git?.let {
-                            Text("+${it.added}", fontSize = 12.sp, color = c.good, fontFamily = Mono)
-                            Text("−${it.removed}", fontSize = 12.sp, color = c.bad, fontFamily = Mono)
+                            Text("+${it.added}", fontSize = 12.5.sp, color = c.good)
+                            Text("−${it.removed}", fontSize = 12.5.sp, color = c.bad)
                         }
                         when (t?.check_status) {
-                            "passed" -> Text("· check passed", fontSize = 12.sp, color = c.good, fontFamily = Mono)
-                            "failed" -> Text("· check failed", fontSize = 12.sp, color = c.bad, fontFamily = Mono)
+                            "passed" -> Text("· Check passed", fontSize = 12.5.sp, color = c.good)
+                            "failed" -> Text("· Check failed", fontSize = 12.5.sp, color = c.bad)
                         }
                     }
                 }, onBack)
@@ -500,9 +500,9 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
             git?.canMerge?.takeIf { !it.ok }?.reason?.let { r -> item { Text(r, color = c.warn, fontSize = 13.sp) } }
             if (tab == "changes") {
                 if (files.isEmpty()) item { MutedText("No changes yet.") }
-                items(files, key = { it.path }) { f ->
+                if (files.isNotEmpty()) item("files") { Grouped(files) { f ->
                     val open = openFile == f.path
-                    Column(Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(16.dp))) {
+                    Column(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier.fillMaxWidth().height(52.dp).clickable { openFile = if (open) null else f.path }.padding(horizontal = 14.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -528,7 +528,7 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
                             }
                         }
                     }
-                }
+                } }
             } else {
                 if (log.isEmpty()) item { MutedText("No decisions logged yet.") }
                 items(log.reversed()) { e ->

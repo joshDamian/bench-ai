@@ -103,7 +103,7 @@ fun PairScreen() {
         Column(
             Modifier.fillMaxSize().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = Space.xl, vertical = 32.dp),
         ) {
-            Column(Modifier.weight(1f).widthIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterVertically)) {
+            Column(Modifier.widthIn(max = 440.dp).padding(top = 48.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
                 Box(
                     Modifier.size(72.dp).background(c.surface3, RoundedCornerShape(22.dp)).border(1.dp, c.line, RoundedCornerShape(22.dp)),
                     contentAlignment = Alignment.Center,
