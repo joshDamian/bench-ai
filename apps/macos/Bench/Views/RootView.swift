@@ -60,6 +60,10 @@ struct MainView: View {
             NewSessionSheet(store: store) { id in model.selection = id }
                 .environment(\.theme, theme)
         }
+        .sheet(isPresented: $model.showAddProject) {
+            AddProjectSheet(store: store) { id in model.selection = "project:\(id)" }
+                .environment(\.theme, theme)
+        }
         .sheet(isPresented: $model.showQuickOpen) {
             QuickOpen(store: store) { id in model.selection = id }
                 .environment(\.theme, theme)
@@ -79,10 +83,13 @@ private struct EmptyDetail: View {
                 .foregroundStyle(theme.colors.muted)
             Text(store.projects.isEmpty ? "Add a project to get started." : "Choose a session, or start a new one.")
                 .foregroundStyle(theme.colors.muted)
-            if !store.projects.isEmpty {
-                Button("New Session") { model.showNewSession = true }
-                    .keyboardShortcut("n")
-                    .buttonStyle(.borderedProminent)
+            HStack {
+                Button("Add Project…") { model.showAddProject = true }
+                    .buttonStyle(CapsuleButton(kind: store.projects.isEmpty ? .primary : .outline))
+                if !store.projects.isEmpty {
+                    Button("New Session") { model.showNewSession = true }
+                        .buttonStyle(CapsuleButton(kind: .primary))
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

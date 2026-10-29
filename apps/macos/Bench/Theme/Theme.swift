@@ -36,11 +36,17 @@ enum TypeScale {
 
 struct Themed: ViewModifier {
     @AppStorage("theme") private var themeId = "classic"
+    @AppStorage("theme.matchSystem") private var matchSystem = false
+    @AppStorage("theme.dark") private var darkId = "classic"
+    @AppStorage("theme.light") private var lightId = "quiet-temple"
+    @Environment(\.colorScheme) private var scheme
+
     func body(content: Content) -> some View {
-        let t = themeById(themeId)
+        // Matching macOS follows the system's appearance; otherwise the theme sets it.
+        let t = themeById(matchSystem ? (scheme == .dark ? darkId : lightId) : themeId)
         content
             .environment(\.theme, t)
-            .preferredColorScheme(t.dark ? .dark : .light)
+            .preferredColorScheme(matchSystem ? nil : (t.dark ? .dark : .light))
             .tint(t.colors.accent)
     }
 }

@@ -460,7 +460,7 @@ struct ShipSheet: View {
         let g = model.git
         let base = t?.base_branch ?? "main"
         VStack(alignment: .leading, spacing: Space.md) {
-            Text("Merge into \(base)").font(.headline)
+            Text("Merge into \(base)").font(.system(size: 15, weight: .semibold))
             HStack(spacing: 4) {
                 Text("\(t?.branch ?? "") · \(g?.ahead ?? 0) commits · \(g?.files ?? 0) files ·")
                 Text("+\(g?.added ?? 0)").foregroundStyle(theme.colors.good)
@@ -482,23 +482,32 @@ struct ShipSheet: View {
             .pickerStyle(.radioGroup)
             .labelsHidden()
             if squash {
-                TextField("Commit message", text: $message)
-                    .textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Commit message").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                    TextField("", text: $message, axis: .vertical)
+                        .textFieldStyle(.plain).lineLimit(3...6)
+                        .font(.system(size: 13))
+                        .padding(10)
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.colors.lineStrong))
+                }
             }
             Toggle("Close the task and remove its worktree", isOn: $cleanup)
             if let error { Text(error).foregroundStyle(theme.colors.bad).font(.system(size: TypeScale.sm)).textSelection(.enabled) }
             HStack {
-                Button("Open Pull Request Instead…") { pullRequest() }.disabled(working)
+                Button("Open Pull Request Instead…") { pullRequest() }
+                    .buttonStyle(.plain).foregroundStyle(theme.colors.muted).font(.system(size: 13))
+                    .disabled(working)
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { dismiss() }.buttonStyle(CapsuleButton(kind: .outline)).keyboardShortcut(.cancelAction)
                 Button("Merge") { merge() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(CapsuleButton(kind: .primary))
                     .disabled(working || g?.canMerge?.ok == false)
             }
         }
-        .padding(Space.lg)
+        .padding(20)
         .frame(width: 520)
+        .background(theme.colors.surface2)
         .onAppear { message = t?.title ?? "" }
     }
 

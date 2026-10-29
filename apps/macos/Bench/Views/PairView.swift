@@ -12,54 +12,62 @@ struct PairView: View {
     @State private var localFound = false
     @State private var localURL = "http://localhost:4317"
 
+    @State private var localVersion: String?
+
     var body: some View {
         VStack(spacing: Space.xl) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
             VStack(spacing: Space.sm) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 72, height: 72)
-                Text("Connect to Bench").font(.title2.weight(.semibold))
+                Text("Connect to Bench").font(.system(size: 20, weight: .semibold))
+                (Text("Paste the link from ") + Text("bench pair").font(.system(size: 13, design: .monospaced)) + Text(", or Settings › Pair a device in Bench."))
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.colors.muted)
+                    .multilineTextAlignment(.center)
             }
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: Space.md) {
-                    Label("Bench on this Mac", systemImage: "desktopcomputer").font(.headline)
-                    Text(localFound ? "Found a server at \(localURL)." : "Run `bench serve` (or install the service) and it will be found here.")
-                        .foregroundStyle(theme.colors.muted)
-                    HStack {
-                        TextField("Address", text: $localURL).textFieldStyle(.roundedBorder)
-                        Button("Connect") { connectLocal() }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(busy)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Pairing link").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                TextField("", text: $link, prompt: Text("https://your-machine.ts.net/#/pair/…"))
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, Space.md).frame(height: 36)
+                    .background(theme.colors.surface1, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.colors.lineStrong))
+                    .onSubmit(pair)
+                Button { pair() } label: {
+                    Text(busy ? "Connecting…" : "Connect").frame(maxWidth: .infinity)
                 }
-                .padding(Space.sm)
+                .buttonStyle(CapsuleButton(kind: .primary))
+                .disabled(busy || link.isEmpty)
+                if let error { Text(error).font(.system(size: 12)).foregroundStyle(theme.colors.bad).textSelection(.enabled) }
             }
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: Space.md) {
-                    Label("Bench on another machine", systemImage: "network").font(.headline)
-                    Text("On that machine, run `bench pair` or open Settings → Pair a device, and paste the link here.")
-                        .foregroundStyle(theme.colors.muted)
-                    TextField("https://machine.tailnet.ts.net/#/pair/…", text: $link).textFieldStyle(.roundedBorder)
-                    HStack {
-                        TextField("This Mac's name", text: $name).textFieldStyle(.roundedBorder)
-                        Button("Pair") { pair() }
-                            .disabled(busy || link.isEmpty)
-                    }
+            if localFound {
+                let old = localVersion.map { Self.older($0) } ?? false
+                HStack(spacing: 10) {
+                    Circle().fill(old ? theme.colors.warn : theme.colors.good).frame(width: 6, height: 6)
+                    Text(old ? "This Mac runs an older Bench (\(localVersion ?? "")). Some features won't work."
+                             : "Bench is running on this Mac" + (localVersion.map { " (\($0))" } ?? "") + ".")
+                    Spacer()
+                    Button(old ? "Use Anyway" : "Use This Mac") { connectLocal() }
+                        .buttonStyle(.plain).foregroundStyle(theme.colors.text.opacity(0.8))
                 }
-                .padding(Space.sm)
+                .font(.system(size: 12.5))
+                .foregroundStyle(theme.colors.muted)
+                .padding(.top, Space.lg)
+                .overlay(alignment: .top) { Rectangle().fill(theme.colors.line).frame(height: 1) }
             }
-
-            if busy { ProgressView().controlSize(.small) }
-            if let error { Text(error).foregroundStyle(theme.colors.bad).multilineTextAlignment(.center) }
         }
-        .frame(maxWidth: 480)
-        .padding(Space.xl)
+        .frame(width: 400)
+        .padding(32)
+        .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.colors.line))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.colors.bg)
         .task {
-            // The default port; a server that answers is offered at once.
+            // A server on this Mac is offered too, with a warning when it's an old one.
             let (reachable, _) = await BenchAPI.ping(ServerConfig(baseURL: localURL, token: nil))
             localFound = reachable
+            if reachable, let d = try? await BenchAPI(config: ServerConfig(baseURL: localURL, token: nil)).call("/api/server/status"),
+               let v = try? JSONDecoder().decode(JSONValue.self, from: d) { localVersion = v["version"].string }
         }
         .onOpenURL { url in
             // bench://pair?link=… from a browser hands the link straight here.
@@ -69,6 +77,9 @@ struct PairView: View {
             }
         }
     }
+
+    /// Older than the 2.0 server these clients are written for.
+    static func older(_ v: String) -> Bool { (Int(v.split(separator: ".").first ?? "") ?? 0) < 2 }
 
     private func connectLocal() {
         guard let base = Pairing.normalize(localURL) else { error = "That isn't an address."; return }

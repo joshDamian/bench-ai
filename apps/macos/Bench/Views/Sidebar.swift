@@ -86,8 +86,11 @@ struct Sidebar: View {
         }
         .toolbar {
             ToolbarItem {
-                Button { model.showNewSession = true } label: { Label("New Session", systemImage: "square.and.pencil") }
-                    .help("New Session (⌘N)")
+                Menu {
+                    Button("New Session…") { model.showNewSession = true }
+                    Button("Add Project…") { model.showAddProject = true }
+                } label: { Label("Add", systemImage: "plus") } primaryAction: { model.showNewSession = true }
+                .help("New Session (⌘N) · Add Project (⇧⌘N)")
             }
         }
         .safeAreaInset(edge: .bottom) {

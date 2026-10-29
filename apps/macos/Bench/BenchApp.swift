@@ -8,6 +8,7 @@ final class AppModel {
     var store: BenchStore?
     var selection: String?
     var showNewSession = false
+    var showAddProject = false
     var showQuickOpen = false
 
     init() {
@@ -97,7 +98,6 @@ struct BenchMacApp: App {
             SettingsView()
                 .environment(model)
                 .themed()
-                .frame(width: 520)
         }
     }
 }
@@ -121,6 +121,8 @@ struct BenchCommands: Commands {
         CommandGroup(after: .newItem) {
             Button("New Session…") { model.showNewSession = true }
                 .keyboardShortcut("n", modifiers: [.command])
+            Button("Add Project…") { model.showAddProject = true }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model.store == nil)
             Button("Go to Session…") { model.showQuickOpen = true }
                 .keyboardShortcut("k", modifiers: [.command])
