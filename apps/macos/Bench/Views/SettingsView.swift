@@ -42,7 +42,7 @@ private struct ServerSettings: View {
                             Text(store.connected ? "Connected" + (store.version.map { " · Bench \($0)" } ?? "") : "Connecting…")
                         }
                     }
-                    LabeledContent("This Mac", value: store.me?.device?.name.map { "Paired as \($0)" } ?? (store.api.config.isLoopback ? "On the server itself" : "Paired"))
+                    LabeledContent("This Mac", value: thisMac(store))
                 }
                 Section {
                     if let uptime { LabeledContent("Uptime", value: uptime) }
@@ -70,6 +70,12 @@ private struct ServerSettings: View {
         } message: {
             Text("You'll need to pair again to reconnect.")
         }
+    }
+
+    private func thisMac(_ store: BenchStore) -> String {
+        let device: String? = store.me?.device?.name
+        if let device { return "Paired as \(device)" }
+        return store.api.config.isLoopback ? "On the server itself" : "Paired"
     }
 
     struct IdentifiedPairing: Identifiable { let p: Pairing; var id: String { p.code } }
