@@ -80,6 +80,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.height
+import kotlinx.serialization.json.put
 import androidx.compose.material.icons.filled.ArrowUpward
 import ai.bench.app.ui.MarkdownText
 import ai.bench.app.ui.MutedText
@@ -92,7 +98,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}) {
+fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}) {
+    var providers by remember { mutableStateOf<List<ai.bench.app.data.ProviderInfo>>(emptyList()) }
+    var picking by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { providers = vm.providers() }
     val session by vm.session.collectAsState()
     val rows by vm.rows.collectAsState()
     val stream by vm.stream.collectAsState()
@@ -164,6 +173,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     }
                 },
                 actions = {
+                    IconButton(onClick = onTerminal) { Icon(Icons.Default.Terminal, "Terminal") }
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                         DropdownMenu(menu, { menu = false }) {
@@ -222,7 +232,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     SmallFloatingActionButton(onClick = {
                         follow = true
                         scope.launch { if (total > 0) list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE / 2) }
-                    }) { Icon(Icons.Default.KeyboardArrowDown, "Jump to latest") }
+                    }, shape = CircleShape, containerColor = Bench.colors.surface3, contentColor = Bench.colors.text) { Icon(Icons.Default.KeyboardArrowDown, "Jump to latest") }
                 }
             }
 
@@ -262,6 +272,8 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             if (pending != null) {
                 ApprovalSheet(pending, cwd, onAnswer = { vm.answer(pending.id, it) }, busy = pending.id in busy, waiting = approvals.size)
             } else Composer(
+                model = session?.let { modelLine(it, providers) } ?: "",
+                onModel = { picking = true },
                 draft = draft,
                 onDraft = { draft = it },
                 running = running,
@@ -278,6 +290,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
         }
     }
 
+    if (picking) session?.let { ses ->
+        ModelSheet(ses, providers, onDismiss = { picking = false }) { vm.configure(it) }
+    }
+
     if (renaming) {
         var title by remember { mutableStateOf(session?.title.orEmpty()) }
         AlertDialog(
@@ -290,8 +306,59 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     }
 }
 
+/** "Opus 4.7 · High": the session's model and effort, in words. */
+private fun modelLine(s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>): String {
+    val m = providers.flatMap { it.models }.firstOrNull { it.id == s.model_id }?.label
+        ?: providers.firstOrNull { it.id == s.provider_id }?.name ?: "Default model"
+    val e = s.effort?.let { ai.bench.app.data.Effort.of(it)?.label }
+    return listOfNotNull(m, e).joinToString(" · ")
+}
+
+/** Choose the provider's model and the effort for this session; applies from the next turn. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelSheet(s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>, onDismiss: () -> Unit, onSet: (kotlinx.serialization.json.JsonObject) -> Unit) {
+    val c = Bench.colors
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Model", fontSize = 22.sp)
+            Text("Applies from the next message.", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(bottom = 8.dp))
+            providers.filter { it.enabled }.forEach { p ->
+                Text(if (p.ready) p.name else "${p.name} · not set up", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (p.ready) c.accent else c.muted, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+                p.models.filter { it.enabled }.forEach { m ->
+                    val on = m.id == s.model_id
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .background(if (on) c.accent.copy(alpha = 0.14f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(14.dp))
+                            .then(if (p.ready) Modifier.clickable { onSet(kotlinx.serialization.json.buildJsonObject { put("providerId", p.id); put("modelId", m.id) }) } else Modifier)
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(m.label, fontSize = 15.sp, color = if (p.ready) c.text else c.muted, modifier = Modifier.weight(1f))
+                        if (on) Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            Text("Effort", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.accent, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (listOf<Pair<String?, String>>(null to "Default") + ai.bench.app.data.Effort.entries.map { it.wire to it.label }).forEach { (wire, label) ->
+                    androidx.compose.material3.FilterChip(
+                        selected = s.effort == wire,
+                        onClick = { onSet(kotlinx.serialization.json.buildJsonObject { if (wire == null) put("effort", kotlinx.serialization.json.JsonNull) else put("effort", wire) }) },
+                        label = { Text(label, fontSize = 14.sp) },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(selectedContainerColor = c.accent.copy(alpha = 0.22f), selectedLabelColor = c.accent),
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun Composer(
+    model: String,
+    onModel: () -> Unit,
     draft: String,
     onDraft: (String) -> Unit,
     running: Boolean,
@@ -301,38 +368,48 @@ private fun Composer(
     onStop: () -> Unit,
 ) {
     val c = Bench.colors
-    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 16.dp)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(c.surface2, RoundedCornerShape(28.dp))
-                .border(1.dp, c.line, RoundedCornerShape(28.dp))
-                .padding(6.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            IconButton(onClick = onAttach, modifier = Modifier.size(44.dp)) { Icon(Icons.Default.Add, "Attach", tint = c.muted) }
-            TextField(
-                value = draft,
-                onValueChange = onDraft,
-                modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 180.dp).verticalScroll(rememberScrollState()),
-                placeholder = { Text(if (running) "Queue a message" else "Message Claude", fontSize = 16.sp) },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = c.surface2.copy(alpha = 0f), unfocusedContainerColor = c.surface2.copy(alpha = 0f),
-                    focusedIndicatorColor = c.accent.copy(alpha = 0f), unfocusedIndicatorColor = c.accent.copy(alpha = 0f),
-                    cursorColor = c.accent,
-                ),
-            )
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 12.dp)
+            .background(c.surface2, RoundedCornerShape(26.dp))
+            .border(1.dp, c.line, RoundedCornerShape(26.dp))
+            .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 6.dp),
+    ) {
+        androidx.compose.foundation.text.BasicTextField(
+            value = draft,
+            onValueChange = onDraft,
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 22.sp, color = c.text),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp, max = 180.dp).padding(horizontal = 12.dp, vertical = 11.dp),
+            decorationBox = { inner ->
+                Box {
+                    if (draft.isEmpty()) Text(if (running) "Queue a message" else "Message Claude", fontSize = 16.sp, color = c.muted)
+                    inner()
+                }
+            },
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            IconButton(onClick = onAttach, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Add, "Attach", tint = c.muted) }
+            Row(
+                Modifier.height(32.dp).background(c.text.copy(alpha = 0.06f), RoundedCornerShape(16.dp)).clickable(onClick = onModel).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(model, fontSize = 13.sp, color = c.text.copy(alpha = 0.85f), maxLines = 1)
+                Icon(Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(16.dp))
+            }
+            Box(Modifier.weight(1f))
             if (running && !canSend) {
-                FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
+                FilledIconButton(onClick = onStop, modifier = Modifier.size(40.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
                     Box(Modifier.size(12.dp).background(c.bad, RoundedCornerShape(3.dp)))
                 }
             } else {
                 FilledIconButton(
-                    onClick = onSend, enabled = canSend, modifier = Modifier.size(44.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent, contentColor = c.onAccent, disabledContainerColor = c.accent.copy(alpha = 0.3f), disabledContentColor = c.onAccent),
-                ) { Icon(Icons.Default.ArrowUpward, "Send") }
+                    onClick = onSend, enabled = canSend, modifier = Modifier.size(40.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent, contentColor = c.onAccent, disabledContainerColor = c.text.copy(alpha = 0.08f), disabledContentColor = c.muted),
+                ) { Icon(Icons.Default.ArrowUpward, "Send", modifier = Modifier.size(20.dp)) }
             }
         }
     }

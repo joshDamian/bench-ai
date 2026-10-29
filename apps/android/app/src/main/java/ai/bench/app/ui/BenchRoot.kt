@@ -112,7 +112,12 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable
                 val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })
-                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") })
+                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") })
+            }
+            composable("terminal/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                val id = entry.arguments?.getString("id") ?: return@composable
+                val ses = store.state.value.sessions.firstOrNull { it.id == id }
+                TerminalScreen(store.api, "session=${java.net.URLEncoder.encode(id, "UTF-8")}&shell=1", ses?.title ?: "Session", ses?.cwd?.replace(Regex("^/(home|Users)/[^/]+"), "~") ?: "", onBack = { nav.popBackStack() })
             }
             composable("task/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable

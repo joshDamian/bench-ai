@@ -466,12 +466,13 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
                     sessions.forEach { ses -> TabButton(ses.title, false, ses.status) { onOpen(ses.id) } }
                     TabButton("Changes", tab == "changes") { tab = "changes" }
                     TabButton("Log", tab == "log") { tab = "log" }
+                    TabButton("Terminal", tab == "terminal") { tab = "terminal" }
                 }
                 HorizontalDivider(color = c.line)
             }
         },
         bottomBar = {
-            if (t?.state == "active") Column {
+            if (t?.state == "active" && tab != "terminal") Column {
                 HorizontalDivider(color = c.line)
                 Row(
                     Modifier.fillMaxWidth().background(c.surfaceRail).navigationBarsPadding().padding(start = Space.lg, end = Space.lg, top = 12.dp, bottom = 16.dp),
@@ -490,6 +491,10 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
             }
         },
     ) { pad ->
+        if (tab == "terminal") {
+            TerminalPane(store.api, "task=${java.net.URLEncoder.encode(taskId, "UTF-8")}", t?.branch.orEmpty(), Modifier.padding(pad))
+            return@Scaffold
+        }
         LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(horizontal = Space.lg, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             error?.let { e -> item { Text(e, color = c.bad, fontSize = 13.sp) } }
             git?.canMerge?.takeIf { !it.ok }?.reason?.let { r -> item { Text(r, color = c.warn, fontSize = 13.sp) } }

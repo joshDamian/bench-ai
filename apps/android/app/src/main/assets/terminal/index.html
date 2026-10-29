@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  #t { position: absolute; inset: 8px 6px 6px 10px; }
+  .xterm .xterm-viewport { background: transparent !important; }
+</style>
+</head>
+<body>
+<div id="t"></div>
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+<script>
+// The shell lives on the server; Kotlin holds the socket. Output arrives through feed(),
+// keystrokes and size changes go back through window.Bridge.
+const q = new URLSearchParams(location.search);
+const term = new Terminal({
+  fontFamily: 'monospace', fontSize: Number(q.get('size') || 13), lineHeight: 1.15,
+  cursorBlink: true, allowTransparency: true, scrollback: 5000,
+  theme: { background: '#00000000', foreground: q.get('fg') || '#e9e9ea', cursor: q.get('accent') || '#9fb9ff', selectionBackground: (q.get('accent') || '#9fb9ff') + '55' },
+});
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+term.open(document.getElementById('t'));
+function resize() { try { fit.fit(); window.Bridge.resize(term.cols, term.rows); } catch (e) {} }
+window.addEventListener('resize', resize);
+term.onData((d) => window.Bridge.input(d));
+window.feed = (b64) => {
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  term.write(bytes);
+};
+window.send = (s) => window.Bridge.input(s);
+window.focusTerm = () => term.focus();
+setTimeout(() => { resize(); window.Bridge.ready(); term.focus(); }, 50);
+</script>
+</body>
+</html>

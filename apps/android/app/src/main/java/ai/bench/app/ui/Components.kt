@@ -31,6 +31,9 @@ import ai.bench.app.ui.theme.Mono
 import ai.bench.app.ui.theme.Space
 import ai.bench.app.ui.theme.Type
 import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
+import androidx.compose.ui.unit.sp
 
 /** A session's state at a glance: idle, running (pulsing), waiting on you, or broken. */
 @Composable
@@ -83,9 +86,39 @@ fun CodeBlock(text: String, modifier: Modifier = Modifier, color: Color = Bench.
     }
 }
 
+/** Claude's prose: body at 15sp, headings a step or two above it, never display-sized. */
 @Composable
 fun MarkdownText(text: String, modifier: Modifier = Modifier) {
-    Markdown(content = text, modifier = modifier)
+    val c = Bench.colors
+    val body = TextStyle(fontSize = 15.sp, lineHeight = 23.sp, color = c.text)
+    val head = body.copy(fontWeight = FontWeight.SemiBold)
+    Markdown(
+        content = text,
+        modifier = modifier,
+        colors = markdownColor(
+            text = c.text,
+            codeText = c.wellText,
+            inlineCodeText = c.text,
+            linkText = c.accent,
+            codeBackground = c.wellBg,
+            inlineCodeBackground = c.text.copy(alpha = 0.07f),
+            dividerColor = c.line,
+            tableText = c.text,
+            tableBackground = c.surface1,
+        ),
+        typography = markdownTypography(
+            h1 = head.copy(fontSize = 20.sp, lineHeight = 28.sp),
+            h2 = head.copy(fontSize = 18.sp, lineHeight = 26.sp),
+            h3 = head.copy(fontSize = 16.sp, lineHeight = 24.sp),
+            h4 = head, h5 = head, h6 = head.copy(color = c.muted),
+            text = body, paragraph = body, ordered = body, bullet = body, list = body,
+            code = body.copy(fontFamily = Mono, fontSize = 13.sp, lineHeight = 19.sp, color = c.wellText),
+            inlineCode = body.copy(fontFamily = Mono, fontSize = 13.5.sp),
+            quote = body.copy(color = c.muted),
+            link = body.copy(color = c.accent),
+            table = body.copy(fontSize = 13.5.sp, lineHeight = 19.sp),
+        ),
+    )
 }
 
 @Composable

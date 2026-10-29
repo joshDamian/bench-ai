@@ -178,6 +178,12 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
 
     fun setMode(mode: String) = viewModelScope.launch { runCatching { api.setMode(sessionId, mode) }.onFailure { _errors.tryEmit(it.message ?: "") } }
 
+    /** Provider, model or effort for the next turn on (PATCH /api/sessions/:id). */
+    fun configure(body: kotlinx.serialization.json.JsonObject) = viewModelScope.launch {
+        runCatching { api.patch("/api/sessions/${ai.bench.app.data.BenchApi.enc(sessionId)}", body) }.onFailure { _errors.tryEmit(it.message ?: "") }
+    }
+    suspend fun providers() = runCatching { api.providers() }.getOrDefault(emptyList())
+
     fun rename(title: String) = viewModelScope.launch { runCatching { api.rename(sessionId, title) }.onFailure { _errors.tryEmit(it.message ?: "") } }
 
     fun archive(done: () -> Unit) = viewModelScope.launch {
