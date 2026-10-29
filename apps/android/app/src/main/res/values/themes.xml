@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only the window behind Compose; every colour on screen comes from BenchTheme. -->
+    <style name="Theme.Bench" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bench_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+    <color name="bench_bg">#0a0c10</color>
+    <color name="bench_accent">#9fb9ff</color>
+</resources>
