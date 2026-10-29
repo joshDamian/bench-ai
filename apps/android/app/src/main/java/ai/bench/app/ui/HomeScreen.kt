@@ -104,7 +104,7 @@ fun BackHeader(title: String, sub: @Composable () -> Unit, onBack: () -> Unit) {
 
 @Composable
 fun SectionLabel(text: String, color: Color = Bench.colors.muted, top: Boolean = true) {
-    Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = color, modifier = Modifier.padding(top = if (top) 12.dp else 4.dp))
+    Text(text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = color, modifier = Modifier.padding(start = 6.dp, top = if (top) 16.dp else 4.dp))
 }
 
 /** Rows on one rounded surface, divided by hairlines. */
@@ -208,7 +208,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             ExtendedFloatingActionButton(
                 onClick = onNew,
                 icon = { Icon(Icons.Default.Add, null) },
-                text = { Text("New session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) },
+                text = { Text("New session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
                 containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(18.dp),
             )
         },
@@ -399,14 +399,21 @@ fun ProjectScreen(store: BenchStore, projectId: String, onBack: () -> Unit, onOp
     val tasks = s.tasks.filter { it.project_id == projectId && it.state == "active" }.sortedByDescending { it.updated_at }
     val loose = s.sessions.filter { it.project_id == projectId && it.task_id == null && it.archived_at == null }.sortedByDescending { it.updated_at }
     Scaffold(containerColor = c.bg, topBar = {
-        BackHeader(p?.name ?: "Project", {
-            Text(listOfNotNull(git?.branch, git?.dirty?.size?.takeIf { it > 0 }?.let { "$it changed" }, git?.behind?.takeIf { it > 0 }?.let { "↓$it" }).joinToString(" · "),
-                fontSize = 12.sp, color = c.muted, fontFamily = Mono)
-        }, onBack)
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        }
     }) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = Space.lg, end = Space.lg, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Everything starts on one edge: the name, its branch, the actions and the sections below.
+        LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Column(Modifier.padding(start = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(p?.name ?: "Project", fontSize = 28.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.3).sp)
+                    Text(listOfNotNull(git?.branch?.let { "On $it" }, git?.dirty?.size?.takeIf { it > 0 }?.let { "$it changed" }, git?.behind?.takeIf { it > 0 }?.let { "$it behind" }, git?.ahead?.takeIf { it > 0 }?.let { "$it ahead" }).joinToString(" · "),
+                        fontSize = 14.sp, color = c.muted)
+                }
+            }
+            item {
+                Row(Modifier.padding(top = 6.dp, start = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     BigButton("Pull", height = 40.dp, size = 14.sp, fill = false, enabled = busy == null) { act("Pulling…", "pull") }
                     BigButton("Push", height = 40.dp, size = 14.sp, fill = false, enabled = busy == null && (git?.ahead ?: 0) > 0) { act("Pushing…", "push") }
                     BigButton("Fetch", height = 40.dp, size = 14.sp, fill = false, enabled = busy == null) { act("Fetching…", "fetch") }

@@ -319,8 +319,7 @@ fun AddProjectSheet(store: BenchStore, onDismiss: () -> Unit, onAdded: (String) 
             Segmented(listOf("clone" to "Clone", "folder" to "Folder", "new" to "New repo"), source, { source = it; error = null })
             when (source) {
                 "clone" -> {
-                    OutlinedTextField(query, { query = it; picked = null }, Modifier.fillMaxWidth(), label = { Text("Repository") }, placeholder = { Text("owner/repo") },
-                        singleLine = true, shape = RoundedCornerShape(12.dp), colors = fieldColors())
+                    TonalField(query, { query = it; picked = null }, "Repository", "owner/repo")
                     if (matches.isNotEmpty()) Grouped(matches) { r ->
                         Column(
                             Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { picked = r; query = r.name; name = r.name.substringAfter("/") }.padding(horizontal = Space.lg, vertical = 8.dp),
@@ -330,13 +329,10 @@ fun AddProjectSheet(store: BenchStore, onDismiss: () -> Unit, onAdded: (String) 
                             Text(listOfNotNull(if (r.private) "Private" else "Public", r.updatedAt?.let { "updated ${ai.bench.app.data.Format.ago(it)} ago" }).joinToString(" · "), fontSize = 12.sp, color = c.muted)
                         }
                     }
-                    OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true, shape = RoundedCornerShape(12.dp), colors = fieldColors(),
-                        supportingText = { if (name.isNotBlank()) Text("Cloned on the server with its GitHub login") })
+                    TonalField(name, { name = it }, "Name", "my-app", "Cloned on the server with its GitHub login")
                 }
-                "folder" -> OutlinedTextField(folder, { folder = it }, Modifier.fillMaxWidth(), label = { Text("Path on the server") }, placeholder = { Text("~/code/my-app") },
-                    singleLine = true, shape = RoundedCornerShape(12.dp), colors = fieldColors(), supportingText = { Text("A git repository that's already there") })
-                else -> OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true, shape = RoundedCornerShape(12.dp), colors = fieldColors(),
-                    supportingText = { Text("Starts an empty git repository") })
+                "folder" -> TonalField(folder, { folder = it }, "Path on the server", "~/code/my-app", "A git repository that's already there")
+                else -> TonalField(name, { name = it }, "Name", "my-app", "Starts an empty git repository")
             }
             error?.let { Text(it, color = c.bad, fontSize = 13.sp) }
             val ready = when (source) { "clone" -> query.contains("/"); "folder" -> folder.isNotBlank(); else -> name.isNotBlank() }
@@ -399,3 +395,20 @@ fun ShipSheet(store: BenchStore, taskId: String, base: String, git: TaskGit?, on
     }
 }
 
+
+/** A filled field with its label above and help below, each a fixed step from the field. */
+@Composable
+fun TonalField(value: String, onChange: (String) -> Unit, label: String, placeholder: String, help: String? = null) {
+    val c = Bench.colors
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.muted, modifier = Modifier.padding(start = 6.dp))
+        androidx.compose.foundation.text.BasicTextField(
+            value, onChange, singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = c.text),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).background(c.surface1, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 15.dp),
+            decorationBox = { inner -> androidx.compose.foundation.layout.Box { if (value.isEmpty()) Text(placeholder, fontSize = 16.sp, color = c.muted); inner() } },
+        )
+        help?.let { Text(it, fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp)) }
+    }
+}

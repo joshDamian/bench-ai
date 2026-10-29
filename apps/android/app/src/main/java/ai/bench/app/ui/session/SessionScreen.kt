@@ -147,8 +147,17 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     // session and restored next time; at the bottom, nothing is kept and it opens at the end.
     val bl = remember(rows) { blocks(rows) }
     val atBottom by remember { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 48 } }
-    val memory = remember { BenchApp.instance.getSharedPreferences("scroll", 0) }
+    // Following the conversation: on while you're at the bottom, off once you scroll up to read,
+    // on again when you come back down, jump to latest, or send. A list keeps the item you were
+    // looking at in place when one is added below it, so following means scrolling to the new one.
     var restored by remember(vm.sessionId) { mutableStateOf(false) }
+    var stick by remember(vm.sessionId) { mutableStateOf(true) }
+    LaunchedEffect(list) {
+        snapshotFlow { list.isScrollInProgress to atBottom }.collect { (scrolling, bottom) -> if (scrolling || bottom) stick = bottom }
+    }
+    val newest = (if (stream.text.isNotEmpty() || stream.thinking.isNotEmpty()) "stream" else "") + (bl.lastOrNull()?.key ?: "") + approvals.size
+    LaunchedEffect(newest) { if (stick && restored) list.animateScrollToItem(0) }
+    val memory = remember { BenchApp.instance.getSharedPreferences("scroll", 0) }
     LaunchedEffect(bl.isNotEmpty(), loading) {
         if (restored || bl.isEmpty() || loading) return@LaunchedEffect
         restored = true
@@ -253,7 +262,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
                 ) {
                     SmallFloatingActionButton(
-                        onClick = { scope.launch { list.animateScrollToItem(0) } },
+                        onClick = { stick = true; scope.launch { list.animateScrollToItem(0) } },
                         shape = CircleShape, containerColor = Bench.colors.surface3, contentColor = Bench.colors.text,
                     ) { Icon(Icons.Default.KeyboardArrowDown, "Jump to latest") }
                 }
@@ -305,6 +314,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 onSend = {
                     val text = draft
                     draft = ""
+                    stick = true
                     scope.launch { list.scrollToItem(0); if (!vm.send(text)) draft = text }
                 },
                 onStop = { vm.interrupt() },

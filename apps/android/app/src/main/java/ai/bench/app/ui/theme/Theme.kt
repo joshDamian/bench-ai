@@ -109,7 +109,9 @@ fun BenchTheme(themeId: String, content: @Composable () -> Unit) {
             error = c.bad, onError = c.surface1,
         )
     }
-    val base = TextStyle(color = c.text)
+    // No colour in the type styles: text takes its colour from what it sits on (LocalContentColor),
+    // so a label on the accent button is the button's content colour, not the page's text colour.
+    val base = TextStyle()
     val typography = Typography(
         titleLarge = base.copy(fontSize = Type.xl, fontWeight = FontWeight.SemiBold),
         titleMedium = base.copy(fontSize = Type.lg, fontWeight = FontWeight.SemiBold),
