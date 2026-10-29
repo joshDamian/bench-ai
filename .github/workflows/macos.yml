@@ -1,0 +1,125 @@
+name: macOS
+
+# Builds and tests the Mac client on every change to it, and publishes Bench.dmg as a
+# release when a `macos-v*` tag is pushed (e.g. macos-v0.1.0).
+#
+# Signing: with no secrets the app is ad-hoc signed, and Gatekeeper asks once - right-click
+# Bench.app → Open, or `xattr -dr com.apple.quarantine /Applications/Bench.app`. With an
+# Apple Developer ID the release is signed and notarized and opens cleanly anywhere. Set:
+#   MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD   the Developer ID Application certificate
+#   MACOS_TEAM_ID                                your team id
+#   APPLE_API_KEY_ID, APPLE_API_ISSUER, APPLE_API_KEY_P8_BASE64   an App Store Connect API key
+on:
+  push:
+    branches: [main]
+    tags: ['macos-v*']
+    paths: ['apps/macos/**', 'apps/tokens.mjs', 'web/app.css', 'web/themes.css', 'web/theme.mjs', '.github/workflows/macos.yml']
+  pull_request:
+    paths: ['apps/macos/**', 'apps/tokens.mjs', 'web/app.css', 'web/themes.css', 'web/theme.mjs', '.github/workflows/macos.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Themes match the stylesheet
+        working-directory: .
+        run: node apps/tokens.mjs --check
+
+      - name: Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Generate the project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Version
+        id: v
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/macos-v* ]]; then
+            echo "name=${GITHUB_REF#refs/tags/macos-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=0.0.0-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild test -project Bench.xcodeproj -scheme Bench -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$RUNNER_TEMP/test.log" | xcbeautify --renderer github-actions
+
+      - name: Signing identity
+        id: sign
+        env:
+          P12: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$P12" ]; then echo "identity=-" >> "$GITHUB_OUTPUT"; exit 0; fi
+          KC="$RUNNER_TEMP/build.keychain"
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p ci "$KC"
+          echo "$P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          echo "identity=Developer ID Application" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project Bench.xcodeproj -scheme Bench -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/dd" -destination 'generic/platform=macOS' \
+            MARKETING_VERSION=${{ steps.v.outputs.name }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGN_IDENTITY="${{ steps.sign.outputs.identity }}" DEVELOPMENT_TEAM="${{ secrets.MACOS_TEAM_ID }}" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp" build 2>&1 | tee "$RUNNER_TEMP/build.log" | xcbeautify --renderer github-actions
+          cp -R "$RUNNER_TEMP/dd/Build/Products/Release/Bench.app" .
+
+      - name: Disk image
+        run: |
+          mkdir dmg && cp -R Bench.app dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname Bench -srcfolder dmg -ov -format UDZO "Bench-${{ steps.v.outputs.name }}.dmg"
+
+      - name: Notarize
+        if: steps.sign.outputs.identity != '-'
+        env:
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          KEY_P8: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: |
+          echo "$KEY_P8" | base64 -d > "$RUNNER_TEMP/key.p8"
+          xcrun notarytool submit "Bench-${{ steps.v.outputs.name }}.dmg" --key "$RUNNER_TEMP/key.p8" --key-id "$KEY_ID" --issuer "$ISSUER" --wait
+          xcrun stapler staple "Bench-${{ steps.v.outputs.name }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-macos
+          path: apps/macos/Bench-*.dmg
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/macos-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Bench for Mac ${{ steps.v.outputs.name }}
+          files: apps/macos/Bench-*.dmg
+          generate_release_notes: true
+          body: |
+            ${{ steps.sign.outputs.identity == '-' && 'This build is not notarized. On first launch, right-click Bench.app and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Bench.app`.' || '' }}
