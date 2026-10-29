@@ -113,6 +113,22 @@ final class BenchAPI: @unchecked Sendable {
         return try decode(TaskCreated.self, await call("/api/tasks", method: "POST", body: body)).session
     }
 
+    // Tasks and projects.
+    func task(_ id: String) async throws -> TaskDetail { try decode(TaskDetail.self, await call("/api/tasks/\(Self.enc(id))")) }
+    func taskDiff(_ id: String) async throws -> String {
+        let d = try decode([String: String].self, await call("/api/tasks/\(Self.enc(id))/diff"))
+        return d["diff"] ?? ""
+    }
+    func taskLog(_ id: String) async throws -> [TaskLogEntry] { try decode([TaskLogEntry].self, await call("/api/tasks/\(Self.enc(id))/log")) }
+    func taskAction(_ id: String, _ action: String, body: [String: Any] = [:]) async throws {
+        try await call("/api/tasks/\(Self.enc(id))/\(action)", method: "POST", body: body)
+    }
+    func editTask(_ id: String, _ body: [String: Any]) async throws { try await call("/api/tasks/\(Self.enc(id))", method: "PATCH", body: body) }
+    func projectGit(_ id: String) async throws -> GitState { try decode(GitState.self, await call("/api/projects/\(Self.enc(id))/git")) }
+    func projectAction(_ id: String, _ action: String) async throws {
+        try await call("/api/projects/\(Self.enc(id))/\(action)", method: "POST", body: [:])
+    }
+
     func answer(_ approvalId: String, _ body: [String: Any]) async throws {
         try await call("/api/approvals/\(Self.enc(approvalId))", method: "POST", body: body)
     }

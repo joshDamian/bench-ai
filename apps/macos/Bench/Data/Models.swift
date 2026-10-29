@@ -17,6 +17,63 @@ struct BenchTask: Codable, Identifiable, Hashable {
     var base_branch: String?
     var state: String
     var check_status: String?
+    var description: String?
+    var done: String?
+    var check_command: String?
+    var check_output: String?
+    var loop: TaskLoop?
+    var merged_at: String?
+    var created_at: String?
+    var updated_at: String?
+}
+
+/// "Loop until done": Bench reruns the task's check whenever its session goes idle.
+struct TaskLoop: Codable, Hashable {
+    var max_attempts: Int?
+    var max_minutes: Int?
+    var attempts: Int?
+    var state: String?
+    var reason: String?
+    var started_at: String?
+}
+
+struct TaskGit: Codable, Hashable {
+    struct CanMerge: Codable, Hashable { var ok: Bool; var reason: String?; var conflicts: [String]? }
+    var ahead: Int
+    var behind: Int
+    var dirty: [String]
+    var conflicted: [String]
+    var files: Int
+    var added: Int
+    var removed: Int
+    var merged: Bool
+    var canMerge: CanMerge?
+}
+
+struct GitState: Codable, Hashable {
+    var branch: String?
+    var head: String?
+    var upstream: String?
+    var ahead: Int
+    var behind: Int
+    var dirty: [String]
+    var conflicted: [String]
+    var hasRemote: Bool?
+}
+
+struct TaskLogEntry: Codable, Identifiable, Hashable {
+    let id: Int
+    var session_id: String?
+    var kind: String
+    var decision: String
+    var evidence: String
+    var created_at: String?
+}
+
+struct TaskDetail: Codable {
+    var task: BenchTask
+    var git: TaskGit?
+    var sessions: [Session]
 }
 
 struct Session: Codable, Identifiable, Hashable {

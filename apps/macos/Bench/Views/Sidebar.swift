@@ -26,12 +26,18 @@ struct Sidebar: View {
             ForEach(store.projects) { p in
                 let sessions = store.sessions.filter { $0.project_id == p.id && visible($0) }.sorted(by: newest)
                 if !sessions.isEmpty {
-                    Section(p.name) {
+                    Section {
                         ForEach(sessions) { s in
                             SessionRowView(session: s, project: nil, detail: nil)
                                 .tag(s.id)
                                 .contextMenu { SessionMenu(store: store, session: s) }
                         }
+                    } header: {
+                        Button { selection = "project:\(p.id)" } label: {
+                            Text(p.name).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open \(p.name)")
                     }
                 }
             }
