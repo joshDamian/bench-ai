@@ -67,7 +67,7 @@ struct TaskView: View {
             Group {
                 switch pane {
                 case .session(let id):
-                    if store.session(id) != nil { SessionView(store: store, sessionId: id).id(id) }
+                    if store.session(id) != nil { SessionView(store: store, sessionId: id, embedded: true).id(id) }
                     else { ContentUnavailableView("Session not found", systemImage: "questionmark.circle") }
                 case .changes: ChangesView(files: model.diff)
                 case .log: LogView(entries: model.log)
@@ -79,7 +79,6 @@ struct TaskView: View {
         }
         .background(theme.colors.bg)
         .task(id: store.task(taskId)) { await model.load() }
-        .onChange(of: selection) { _, s in if let s, store.session(s)?.task_id == taskId { pane = .session(s) } }
         .sheet(isPresented: $shipping) { ShipSheet(model: model).environment(\.theme, theme) }
         .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
@@ -92,7 +91,7 @@ struct TaskView: View {
         return HStack(alignment: .center, spacing: Space.md) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: Space.sm) {
-                    Text(t?.title ?? "Task").font(.system(size: TypeScale.md, weight: .semibold)).lineLimit(1)
+                    Text(t?.title ?? "Task").font(.system(size: 15, weight: .semibold)).lineLimit(1)
                     if let c = t?.check_status { CheckBadge(status: c) }
                     if let s = t?.state, s != "active" { Text(s == "merged" ? "Merged" : "Closed").font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) }
                 }
@@ -111,24 +110,50 @@ struct TaskView: View {
             Spacer()
             if let b = model.busy { ProgressView().controlSize(.small); Text(b).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) }
             if t?.state == "active" {
-                if (g?.behind ?? 0) > 0 {
-                    Button("Update from \(t?.base_branch ?? "main")") { model.run("Updating…") { try await store.api.taskAction(taskId, "update") } }
+                HStack(spacing: 2) {
+                    Button("Push") { model.run("Pushing…") { try await store.api.taskAction(taskId, "push") } }
+                        .buttonStyle(.plain).padding(.horizontal, 10).frame(height: 26)
+                    Button("Pull Request…") { pullRequest() }
+                        .buttonStyle(.plain).padding(.horizontal, 10).frame(height: 26)
+                    Menu {
+                        if (g?.behind ?? 0) > 0 {
+                            Button("Update from \(t?.base_branch ?? "main")") { model.run("Updating…") { try await store.api.taskAction(taskId, "update") } }
+                        }
+                        Button("Close Task…") { model.run("Closing…") { try await store.api.taskAction(taskId, "close") } }
+                    } label: { Image(systemName: "ellipsis").frame(width: 30, height: 26) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 }
-                Button("Push") { model.run("Pushing…") { try await store.api.taskAction(taskId, "push") } }
-                Button("Merge into \(t?.base_branch ?? "main")…") { shipping = true }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(g?.canMerge?.ok == false || model.busy != nil)
-                    .help(g?.canMerge?.reason ?? "")
+                .font(.system(size: TypeScale.sm))
+                .padding(.horizontal, 4)
+                .pill(theme)
+                Button { shipping = true } label: {
+                    Text("Merge into \(t?.base_branch ?? "main")")
+                        .font(.system(size: TypeScale.sm, weight: .semibold))
+                        .foregroundStyle(theme.colors.onAccent)
+                        .padding(.horizontal, 14).frame(height: 30)
+                        .background(theme.colors.accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(g?.canMerge?.ok == false || model.busy != nil)
+                .help(g?.canMerge?.reason ?? "")
             }
         }
         .controlSize(.small)
-        .padding(.horizontal, Space.xl)
-        .padding(.top, Space.md)
-        .padding(.bottom, Space.sm)
+        .padding(.leading, Space.xl)
+        .padding(.trailing, Space.lg)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+    }
+
+    private func pullRequest() {
+        model.run("Opening a pull request…") {
+            let d = try await store.api.call("/api/tasks/\(BenchAPI.enc(taskId))/pr", method: "POST", body: ["title": model.task?.title ?? ""])
+            if let u = (try? JSONDecoder().decode([String: String].self, from: d))?["url"], let url = URL(string: u) { NSWorkspace.shared.open(url) }
+        }
     }
 
     private var tabs: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             ForEach(sessions) { s in
                 tab(s.title, .session(s.id), dot: s.status)
             }
@@ -137,27 +162,26 @@ struct TaskView: View {
                 .help("New Session in This Task")
                 .padding(.horizontal, Space.xs)
             Divider().frame(height: 16).padding(.horizontal, Space.xs)
-            tab(model.diff.isEmpty ? "Changes" : "Changes \(model.diff.count)", .changes)
+            tab("Changes", .changes)
             tab("Log", .log)
             tab("Loop", .loop)
             tab("Terminal", .terminal)
             Spacer()
         }
-        .padding(.horizontal, Space.lg)
+        .padding(.horizontal, Space.xl)
     }
 
     private func tab(_ label: String, _ p: TaskPane, dot: String? = nil) -> some View {
         Button {
             pane = p
-            if case .session(let id) = p { selection = id }
         } label: {
             HStack(spacing: 6) {
-                if let dot { StatusDot(status: dot) }
+                if let dot { StatusDot(status: dot).scaleEffect(0.8) }
                 Text(label).lineLimit(1)
             }
             .font(.system(size: TypeScale.sm))
             .foregroundStyle(pane == p ? theme.colors.text : theme.colors.muted)
-            .padding(.horizontal, Space.sm)
+            .padding(.horizontal, 10)
             .frame(height: 32)
             .overlay(alignment: .bottom) {
                 if pane == p { Rectangle().fill(theme.colors.accent).frame(height: 2) }
@@ -173,7 +197,7 @@ struct TaskView: View {
         model.run("Starting…") {
             let s = try await store.api.createSession(project: t.project_id, task: t.id, mode: Mode(rawValue: store.defaults.mode ?? "") ?? .acceptEdits)
             store.apply(s)
-            selection = s.id
+            pane = .session(s.id)
         }
     }
 }
@@ -190,8 +214,8 @@ struct CheckBadge: View {
         Text(label)
             .font(.system(size: TypeScale.xs, weight: .medium))
             .foregroundStyle(color)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(color.opacity(0.12), in: Capsule())
+            .padding(.horizontal, 7).padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(color.opacity(0.4)))
     }
 }
 
@@ -201,6 +225,8 @@ struct DiffFile: Identifiable, Hashable {
     var id: String { path }
     let path: String
     let lines: [String]
+    /// M, A or D, as the file list shows it.
+    var status = "M"
     var added: Int { lines.filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }.count }
     var removed: Int { lines.filter { $0.hasPrefix("-") && !$0.hasPrefix("---") }.count }
 
@@ -209,8 +235,10 @@ struct DiffFile: Identifiable, Hashable {
         var out: [DiffFile] = []
         var path: String?
         var lines: [String] = []
-        func flush() { if let path { out.append(DiffFile(path: path, lines: lines)) }; lines = [] }
+        var status = "M"
+        func flush() { if let path { out.append(DiffFile(path: path, lines: lines, status: status)) }; lines = []; status = "M" }
         for line in diff.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if line.hasPrefix("new file mode") { status = "A" } else if line.hasPrefix("deleted file mode") { status = "D" }
             if line.hasPrefix("diff --git ") {
                 flush()
                 path = line.components(separatedBy: " b/").last ?? line
@@ -235,16 +263,21 @@ struct ChangesView: View {
         } else {
             HSplitView {
                 List(files, selection: $selected) { f in
-                    HStack {
-                        Text((f.path as NSString).lastPathComponent).lineLimit(1).help(f.path)
-                        Spacer()
-                        if f.added > 0 { Text("+\(f.added)").foregroundStyle(theme.colors.good) }
-                        if f.removed > 0 { Text("−\(f.removed)").foregroundStyle(theme.colors.bad) }
+                    HStack(spacing: Space.sm) {
+                        Text(f.status)
+                            .font(.system(size: TypeScale.xs))
+                            .foregroundStyle(f.status == "A" ? theme.colors.good : f.status == "D" ? theme.colors.bad : theme.colors.warn)
+                            .frame(width: 10)
+                        Text(f.path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.head).help(f.path)
+                        Spacer(minLength: 0)
+                        Text(f.added >= f.removed ? "+\(f.added)" : "−\(f.removed)")
+                            .font(.system(size: TypeScale.xs))
+                            .foregroundStyle(f.added >= f.removed ? theme.colors.good : theme.colors.bad)
                     }
-                    .font(.system(size: TypeScale.sm, design: .monospaced))
                     .tag(f.path)
                 }
-                .frame(minWidth: 200, idealWidth: 240, maxWidth: 340)
+                .scrollContentBackground(.hidden)
+                .frame(minWidth: 200, idealWidth: 232, maxWidth: 320)
                 ScrollView([.vertical, .horizontal]) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(shown) { f in
@@ -258,8 +291,9 @@ struct ChangesView: View {
                     .textSelection(.enabled)
                     .padding(.bottom, Space.lg)
                 }
-                .background(theme.colors.wellBg)
+                .background(theme.colors.bg)
             }
+            .onAppear { if selected == nil { selected = files.first?.path } }
         }
     }
 
@@ -271,12 +305,13 @@ private struct DiffLine: View {
     let text: String
     var body: some View {
         let (fg, bg): (Color, Color) =
-            text.hasPrefix("@@") ? (theme.colors.info, .clear) :
-            text.hasPrefix("+") ? (theme.colors.good, theme.colors.good.opacity(0.10)) :
-            text.hasPrefix("-") ? (theme.colors.bad, theme.colors.bad.opacity(0.10)) :
-            (theme.colors.wellText, .clear)
+            text.hasPrefix("@@") ? (theme.colors.muted, .clear) :
+            text.hasPrefix("+") ? (theme.colors.good, theme.colors.good.opacity(0.08)) :
+            text.hasPrefix("-") ? (theme.colors.bad, theme.colors.bad.opacity(0.08)) :
+            (theme.colors.text.opacity(0.8), .clear)
         Text(text.isEmpty ? " " : text)
-            .font(.system(size: TypeScale.sm, design: .monospaced))
+            .font(.system(size: 12, design: .monospaced))
+            .frame(minHeight: 20)
             .foregroundStyle(fg)
             .fixedSize()
             .padding(.horizontal, Space.md)

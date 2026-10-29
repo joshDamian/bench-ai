@@ -8,6 +8,7 @@ struct BenchMarkdown: View {
     var body: some View {
         Markdown(text)
             .markdownTextStyle { ForegroundColor(theme.colors.text); FontSize(TypeScale.md) }
+            .markdownBlockStyle(\.paragraph) { c in c.label.relativeLineSpacing(.em(0.3)).markdownMargin(top: 0, bottom: 10) }
             .markdownTextStyle(\.code) { FontFamilyVariant(.monospaced); FontSize(.em(0.92)); BackgroundColor(theme.colors.surface2) }
             .markdownBlockStyle(\.codeBlock) { configuration in
                 ScrollView(.horizontal) {
@@ -32,16 +33,17 @@ struct RowView: View {
         switch row {
         case .user(_, let text, let attachments):
             HStack {
-                Spacer(minLength: 80)
+                Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: Space.xs) {
                     if !attachments.isEmpty {
                         HStack { ForEach(attachments, id: \.self) { Pill(text: $0, color: theme.colors.info) } }
                     }
                     if !text.isEmpty { BenchMarkdown(text: text) }
                 }
-                .padding(.horizontal, Space.md)
-                .padding(.vertical, Space.sm)
-                .background(theme.colors.surface3, in: RoundedRectangle(cornerRadius: theme.radius))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(theme.colors.surface3, in: RoundedRectangle(cornerRadius: 14))
+                .frame(maxWidth: 520, alignment: .trailing)
             }
         case .text(_, let text, let sub):
             BenchMarkdown(text: text).padding(.leading, sub ? Space.lg : 0)
@@ -53,7 +55,7 @@ struct RowView: View {
             }
         case .tools(_, let calls, let sub):
             ToolRunView(calls: calls, cwd: cwd).padding(.leading, sub ? Space.lg : 0)
-        case .turnEnd(_, let ok, let label, let reply):
+        case .turnEnd(_, let ok, let label, let reply, _):
             HStack {
                 Text(label).font(.system(size: TypeScale.xs, weight: .medium)).foregroundStyle(ok ? theme.colors.muted : theme.colors.bad)
                 Spacer()
@@ -77,6 +79,94 @@ struct RowView: View {
                 Text(command).font(.system(size: TypeScale.sm, design: .monospaced)).lineLimit(1)
             }) { CodeBlock(text: output) }
         }
+    }
+}
+
+/// One turn as the design draws it: "› Worked for 2m 54s · 14 steps", the reply, then
+/// its cost and a copy button. While it runs, the line is the step in progress.
+struct TurnView: View {
+    @Environment(\.theme) private var theme
+    let steps: [Row]
+    let reply: String
+    let label: String?
+    let ok: Bool
+    let cost: String?
+    let live: Bool
+    let cwd: String
+    let model: SessionModel
+    @State private var open = false
+
+    var body: some View {
+        let count = Transcript.stepCount(steps)
+        let done = label != nil
+        let prose = done ? [] : steps.compactMap { r -> String? in if case .text(_, let t, false) = r { t } else { nil } }
+        VStack(alignment: .leading, spacing: 10) {
+            if done || count > 0 {
+                Button { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } } label: {
+                    HStack(spacing: Space.sm) {
+                        if live && !done, let current = steps.reversed().lazy.compactMap({ r -> ToolCall? in
+                            if case .tools(_, let c, _) = r { c.last(where: \.pending) } else { nil } }).first {
+                            LiveDot()
+                            Text("Running").foregroundStyle(theme.colors.text.opacity(0.8))
+                            Text(Transcript.headline(current, cwd: cwd))
+                                .font(.system(size: TypeScale.sm, design: .monospaced))
+                                .lineLimit(1).truncationMode(.middle)
+                            Text("· step \(count)").fixedSize()
+                        } else if live && !done {
+                            LiveDot()
+                            Text("Working · step \(count)")
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .semibold))
+                                .rotationEffect(.degrees(open ? 90 : 0))
+                            Text([label, count > 0 ? "\(count) step\(count == 1 ? "" : "s")" : nil].compactMap { $0 }.joined(separator: " · "))
+                                .foregroundStyle(ok ? theme.colors.muted : theme.colors.bad)
+                        }
+                    }
+                    .font(.system(size: TypeScale.sm))
+                    .foregroundStyle(theme.colors.muted)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            if open {
+                VStack(alignment: .leading, spacing: Space.sm) {
+                    ForEach(steps) { r in
+                        switch r {
+                        case .tools(_, let calls, _): ForEach(calls) { ToolCallView(call: $0, cwd: cwd) }
+                        default: RowView(row: r, cwd: cwd, model: model)
+                        }
+                    }
+                }
+                .padding(.leading, Space.lg)
+                .overlay(alignment: .leading) { Rectangle().fill(theme.colors.line).frame(width: 1) }
+            }
+            ForEach(Array(prose.enumerated()), id: \.offset) { _, t in BenchMarkdown(text: t) }
+            if !reply.isEmpty { BenchMarkdown(text: reply) }
+            if done && (cost != nil || !reply.isEmpty) {
+                HStack(spacing: Space.md) {
+                    if let cost { Text(cost) }
+                    if !reply.isEmpty {
+                        Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(reply, forType: .string) } label: {
+                            Image(systemName: "doc.on.doc").font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy Reply")
+                    }
+                }
+                .font(.system(size: TypeScale.xs))
+                .foregroundStyle(theme.colors.muted)
+            }
+        }
+    }
+}
+
+/// The accent dot with a soft ring: something is happening now.
+struct LiveDot: View {
+    @Environment(\.theme) private var theme
+    var body: some View {
+        Circle().fill(theme.colors.accent).frame(width: 7, height: 7)
+            .background(Circle().fill(theme.colors.accent.opacity(0.25)).frame(width: 13, height: 13))
     }
 }
 

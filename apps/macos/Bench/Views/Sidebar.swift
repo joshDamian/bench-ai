@@ -35,8 +35,8 @@ struct Sidebar: View {
                     } header: {
                         Button { selection = "project:\(p.id)" } label: {
                             HStack(spacing: 4) {
-                                Text(p.name).textCase(nil)
-                                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                                Text(p.name).textCase(nil).font(.system(size: 11, weight: .semibold))
+                                Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).opacity(0.6)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
@@ -52,16 +52,19 @@ struct Sidebar: View {
                 .filter { ($0.project_id == nil || !known.contains($0.project_id!)) && visible($0) }
                 .sorted(by: newest)
             if !loose.isEmpty {
-                Section("Ask Bench") {
+                Section {
                     ForEach(loose) { s in
                         SessionRowView(session: s, project: nil, detail: nil)
                             .tag(s.id)
                             .contextMenu { SessionMenu(store: store, session: s) }
                     }
+                } header: {
+                    Text("Ask Bench").textCase(nil).font(.system(size: 11, weight: .semibold))
                 }
             }
         }
         .listStyle(.sidebar)
+        .tint(theme.colors.accent)
         .safeAreaInset(edge: .top, spacing: 0) {
             Button { model.showQuickOpen = true } label: {
                 HStack(spacing: Space.sm) {
@@ -130,12 +133,16 @@ private struct PlaceRow: View {
     let color: Color
 
     var body: some View {
-        HStack(spacing: Space.sm) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            Text(label).foregroundStyle(count > 0 ? color : theme.colors.text)
+        let urgent = count > 0 && label == "Needs you"
+        HStack(spacing: 10) {
+            Circle().fill(color).frame(width: 7, height: 7).frame(width: 13)
+            Text(label).fontWeight(urgent ? .semibold : .regular)
             Spacer()
-            if count > 0 { Text("\(count)").foregroundStyle(theme.colors.muted).monospacedDigit() }
+            if count > 0 { Text("\(count)").fontWeight(urgent ? .semibold : .regular).foregroundStyle(urgent ? color : theme.colors.muted).monospacedDigit() }
         }
+        .font(.system(size: 13))
+        .foregroundStyle(urgent ? color : theme.colors.text.opacity(0.8))
+        .listRowBackground(urgent ? RoundedRectangle(cornerRadius: 7).fill(color.opacity(0.10)).padding(.horizontal, 10) : nil)
     }
 }
 
@@ -146,10 +153,12 @@ struct SessionRowView: View {
     let detail: String?
 
     var body: some View {
-        HStack(spacing: Space.sm) {
+        let idle = session.status == "idle"
+        HStack(spacing: 10) {
             StatusDot(status: session.status)
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title).lineLimit(1)
+                    .foregroundStyle(idle ? theme.colors.text.opacity(0.8) : theme.colors.text)
                 let sub = [project, detail].compactMap { $0 }.joined(separator: " · ")
                 if !sub.isEmpty {
                     Text(sub).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted).lineLimit(1)
@@ -158,25 +167,27 @@ struct SessionRowView: View {
             Spacer(minLength: 0)
             Text(Format.ago(session.updated_at))
                 .font(.system(size: TypeScale.xs))
-                .foregroundStyle(theme.colors.muted)
+                .foregroundStyle(session.status == "running" ? theme.colors.accent : theme.colors.muted)
         }
+        .font(.system(size: 13))
         .opacity(session.archived_at == nil ? 1 : 0.6)
     }
 }
 
+/// A session's state at a glance: dim when idle, a soft ring while Claude works.
 struct StatusDot: View {
     @Environment(\.theme) private var theme
     let status: String
-    @State private var pulse = false
 
     var body: some View {
+        let c = theme.colors.status(status)
         Circle()
-            .fill(theme.colors.status(status))
-            .frame(width: 8, height: 8)
-            .opacity(status == "running" && pulse ? 0.35 : 1)
-            .animation(status == "running" ? .easeInOut(duration: 0.8).repeatForever() : .default, value: pulse)
-            .onAppear { pulse = status == "running" }
-            .onChange(of: status) { _, s in pulse = s == "running" }
+            .fill(status == "idle" ? c.opacity(0.45) : c)
+            .frame(width: 7, height: 7)
+            .background {
+                if status == "running" { Circle().fill(c.opacity(0.25)).frame(width: 13, height: 13) }
+            }
+            .frame(width: 13, height: 13)
     }
 }
 

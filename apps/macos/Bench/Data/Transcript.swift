@@ -8,14 +8,14 @@ enum Row: Identifiable, Hashable {
     case text(id: String, text: String, subagent: Bool)
     case thinking(id: String, eventId: Int, index: Int, length: Int, text: String?)
     case tools(id: String, calls: [ToolCall], subagent: Bool)
-    case turnEnd(id: String, ok: Bool, label: String, reply: String)
+    case turnEnd(id: String, ok: Bool, label: String, reply: String, cost: String?)
     case system(id: String, text: String, tone: Tone)
     case check(id: String, ok: Bool, head: String, command: String, output: String)
 
     var id: String {
         switch self {
         case .user(let id, _, _), .text(let id, _, _), .thinking(let id, _, _, _, _), .tools(let id, _, _),
-             .turnEnd(let id, _, _, _), .system(let id, _, _), .check(let id, _, _, _, _): id
+             .turnEnd(let id, _, _, _, _), .system(let id, _, _), .check(let id, _, _, _, _): id
         }
     }
 }
@@ -111,12 +111,11 @@ enum Transcript {
                 let isError = d["is_error"].bool
                 var label = !isError ? "Worked" : d["subtype"].string == "error_during_execution" ? "Stopped" : "Failed" + (d["text"].string.map { ": \($0)" } ?? "")
                 if let ms = d["duration_ms"].int { label += (isError ? " · " : " for ") + Format.duration(ms) }
-                if let c = d["cost"].number, c > 0 { label += " · " + Format.cost(c) }
-                out.append(.turnEnd(id: "e\(e.id)", ok: !isError, label: label, reply: reply.joined(separator: "\n\n")))
+                let cost = d["cost"].number.flatMap { $0 > 0 ? Format.cost($0) : nil }
+                out.append(.turnEnd(id: "e\(e.id)", ok: !isError, label: label, reply: reply.joined(separator: "\n\n"), cost: cost))
                 reply = []
             case "init":
-                let parts = ["Claude Code \(d["version"].string ?? "")".trimmingCharacters(in: .whitespaces), d["model"].string, d["permissionMode"].string.flatMap { Mode(rawValue: $0)?.label }]
-                out.append(.system(id: "e\(e.id)", text: parts.compactMap { $0 }.joined(separator: " · "), tone: .muted))
+                break // which Claude Code started is not news in the transcript
             case "notice":
                 out.append(.system(id: "e\(e.id)", text: d["text"].string ?? "", tone: .muted))
             case "loop":
@@ -209,6 +208,62 @@ enum Format {
         case ..<60: return "\(m)m"
         case ..<(60 * 24): return "\(m / 60)h"
         default: return "\(m / (60 * 24))d"
+        }
+    }
+}
+
+/// One block of the conversation as the design draws it: your message, or one turn of
+/// Claude's work folded to a line, its reply, and what it cost.
+enum Block: Identifiable {
+    case user(Row)
+    case turn(id: String, steps: [Row], reply: String, label: String?, ok: Bool, cost: String?)
+    case note(Row)
+
+    var id: String {
+        switch self {
+        case .user(let r), .note(let r): r.id
+        case .turn(let id, _, _, _, _, _): id
+        }
+    }
+}
+
+extension Transcript {
+    static func blocks(_ rows: [Row]) -> [Block] {
+        var out: [Block] = []
+        var steps: [Row] = []
+        func flush(_ end: Row?) {
+            guard !steps.isEmpty || end != nil else { return }
+            let id = steps.first?.id ?? end!.id
+            if case .turnEnd(_, let ok, let label, let reply, let cost) = end {
+                // The reply is shown below the fold; the prose it is made of stays out of the steps.
+                let kept = reply.isEmpty ? steps : steps.filter { if case .text(_, _, false) = $0 { false } else { true } }
+                out.append(.turn(id: id, steps: kept, reply: reply, label: label, ok: ok, cost: cost))
+            } else {
+                out.append(.turn(id: id, steps: steps, reply: "", label: nil, ok: true, cost: nil))
+            }
+            steps = []
+        }
+        for r in rows {
+            switch r {
+            case .user: flush(nil); out.append(.user(r))
+            case .turnEnd: flush(r)
+            case .system(_, _, let tone) where tone == .bad: flush(nil); out.append(.note(r))
+            case .check: flush(nil); out.append(.note(r))
+            default: steps.append(r)
+            }
+        }
+        flush(nil)
+        return out
+    }
+
+    /// "14 steps": every tool call and thought in a turn.
+    static func stepCount(_ rows: [Row]) -> Int {
+        rows.reduce(0) { n, r in
+            switch r {
+            case .tools(_, let c, _): n + c.count
+            case .thinking: n + 1
+            default: n
+            }
         }
     }
 }

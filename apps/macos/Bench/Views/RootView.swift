@@ -36,8 +36,9 @@ struct MainView: View {
             } else if let id = model.selection, id.hasPrefix("project:") {
                 let pid = String(id.dropFirst("project:".count))
                 ProjectView(store: store, projectId: pid) { model.selection = $0 }.id(pid)
-            } else if let id = model.selection, let s = store.session(id), let tid = s.task_id, store.task(tid) != nil {
-                TaskView(store: store, taskId: tid, sessionId: id, selection: $model.selection).id(tid)
+            } else if let id = model.selection, id.hasPrefix("task:") {
+                let tid = String(id.dropFirst("task:".count))
+                TaskView(store: store, taskId: tid, sessionId: nil, selection: $model.selection).id(tid)
             } else if let id = model.selection, store.session(id) != nil {
                 SessionView(store: store, sessionId: id)
                     .id(id)

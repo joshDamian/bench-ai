@@ -3,9 +3,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SessionView: View {
+    @Environment(AppModel.self) private var app
+    @State private var taskGit: TaskGit?
     @Environment(\.theme) private var theme
     let store: BenchStore
     let sessionId: String
+    /// Inside a task's tabs, which draw their own header.
+    var embedded = false
     @State private var model: SessionModel
     @State private var draft = ""
     @State private var follow = true
@@ -14,7 +18,8 @@ struct SessionView: View {
     @State private var newTitle = ""
     @FocusState private var composerFocused: Bool
 
-    init(store: BenchStore, sessionId: String) {
+    init(store: BenchStore, sessionId: String, embedded: Bool = false) {
+        self.embedded = embedded
         self.store = store
         self.sessionId = sessionId
         _model = State(initialValue: SessionModel(sessionId: sessionId, store: store))
@@ -29,7 +34,7 @@ struct SessionView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Space.md) {
+                    LazyVStack(alignment: .leading, spacing: 22) {
                         if model.hasOlder {
                             Button("Show earlier messages") { Task { await model.loadOlder() } }
                                 .buttonStyle(.link)
@@ -43,8 +48,14 @@ struct SessionView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(Space.xl)
                         }
-                        ForEach(model.rows) { row in
-                            RowView(row: row, cwd: cwd, model: model).id(row.id)
+                        let blocks = Transcript.blocks(model.rows)
+                        ForEach(blocks) { b in
+                            switch b {
+                            case .user(let r), .note(let r): RowView(row: r, cwd: cwd, model: model).id(b.id)
+                            case .turn(_, let steps, let reply, let label, let ok, let cost):
+                                TurnView(steps: steps, reply: reply, label: label, ok: ok, cost: cost,
+                                         live: running && b.id == blocks.last?.id, cwd: cwd, model: model).id(b.id)
+                            }
                         }
                         if !model.streamText.isEmpty || !model.streamThinking.isEmpty {
                             VStack(alignment: .leading, spacing: Space.xs) {
@@ -60,8 +71,8 @@ struct SessionView: View {
                             .onAppear { follow = true }
                             .onDisappear { follow = false }
                     }
-                    .frame(maxWidth: 860)
-                    .padding(.horizontal, Space.xl)
+                    .frame(maxWidth: 720)
+                    .padding(.horizontal, 32)
                     .padding(.vertical, Space.lg)
                     .frame(maxWidth: .infinity)
                 }
@@ -139,30 +150,84 @@ struct SessionView: View {
             }
         }
         .navigationTitle(session?.title ?? "Session")
-        .navigationSubtitle(subtitle(session))
+        .hideToolbarTitle()
+        .task(id: session?.task_id) {
+            if let t = session?.task_id { taskGit = try? await store.api.task(t).git }
+        }
         .toolbar {
-            ToolbarItemGroup {
-                if let session {
-                    Menu {
-                        ForEach(Mode.allCases) { m in
-                            Button { Task { try? await store.api.setMode(session.id, m) } } label: {
-                                if m == session.mode { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
-                            }
-                        }
-                    } label: { Text(session.mode.label) }
-                    .menuStyle(.button)
-                    .buttonStyle(.bordered)
-                    .clipShape(Capsule())
-                    .fixedSize()
-                    .help("Permission Mode")
-                    Button { TerminalLauncher.open(session, store: store) } label: { Label("Open in Terminal", systemImage: "terminal") }
-                        .disabled(session.claude_session_id == nil)
-                        .help(store.api.config.isLoopback ? "Open in Terminal with claude --resume" : "Copy the claude --resume command")
-                    Menu {
-                        Button("Rename…") { newTitle = session.title; renaming = true }
-                        SessionMenu(store: store, session: session)
-                    } label: { Label("More", systemImage: "ellipsis.circle") }
+            if !embedded {
+            ToolbarItem(placement: .navigation) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session?.title ?? "Session")
+                        .font(.system(size: TypeScale.md, weight: .semibold))
+                        .lineLimit(1)
+                    Text(subtitle(session))
+                        .font(.system(size: TypeScale.xs))
+                        .foregroundStyle(theme.colors.muted)
+                        .lineLimit(1)
                 }
+                .padding(.leading, Space.sm)
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                if let session {
+                    HStack(spacing: Space.md) {
+                        Menu {
+                            ForEach(Mode.allCases) { m in
+                                Button { Task { try? await store.api.setMode(session.id, m) } } label: {
+                                    if m == session.mode { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(session.mode.label)
+                                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(height: 26)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .pill(theme)
+                        .help("Permission Mode")
+
+                        HStack(spacing: 2) {
+                            if let t = session.task_id {
+                                Button { app.selection = "task:\(t)" } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.left.arrow.right").font(.system(size: 11))
+                                        if let g = taskGit {
+                                            Text("+\(g.added)").foregroundStyle(theme.colors.good)
+                                            Text("−\(g.removed)").foregroundStyle(theme.colors.bad)
+                                        } else { Text("Changes") }
+                                    }
+                                    .padding(.horizontal, 10).frame(height: 26).contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("Changes")
+                            }
+                            Button { TerminalLauncher.open(session, store: store) } label: {
+                                Image(systemName: "apple.terminal").frame(width: 30, height: 26).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(session.claude_session_id == nil)
+                            .help("Open in Terminal")
+                            Menu {
+                                Button("Rename…") { newTitle = session.title; renaming = true }
+                                SessionMenu(store: store, session: session)
+                            } label: { Image(systemName: "ellipsis").frame(width: 30, height: 26) }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .help("More")
+                        }
+                        .foregroundStyle(theme.colors.text.opacity(0.8))
+                        .padding(.horizontal, 4)
+                        .pill(theme)
+                    }
+                    .font(.system(size: TypeScale.sm))
+                }
+            }
             }
         }
         .alert("Rename session", isPresented: $renaming) {
@@ -179,10 +244,10 @@ struct SessionView: View {
 
     private func subtitle(_ s: Session?) -> String {
         guard let s else { return "" }
-        var parts = [statusLabel(s.status), s.mode.label]
-        if let p = store.project(s.project_id)?.name { parts.insert(p, at: 0) }
-        if let c = s.cost, c > 0 { parts.append(Format.cost(c)) }
-        return parts.joined(separator: " · ")
+        // "bench-src · task bench/native-clients", as the design reads.
+        let project = store.project(s.project_id)?.name ?? (s.project_id == nil ? "Ask Bench" : nil)
+        let task = store.task(s.task_id).map { "task \($0.branch ?? $0.title)" }
+        return [project, task].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -327,5 +392,18 @@ struct ModelMenu: View {
 
     private func set(_ body: [String: Any]) {
         Task { try? await store.api.patchSession(session.id, body) }
+    }
+}
+
+extension View {
+    /// The capsule the session header's controls sit in.
+    func pill(_ theme: BenchThemeSpec) -> some View {
+        background(theme.colors.text.opacity(0.07), in: Capsule())
+            .overlay(Capsule().strokeBorder(theme.colors.text.opacity(0.08)))
+    }
+
+    /// The header draws its own title; the window keeps one for the Window menu.
+    @ViewBuilder func hideToolbarTitle() -> some View {
+        if #available(macOS 15.0, *) { toolbar(removing: .title) } else { self }
     }
 }
