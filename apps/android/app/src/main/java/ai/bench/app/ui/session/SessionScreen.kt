@@ -2,7 +2,6 @@ package ai.bench.app.ui.session
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -205,7 +204,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit) {
                         ApprovalCard(a, cwd, onAnswer = { vm.answer(a.id, it) }, busy = a.id in busy)
                     }
                 }
-                AnimatedVisibility(!follow, Modifier.align(Alignment.BottomEnd).padding(Space.lg)) {
+                androidx.compose.animation.AnimatedVisibility(!follow, Modifier.align(Alignment.BottomEnd).padding(Space.lg)) {
                     SmallFloatingActionButton(onClick = {
                         follow = true
                         scope.launch { if (total > 0) list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE / 2) }
