@@ -123,7 +123,9 @@ struct FlowChips: View {
 
     var body: some View {
         FlowLayout(spacing: Space.sm) {
-            ForEach(options, id: \.0) { label, description in
+            ForEach(options, id: \.0) { option in
+                let label = option.0
+                let description = option.1
                 let on = selected.contains(label)
                 Button { toggle(label) } label: {
                     Text(label)

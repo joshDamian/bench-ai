@@ -89,7 +89,7 @@ struct Disclosure<Head: View, Content: View>: View {
     @ViewBuilder let content: () -> Content
     @State private var open = false
 
-    init(head: @escaping () -> Head, flag: AnyView? = nil, onOpen: @escaping () -> Void = {}, @ViewBuilder content: @escaping () -> Content) {
+    init(@ViewBuilder head: @escaping () -> Head, flag: AnyView? = nil, onOpen: @escaping () -> Void = {}, @ViewBuilder content: @escaping () -> Content) {
         self.head = head
         self.flag = flag
         self.onOpen = onOpen

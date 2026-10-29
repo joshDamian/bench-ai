@@ -16,7 +16,10 @@ final class SessionModel {
     let sessionId: String
     let store: BenchStore
 
-    private(set) var events: [SessionEvent] = [] { didSet { rebuild() } }
+    /// Held outside observation: views draw `rows`, which every change to this rebuilds.
+    @ObservationIgnored private(set) var events: [SessionEvent] = [] {
+        didSet { rebuild() }
+    }
     private(set) var rows: [Row] = []
     var streamText = ""
     var streamThinking = ""
