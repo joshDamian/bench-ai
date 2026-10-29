@@ -73,4 +73,5 @@ dependencies {
     implementation(libs.markdown.m3)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
+    testImplementation(kotlin("test"))
 }

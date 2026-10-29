@@ -25,8 +25,14 @@ struct NewSessionSheet: View {
             Text("New Session").font(.title3.weight(.semibold))
             Form {
                 Picker("Project", selection: $projectId) {
+                    Text("Ask Bench").tag(String?.none)
+                    Divider()
                     ForEach(store.projects) { Text($0.name).tag(Optional($0.id)) }
                 }
+                if projectId == nil {
+                    Text("A conversation about the whole of Bench: what's running, what it costs, starting work in any project.")
+                        .foregroundStyle(theme.colors.muted)
+                } else {
                 Picker("Where", selection: $place) {
                     ForEach(Where.allCases) { Text($0.rawValue).tag($0) }
                 }
@@ -40,6 +46,7 @@ struct NewSessionSheet: View {
                     }
                 case .checkout:
                     Text("Works directly in the project's checked-out branch.").foregroundStyle(theme.colors.muted)
+                }
                 }
                 Picker("Mode", selection: $mode) {
                     ForEach(Mode.allCases) { Text($0.label).tag($0) }
@@ -60,29 +67,29 @@ struct NewSessionSheet: View {
                 Button("Start") { start() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    .disabled(busy || projectId == nil || (place == .newTask && taskTitle.isEmpty) || (place == .task && taskId == nil))
+                    .disabled(busy || (projectId != nil && place == .newTask && taskTitle.isEmpty) || (projectId != nil && place == .task && taskId == nil))
             }
         }
         .padding(Space.xl)
         .frame(width: 520)
         .onAppear {
-            projectId = projectId ?? store.projects.first?.id
+            projectId = store.projects.first?.id
             mode = Mode(rawValue: store.defaults.mode ?? "default") ?? .default
         }
     }
 
     private func start() {
-        guard let pid = projectId else { return }
+        let pid = projectId
         busy = true
         error = nil
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             do {
                 let s: Session
-                if place == .newTask {
+                if place == .newTask, let pid {
                     s = try await store.api.createTask(project: pid, title: taskTitle, prompt: text, mode: mode)
                 } else {
-                    s = try await store.api.createSession(project: pid, task: place == .task ? taskId : nil, mode: mode)
+                    s = try await store.api.createSession(project: pid, task: pid != nil && place == .task ? taskId : nil, mode: mode)
                     if !text.isEmpty { try await store.api.send(s.id, text: text) }
                 }
                 store.apply(s)

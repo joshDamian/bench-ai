@@ -88,6 +88,15 @@ struct SessionView: View {
                 }
             }
 
+            if let p = session?.pause {
+                Text(p.message ?? "Paused by the usage limit")
+                    .font(.system(size: TypeScale.sm))
+                    .foregroundStyle(theme.colors.warn)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.lg)
+                    .padding(.vertical, Space.sm)
+                    .background(theme.colors.warn.opacity(0.10))
+            }
             Composer(model: model, draft: $draft, running: running, focused: $composerFocused)
         }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in

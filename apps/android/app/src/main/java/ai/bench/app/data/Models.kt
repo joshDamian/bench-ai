@@ -71,7 +71,12 @@ data class Session(
     val created_at: String = "",
     val updated_at: String = "",
     val archived_at: String? = null,
+    /** Set while the Claude login's usage limit has this session stopped. */
+    val pause: SessionPause? = null,
 )
+
+@Serializable
+data class SessionPause(val until: String? = null, val message: String = "", val tries: Int = 0)
 
 @Serializable
 data class SessionEvent(

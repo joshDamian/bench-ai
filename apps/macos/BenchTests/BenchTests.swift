@@ -60,3 +60,35 @@ final class TranscriptTests: XCTestCase {
         XCTAssertNil(ServerMessage.parse(Data(#"{"type":"nope"}"#.utf8)))
     }
 }
+
+/// The server's own output, recorded by apps/fixtures/generate.mjs.
+final class FixtureTests: XCTestCase {
+    private func fixture(_ name: String) throws -> Data {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try Data(contentsOf: dir.appendingPathComponent("fixtures/\(name)"))
+    }
+
+    func testReadsTheWholeStateIncludingAskSessions() throws {
+        let s = try JSONDecoder().decode(StateSnapshot.self, from: fixture("state.json"))
+        let raw = try JSONDecoder().decode(JSONValue.self, from: fixture("state.json"))
+        XCTAssertEqual(s.sessions.count, raw["sessions"].array.count, "every session is read, none dropped")
+        XCTAssertEqual(s.tasks.count, raw["tasks"].array.count)
+        XCTAssertEqual(s.projects.count, raw["projects"].array.count)
+        XCTAssertTrue(s.sessions.contains { $0.project_id == nil })
+        XCTAssertNotNil(s.me)
+    }
+
+    func testDrawsARecordedSession() throws {
+        let d = try JSONDecoder().decode(SessionDetail.self, from: fixture("session.json"))
+        let rows = Transcript.rows(d.events)
+        XCTAssertTrue(rows.contains { if case .turnEnd = $0 { true } else { false } })
+    }
+
+    func testReadsEveryRecordedSocketFrame() throws {
+        for f in try JSONDecoder().decode(JSONValue.self, from: fixture("socket.json")).array {
+            let d = try JSONEncoder().encode(f)
+            guard f["type"].string != "commands" else { continue } // not used by the Mac client
+            XCTAssertNotNil(ServerMessage.parse(d), String(data: d, encoding: .utf8)!.prefix(120).description)
+        }
+    }
+}

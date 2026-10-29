@@ -40,3 +40,30 @@ class TranscriptTest {
         assertEquals(listOf(1L, 2L), Transcript.merge(listOf(a), listOf(a, b), suffix = true).map { it.id })
     }
 }
+
+/** The server's own output, recorded by apps/fixtures/generate.mjs. */
+class FixtureTest {
+    private fun fixture(name: String) = java.io.File("../../fixtures/$name").readText()
+
+    @Test fun readsTheWholeStateIncludingAskSessions() {
+        val raw = BenchJson.parseToJsonElement(fixture("state.json")).obj()!!
+        val sessions = raw["sessions"].arr()!!.map { BenchJson.decodeFromJsonElement(Session.serializer(), it) }
+        assertTrue(sessions.any { it.project_id == null })
+        assertEquals(raw["sessions"].arr()!!.size, sessions.size)
+        raw["projects"].arr()!!.forEach { BenchJson.decodeFromJsonElement(Project.serializer(), it) }
+        raw["tasks"].arr()!!.forEach { BenchJson.decodeFromJsonElement(BenchTask.serializer(), it) }
+        raw["approvals"].arr()!!.forEach { BenchJson.decodeFromJsonElement(Approval.serializer(), it) }
+    }
+
+    @Test fun drawsARecordedSession() {
+        val d = BenchJson.decodeFromString(SessionDetail.serializer(), fixture("session.json"))
+        val rows = Transcript.rows(d.events, d.session.cwd)
+        assertTrue(rows.any { it is Row.TurnEnd })
+        assertTrue(rows.any { it is Row.Thinking })
+    }
+
+    @Test fun readsEveryRecordedSocketFrame() {
+        val frames = BenchJson.parseToJsonElement(fixture("socket.json")).arr()!!
+        frames.forEach { f -> kotlin.test.assertNotNull(parseServerMessage(f.toString()), f.toString().take(120)) }
+    }
+}

@@ -43,6 +43,10 @@ svc.send(s.id, 'suggest run the tests');
 await until(() => svc.events(s.id).filter((e) => e.kind === 'result').length === 2);
 svc.send(s.id, 'write notes.md some notes');
 await until(() => svc.runtime.pending(s.id).length === 1);
+// An Ask Bench conversation: no project, which is what a client must not choke on.
+const ask = svc.createSession({ title: 'What is running?' });
+svc.send(ask.id, 'hello ask');
+await until(() => svc.events(ask.id).some((e) => e.kind === 'result'));
 const { task, session: ts } = svc.createTask(project.id, { title: 'Fix the thing', prompt: 'ask' });
 await until(() => svc.runtime.pending(ts.id).length === 1);
 

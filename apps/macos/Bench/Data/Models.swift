@@ -34,8 +34,15 @@ struct Session: Codable, Identifiable, Hashable {
     var created_at: String?
     var updated_at: String?
     var archived_at: String?
+    /// Set while the Claude login's usage limit has this session stopped.
+    var pause: SessionPause?
 
     var mode: Mode { Mode(rawValue: permission_mode ?? "default") ?? .default }
+}
+
+struct SessionPause: Codable, Hashable {
+    let until: String?
+    let message: String?
 }
 
 struct SessionEvent: Codable, Identifiable, Hashable {

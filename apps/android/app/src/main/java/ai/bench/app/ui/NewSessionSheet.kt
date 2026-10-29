@@ -63,9 +63,11 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
             }
             MutedText("Project")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                FilterChip(projectId == null, { projectId = null; where = 0 }, { Text("Ask Bench") })
                 s.projects.forEach { p -> FilterChip(projectId == p.id, { projectId = p.id; taskId = null }, { Text(p.name) }) }
             }
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            if (projectId == null) MutedText("A conversation about the whole of Bench: what's running, what it costs, starting work in any project.")
+            else SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 listOf("Checkout", "New task", "Task").forEachIndexed { i, label ->
                     SegmentedButton(
                         selected = where == i,
@@ -75,7 +77,7 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
                     ) { Text(label) }
                 }
             }
-            when (where) {
+            if (projectId != null) when (where) {
                 1 -> OutlinedTextField(taskTitle, { taskTitle = it }, Modifier.fillMaxWidth(), label = { Text("Task title") }, singleLine = true)
                 2 -> FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     tasks.forEach { t -> FilterChip(taskId == t.id, { taskId = t.id }, { Text(t.title) }) }
@@ -89,15 +91,15 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
             }
             error?.let { Text(it, color = Bench.colors.bad, style = MaterialTheme.typography.bodySmall) }
             Button(
-                enabled = !busy && projectId != null && (where != 1 || taskTitle.isNotBlank()) && (where != 2 || taskId != null),
+                enabled = !busy && (where != 1 || taskTitle.isNotBlank()) && (where != 2 || taskId != null),
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    val pid = projectId ?: return@Button
+                    val pid = projectId
                     busy = true
                     error = null
                     scope.launch {
                         try {
-                            val session = if (where == 1) {
+                            val session = if (where == 1 && pid != null) {
                                 // The server starts the task's session and sends it the prompt.
                                 store.api.createTask(pid, taskTitle.trim(), prompt, mode.wire)
                             } else {

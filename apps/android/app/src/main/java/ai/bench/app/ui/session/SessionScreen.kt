@@ -212,6 +212,15 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit) {
                 }
             }
 
+            session?.pause?.let { p ->
+                Text(
+                    p.message.ifBlank { "Paused by the usage limit" },
+                    color = Bench.colors.warn,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth().background(Bench.colors.warn.copy(alpha = 0.10f)).padding(horizontal = Space.lg, vertical = Space.sm),
+                )
+            }
+
             if (suggestion.isNotBlank() && !running && approvals.isEmpty() && draft.isEmpty()) {
                 LazyRow(contentPadding = PaddingValues(horizontal = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     item { AssistChip(onClick = { draft = suggestion }, label = { Text(suggestion, maxLines = 1, overflow = TextOverflow.Ellipsis) }) }

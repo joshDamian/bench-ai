@@ -143,7 +143,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onSettings: () -> Un
                     MutedText(if (s.projects.isEmpty()) "No projects yet. Add one from Bench on your computer." else "No sessions yet. Start one to give Claude some work.")
                 }
                 items(live, key = { it.id }) { session ->
-                    SessionRow(session, projectName[session.project_id], s.tasks.firstOrNull { it.id == session.task_id }?.title) { onOpen(session.id) }
+                    SessionRow(session, projectName[session.project_id] ?: if (session.project_id == null) "Ask Bench" else null, s.tasks.firstOrNull { it.id == session.task_id }?.title) { onOpen(session.id) }
                 }
             }
         }

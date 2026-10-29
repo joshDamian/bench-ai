@@ -6,7 +6,8 @@
    "name": "demo",
    "path": "/root/repo",
    "created_at": "2026-10-29T12:00:00.000Z",
-   "check_command": null
+   "check_command": null,
+   "routing": null
   }
  ],
  "tasks": [
@@ -17,8 +18,8 @@
    "description": "ask",
    "base_branch": "main",
    "base_commit": "id-3",
-   "branch": "bench/fix-the-thing-d62f63",
-   "worktree": "/root/.bench-worktrees-repo/d62f6370-815d-4b05-b99d-b0924734595a",
+   "branch": "bench/fix-the-thing-8cbe80",
+   "worktree": "/root/.bench-worktrees-repo/8cbe801b-2a4a-42f3-a6e9-164ff7921b3f",
    "state": "active",
    "merge_commit": null,
    "merged_at": null,
@@ -31,7 +32,8 @@
    "check_output": null,
    "check_at": null,
    "created_by_session": null,
-   "loop": null
+   "loop": null,
+   "routing": null
   }
  ],
  "sessions": [
@@ -40,12 +42,12 @@
    "project_id": "id-1",
    "task_id": "id-2",
    "title": "Fix the thing",
-   "cwd": "/root/.bench-worktrees-repo/d62f6370-815d-4b05-b99d-b0924734595a",
+   "cwd": "/root/.bench-worktrees-repo/8cbe801b-2a4a-42f3-a6e9-164ff7921b3f",
    "provider_id": "anthropic-claude-code",
    "model_id": null,
    "permission_mode": "default",
    "effort": null,
-   "claude_session_id": "claude-37zyizqb",
+   "claude_session_id": "claude-gba6emai",
    "status": "waiting",
    "error": null,
    "cost": 0,
@@ -55,10 +57,44 @@
    "updated_at": "2026-10-29T12:00:00.000Z",
    "archived_at": null,
    "started_by_session": null,
-   "purpose": null
+   "purpose": null,
+   "pause": null,
+   "model_usage": null,
+   "auto_resume": null
   },
   {
    "id": "id-5",
+   "project_id": null,
+   "task_id": null,
+   "title": "What is running?",
+   "cwd": "/root/.bench/ask",
+   "provider_id": "anthropic-claude-code",
+   "model_id": null,
+   "permission_mode": "default",
+   "effort": null,
+   "claude_session_id": "claude-3hqv7jod",
+   "status": "idle",
+   "error": null,
+   "cost": 0.01,
+   "input_tokens": 10,
+   "output_tokens": 5,
+   "created_at": "2026-10-29T12:00:00.000Z",
+   "updated_at": "2026-10-29T12:00:00.000Z",
+   "archived_at": null,
+   "started_by_session": null,
+   "purpose": null,
+   "pause": null,
+   "model_usage": {
+    "m": {
+     "cost": 0.01,
+     "input_tokens": 10,
+     "output_tokens": 5
+    }
+   },
+   "auto_resume": null
+  },
+  {
+   "id": "id-6",
    "project_id": "id-1",
    "task_id": null,
    "title": "Checkout session",
@@ -67,7 +103,7 @@
    "model_id": null,
    "permission_mode": "default",
    "effort": null,
-   "claude_session_id": "claude-w39k2jel",
+   "claude_session_id": "claude-ub4q2vz7",
    "status": "waiting",
    "error": null,
    "cost": 0.02,
@@ -77,13 +113,22 @@
    "updated_at": "2026-10-29T12:00:00.000Z",
    "archived_at": null,
    "started_by_session": null,
-   "purpose": null
+   "purpose": null,
+   "pause": null,
+   "model_usage": {
+    "m": {
+     "cost": 0.02,
+     "input_tokens": 10,
+     "output_tokens": 5
+    }
+   },
+   "auto_resume": null
   }
  ],
  "approvals": [
   {
-   "id": "id-6",
-   "session_id": "id-5",
+   "id": "id-7",
+   "session_id": "id-6",
    "tool": "Write",
    "input": {
     "file_path": "/root/repo/notes.md",
@@ -94,7 +139,7 @@
    "created_at": "2026-10-29T12:00:00.000Z"
   },
   {
-   "id": "id-7",
+   "id": "id-8",
    "session_id": "id-4",
    "tool": "AskUserQuestion",
    "input": {
@@ -725,7 +770,18 @@
   "providerId": "anthropic-claude-code",
   "modelId": null,
   "mode": "default",
-  "effort": null
+  "effort": null,
+  "routing": {
+   "enabled": true,
+   "explorer": "haiku",
+   "implementer": "sonnet",
+   "architect": "inherit",
+   "all": null
+  },
+  "limits": {
+   "autoResume": true,
+   "fallback": null
+  }
  },
  "me": {
   "local": false,

@@ -123,10 +123,11 @@ class BenchApi(val config: ServerConfig) {
     suspend fun rename(id: String, title: String) = patch("/api/sessions/${enc(id)}", buildJsonObject { put("title", title) })
     suspend fun archive(id: String, archived: Boolean = true) = post("/api/sessions/${enc(id)}/archive", buildJsonObject { put("archived", archived) })
 
-    suspend fun createSession(projectId: String, taskId: String? = null, mode: String? = null): Session = post(
+    /** With no project, an Ask Bench conversation. */
+    suspend fun createSession(projectId: String?, taskId: String? = null, mode: String? = null): Session = post(
         "/api/sessions",
         buildJsonObject {
-            put("projectId", projectId)
+            projectId?.let { put("projectId", it) }
             taskId?.let { put("taskId", it) }
             mode?.let { put("mode", it) }
         },

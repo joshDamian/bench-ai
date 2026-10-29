@@ -98,8 +98,10 @@ final class BenchAPI: @unchecked Sendable {
     func rename(_ id: String, _ title: String) async throws { try await call("/api/sessions/\(Self.enc(id))", method: "PATCH", body: ["title": title]) }
     func archive(_ id: String, _ archived: Bool = true) async throws { try await call("/api/sessions/\(Self.enc(id))/archive", method: "POST", body: ["archived": archived]) }
 
-    func createSession(project: String, task: String?, mode: Mode) async throws -> Session {
-        var body: [String: Any] = ["projectId": project, "mode": mode.rawValue]
+    /// With no project, an Ask Bench conversation.
+    func createSession(project: String?, task: String?, mode: Mode) async throws -> Session {
+        var body: [String: Any] = ["mode": mode.rawValue]
+        if let project { body["projectId"] = project }
         if let task { body["taskId"] = task }
         return try decode(Session.self, await call("/api/sessions", method: "POST", body: body))
     }
