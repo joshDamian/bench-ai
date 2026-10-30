@@ -128,11 +128,21 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             }
             composable("task/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable
-                TaskScreen(store, id, onBack = { nav.popBackStack() }, onOpen = open)
+                TaskScreen(store, id, onBack = { nav.popBackStack() }, onOpen = open,
+                    onTerminal = { nav.navigate("shell/task/$id") }, onSubagents = { nav.navigate("subagents/task:$id") })
             }
             composable("project/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable
-                ProjectScreen(store, id, onBack = { nav.popBackStack() }, onOpen = open, onTask = { nav.navigate("task/$it") })
+                ProjectScreen(store, id, onBack = { nav.popBackStack() }, onOpen = open, onTask = { nav.navigate("task/$it") },
+                    onTerminal = { nav.navigate("shell/project/$id") }, onSubagents = { nav.navigate("subagents/project:$id") })
+            }
+            composable("shell/{kind}/{id}", arguments = listOf(navArgument("kind") { type = NavType.StringType }, navArgument("id") { type = NavType.StringType })) { e ->
+                val kind = e.arguments?.getString("kind") ?: return@composable
+                val id = e.arguments?.getString("id") ?: return@composable
+                val st = store.state.value
+                val (title, place) = if (kind == "task") st.tasks.firstOrNull { it.id == id }.let { (it?.title ?: "Task") to (it?.branch ?: "") }
+                    else st.projects.firstOrNull { it.id == id }.let { (it?.name ?: "Project") to (it?.path?.replace(Regex("^/(home|Users)/[^/]+"), "~") ?: "") }
+                TerminalScreen(store.api, "$kind=${java.net.URLEncoder.encode(id, "UTF-8")}", title, place, onBack = { nav.popBackStack() })
             }
         }
         if (route in tabs) BenchNav(route ?: "home") { t ->

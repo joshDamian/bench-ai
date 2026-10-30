@@ -47,6 +47,7 @@ data class BenchTask(
     val check_status: String? = null,
     val check_output: String? = null,
     val loop: TaskLoop? = null,
+    val check_at: String? = null,
     val updated_at: String = "",
 )
 
@@ -144,12 +145,17 @@ data class TaskGit(
     val removed: Int = 0,
     val merged: Boolean = false,
     val canMerge: CanMerge? = null,
+    val dirty: List<String> = emptyList(),
+    val conflicted: List<String> = emptyList(),
 ) {
     @Serializable data class CanMerge(val ok: Boolean = true, val reason: String? = null)
 }
 
 @Serializable
-data class GitState(val branch: String? = null, val ahead: Int = 0, val behind: Int = 0, val dirty: List<String> = emptyList())
+data class GitState(val branch: String? = null, val ahead: Int = 0, val behind: Int = 0, val dirty: List<String> = emptyList(), val conflicted: List<String> = emptyList(), val branches: List<GitBranch> = emptyList(), val hasRemote: Boolean = true)
+
+@Serializable
+data class GitBranch(val name: String, val remoteOnly: Boolean = false, val current: Boolean = false)
 
 @Serializable
 data class ModelInfo(val id: String, val name: String = "", val display_name: String? = null, val enabled: Boolean = true) {
