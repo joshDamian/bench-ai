@@ -113,6 +113,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                     }
                     NavRow("Devices", deviceCount?.toString()) { onOpen("devices") }
                     NavRow("Dashboard", null, "Memory, CPU, storage and spend") { onOpen("dashboard") }
+                    NavRow("Diagnostics") { onOpen("diagnostics") }
                     NavRow("Restart server", null, "Sessions pick up where they were", chevron = false) { confirmRestart = true }
                 }
             }
@@ -123,6 +124,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                     NavRow("Default effort", effort?.let { Effort.of(it)?.label } ?: "Auto") { page = "effort" }
                     NavRow("Default mode", mode.label) { page = "mode" }
                     NavRow("Models", "${providers.count { it.enabled }} providers") { page = "models" }
+                    NavRow("Projects folder", defaults["projectsDir"].str()?.replace(Regex("^/(home|Users)/[^/]+"), "~"), "Where new projects are cloned or created") { page = "dir" }
                     NavRow("Subagents", if (routing["all"].str() != null) "One model" else "By tier") { onOpen("subagents/default") }
                     NavRow("Usage limit", if (defaults["limits"]["autoResume"].let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "false" }) "Wait" else "Resume") { onOpen("limit") }
                 }
@@ -161,6 +163,9 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
         scope.launch { runCatching { store.api.post("/api/server/restart") } }
     }
 
+    if (page == "dir") ai.bench.app.ui.TextDialog("Projects folder", defaults["projectsDir"].str().orEmpty(), "Save", "~/bench-projects", onDismiss = { page = null }) { v ->
+        put(buildJsonObject { put("projectsDir", v.trim()) })
+    }
     when (page) {
         "model" -> Choose("Default model", listOf("" to "Provider default") + providers.filter { it.enabled && it.ready }.flatMap { p -> p.models.filter { it.enabled }.map { it.id to "${it.label} · ${p.name}" } }, modelId ?: "", { page = null }) { id ->
             put(buildJsonObject {

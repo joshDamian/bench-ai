@@ -190,6 +190,7 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
     }
     suspend fun providers() = runCatching { api.providers() }.getOrDefault(emptyList())
 
+    suspend fun routing() = runCatching { api.get("/api/sessions/${ai.bench.app.data.BenchApi.enc(sessionId)}/routing") }.getOrNull()
     fun unarchive() = viewModelScope.launch { runCatching { api.archive(sessionId, false) }.onFailure { _errors.tryEmit(it.message ?: "") } }
     fun delete(done: () -> Unit) = viewModelScope.launch {
         runCatching { api.delete("/api/sessions/${ai.bench.app.data.BenchApi.enc(sessionId)}") }.onSuccess { done() }.onFailure { _errors.tryEmit(it.message ?: "") }

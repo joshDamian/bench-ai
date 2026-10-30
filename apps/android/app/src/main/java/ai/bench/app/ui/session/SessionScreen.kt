@@ -89,12 +89,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.height
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.contentOrNull
 import androidx.compose.material.icons.filled.ArrowUpward
 import ai.bench.app.ui.MarkdownText
 import ai.bench.app.ui.MutedText
@@ -144,6 +146,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
         }
     }
 
+    // Dictation goes through the phone's own speech recogniser and lands in the message box.
+    val dictate = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { said -> draft = if (draft.isBlank()) said else "$draft $said" }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) vm.attach(context.contentResolver, uris)
     }
@@ -314,6 +320,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 running = running,
                 canSend = draft.isNotBlank() || attachments.any { it.ref != null },
                 onAttach = { picker.launch("*/*") },
+                onDictate = { runCatching { dictate.launch(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)) } },
                 onSend = {
                     val text = draft
                     draft = ""
@@ -396,6 +403,7 @@ private fun Composer(
     running: Boolean,
     canSend: Boolean,
     onAttach: () -> Unit,
+    onDictate: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
 ) {
@@ -436,6 +444,8 @@ private fun Composer(
                 FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
                     Box(Modifier.size(12.dp).background(c.bad, RoundedCornerShape(3.dp)))
                 }
+            } else if (!canSend) {
+                IconButton(onClick = onDictate, modifier = Modifier.size(44.dp)) { Icon(Icons.Default.Mic, "Dictate", tint = c.muted) }
             } else {
                 FilledIconButton(
                     onClick = onSend, enabled = canSend, modifier = Modifier.size(44.dp),
@@ -468,6 +478,18 @@ private fun SessionSheet(
                 NavRow("Rename", null, s.title) { onRename() }
                 NavRow("Permission mode", Mode.of(s.permission_mode).label) { mode = true }
                 s.task_id?.let { t -> NavRow("Task", null, "Changes, log and loop") { onDismiss(); onTask(t) } }
+                var routing by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
+                LaunchedEffect(s.id) { routing = vm.routing() }
+                routing?.let { r ->
+                    val all = (r as? kotlinx.serialization.json.JsonObject)?.get("all")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }
+                    val off = (r as? kotlinx.serialization.json.JsonObject)?.get("enabled")?.toString() == "false"
+                    val line = when {
+                        all != null -> "All: ${ai.bench.app.ui.routingLabel(all, providers)}"
+                        off -> "Off: as Claude Code decides"
+                        else -> ai.bench.app.ui.TIERS.joinToString(" · ") { (k, label, _) -> "$label ${ai.bench.app.ui.routingLabel((r as kotlinx.serialization.json.JsonObject)[k]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }, providers)}" }
+                    }
+                    NavRow("Subagents", null, line, chevron = false)
+                }
                 if (s.claude_session_id != null) NavRow("Open in Claude Code", null, "Its own terminal UI, resumed on the server") { onResume() }
                 SwitchRow("Resume after the usage limit", s.pause?.let { "Paused: ${it.message}" } ?: "Picks up where it stopped when the limit lifts", s.auto_resume ?: true) { vm.setAutoResume(it) }
                 if (s.pause != null) NavRow("Resume now", labelColor = c.accent, chevron = false) { vm.resumeNow(); onDismiss() }

@@ -522,3 +522,26 @@ fun NotificationsScreen(onBack: () -> Unit) {
         item { Text("These are for this phone. Android's own settings decide sound and vibration.", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp)) }
     }
 }
+
+// -- Diagnostics -----------------------------------------------------------------------------
+
+@Composable
+fun DiagnosticsScreen(store: BenchStore, onBack: () -> Unit) {
+    val c = Bench.colors
+    var checks by remember { mutableStateOf<List<JsonElement>?>(null) }
+    LaunchedEffect(Unit) { checks = runCatching { store.api.get("/api/doctor")["checks"].arr().orEmpty().toList() }.getOrDefault(emptyList()) }
+    Page("Diagnostics", "What the server has, from bench doctor", onBack) {
+        section("Checks")
+        item {
+            if (checks == null) Text("Checking…", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(6.dp))
+            else Card {
+                checks!!.forEach { k ->
+                    val ok = k["ok"].bool()
+                    val optional = k["optional"].bool()
+                    NavRow(k["name"].str().orEmpty(), if (ok) "OK" else if (optional) "Optional" else "Missing", k["detail"].str(),
+                        valueColor = if (ok) c.good else if (optional) c.muted else c.bad, chevron = false)
+                }
+            }
+        }
+    }
+}

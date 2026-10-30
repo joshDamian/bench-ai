@@ -112,6 +112,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
             composable("devices") { DevicesScreen(store, onBack = { nav.popBackStack() }) }
             composable("dashboard") { DashboardScreen(store, onBack = { nav.popBackStack() }) }
+            composable("diagnostics") { DiagnosticsScreen(store, onBack = { nav.popBackStack() }) }
             composable("notifications") { NotificationsScreen(onBack = { nav.popBackStack() }) }
             composable("limit") { UsageLimitScreen(store, onBack = { nav.popBackStack() }) }
             composable("subagents/{scope}", arguments = listOf(navArgument("scope") { type = NavType.StringType })) { e ->
