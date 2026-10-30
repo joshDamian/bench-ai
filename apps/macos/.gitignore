@@ -1,0 +1,5 @@
+Bench.xcodeproj/
+build/
+DerivedData/
+*.dmg
+Bench.app/
