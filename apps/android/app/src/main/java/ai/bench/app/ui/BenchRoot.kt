@@ -109,7 +109,13 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("home") { HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }) }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }) }
-            composable("settings") { SettingsScreen(store) }
+            composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
+            composable("devices") { DevicesScreen(store, onBack = { nav.popBackStack() }) }
+            composable("dashboard") { DashboardScreen(store, onBack = { nav.popBackStack() }) }
+            composable("limit") { UsageLimitScreen(store, onBack = { nav.popBackStack() }) }
+            composable("subagents/{scope}", arguments = listOf(navArgument("scope") { type = NavType.StringType })) { e ->
+                SubagentsScreen(store, e.arguments?.getString("scope") ?: "default", onBack = { nav.popBackStack() })
+            }
             composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable
                 val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })

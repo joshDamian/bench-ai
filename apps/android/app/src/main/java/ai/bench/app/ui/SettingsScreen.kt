@@ -60,7 +60,7 @@ import kotlinx.serialization.json.put
 /** The Settings tab, as its board draws it: Server, Claude, Alerts and Appearance in grouped rows. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(store: BenchStore) {
+fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
     val s by store.state.collectAsState()
     val c = Bench.colors
     val settings = BenchApp.instance.settings
@@ -87,54 +87,79 @@ fun SettingsScreen(store: BenchStore) {
     val effort = defaults["effort"].str()
     val mode = Mode.of(defaults["mode"].str() ?: "default")
 
+    var serverInfo by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
+    var deviceCount by remember { mutableStateOf<Int?>(null) }
+    var confirmRestart by remember { mutableStateOf(false) }
+    var update by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
+    LaunchedEffect(Unit) {
+        serverInfo = runCatching { store.api.get("/api/server/status") }.getOrNull()
+        deviceCount = runCatching { store.api.get("/api/devices").let { (it as? kotlinx.serialization.json.JsonArray)?.size } }.getOrNull()
+        update = runCatching { store.api.get("/api/server/update") }.getOrNull()
+    }
+    val uptime = (serverInfo["uptimeMs"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()?.let { ms ->
+        val d = (ms / 86_400_000).toInt(); if (d >= 1) "Up $d day${if (d == 1) "" else "s"}" else "Up ${(ms / 3_600_000).toInt()}h"
+    }
+    val routing = defaults["routing"]
+    val canUpdate = update["canUpdate"].let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "true" } && update["newer"] !is kotlinx.serialization.json.JsonNull && update["newer"] != null
+
     Scaffold(containerColor = c.bg, topBar = { TabTitle("Settings") }) { pad ->
-        Column(
-            Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(start = Space.lg, end = Space.lg, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Group("Server") {
-                Item("Connected to", listOfNotNull(store.api.config.baseUrl.substringAfter("://").substringBefore("."), s.version?.let { "Bench $it" }).joinToString(" · "))
-                Item("Pair another device", "Show a code to scan") {
-                    scope.launch { pairLink = runCatching { store.api.pairing()["urls"].let { (it as? kotlinx.serialization.json.JsonArray)?.firstOrNull().str() } }.getOrNull() }
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp)) {
+            section("Server")
+            item {
+                Card {
+                    NavRow(store.api.config.baseUrl.substringAfter("://").substringBefore(":").substringBefore("."), listOfNotNull(s.version?.let { "Bench $it" }).joinToString(), listOfNotNull(if (s.connected) "Connected" else "Not connected", uptime).joinToString(" · "), chevron = false)
+                    if (canUpdate) NavRow("Update Bench", "Ready", "A newer version is ready on the server", valueColor = c.accent) {
+                        scope.launch { runCatching { store.api.post("/api/server/update") } }
+                    }
+                    NavRow("Devices", deviceCount?.toString()) { onOpen("devices") }
+                    NavRow("Dashboard", null, "Memory, CPU, storage and spend") { onOpen("dashboard") }
+                    NavRow("Restart server", null, "Sessions pick up where they were", chevron = false) { confirmRestart = true }
                 }
-                Item("Disconnect", "Pair again to reconnect", danger = true) { confirmUnpair = true }
             }
-            Group("Claude") {
-                Item("Default model", modelName) { page = "model" }
-                Item("Default effort", effort?.let { Effort.of(it)?.label } ?: "Model default") { page = "effort" }
-                Item("Default mode", mode.label) { page = "mode" }
-                Item("Models", "${providers.sumOf { p -> p.models.count { it.enabled } }} turned on") { page = "models" }
+            section("Claude")
+            item {
+                Card {
+                    NavRow("Default model", modelName) { page = "model" }
+                    NavRow("Default effort", effort?.let { Effort.of(it)?.label } ?: "Auto") { page = "effort" }
+                    NavRow("Default mode", mode.label) { page = "mode" }
+                    NavRow("Models", "${providers.count { it.enabled }} providers") { page = "models" }
+                    NavRow("Subagents", if (routing["all"].str() != null) "One model" else "By tier") { onOpen("subagents/default") }
+                    NavRow("Usage limit", if (defaults["limits"]["autoResume"].let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "false" }) "Wait" else "Resume") { onOpen("limit") }
+                }
             }
-            Group("Alerts") {
-                Toggle("When a session needs you", "Approvals and questions", alertNeeds) { alertNeeds = it; prefs.edit().putBoolean("needs", it).apply() }
-                Toggle("When a session finishes", "Only if the app is closed", alertDone) { alertDone = it; prefs.edit().putBoolean("finished", it).apply() }
-            }
-            Group("Appearance") {
-                Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                    Text("Theme", fontSize = 15.sp)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.md), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                        BenchThemes.forEach { t ->
-                            Column(
-                                Modifier.width(72.dp).clickable { scope.launch { settings.setTheme(t.id) } },
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth().heightIn(min = 48.dp).background(t.colors.bg, RoundedCornerShape(12.dp))
-                                        .border(if (t.id == theme) 2.dp else 1.dp, if (t.id == theme) c.accent else c.line, RoundedCornerShape(12.dp))
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    Box(Modifier.weight(1f).size(14.dp).background(t.colors.surface1, RoundedCornerShape(4.dp)))
-                                    Box(Modifier.size(14.dp).background(t.colors.accent, CircleShape))
+            section("This phone")
+            item {
+                Card {
+                    SwitchRow("When a session needs you", "Approvals and questions", alertNeeds) { alertNeeds = it; prefs.edit().putBoolean("needs", it).apply() }
+                    SwitchRow("When a session finishes", "Only while the app is closed", alertDone) { alertDone = it; prefs.edit().putBoolean("finished", it).apply() }
+                    Custom {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                            Text("Theme", fontSize = 15.5.sp)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.md), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                                BenchThemes.forEach { t ->
+                                    Column(Modifier.width(68.dp).clickable { scope.launch { settings.setTheme(t.id) } }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            Modifier.fillMaxWidth().heightIn(min = 46.dp).background(t.colors.bg, RoundedCornerShape(14.dp))
+                                                .border(if (t.id == theme) 2.dp else 1.dp, if (t.id == theme) c.accent else c.line, RoundedCornerShape(14.dp)).padding(8.dp),
+                                            verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            Box(Modifier.weight(1f).size(12.dp).background(t.colors.surface1, RoundedCornerShape(4.dp)))
+                                            Box(Modifier.size(12.dp).background(t.colors.accent, CircleShape))
+                                        }
+                                        Text(t.name, fontSize = 11.sp, color = if (t.id == theme) c.text else c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
-                                Text(t.name, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
+                    NavRow("Disconnect this phone", null, "Pair again to reconnect", labelColor = c.bad, chevron = false) { confirmUnpair = true }
                 }
             }
-            MutedText("Bench for Android ${BuildConfigInfo.versionName}")
+            item { Text("Bench for Android ${BuildConfigInfo.versionName}", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 22.dp)) }
         }
+    }
+    if (confirmRestart) Confirm("Restart the server?", "Running turns stop and resume once it's back, usually within a few seconds.", "Restart", onDismiss = { confirmRestart = false }) {
+        scope.launch { runCatching { store.api.post("/api/server/restart") } }
     }
 
     when (page) {
