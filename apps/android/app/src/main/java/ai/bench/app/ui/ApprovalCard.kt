@@ -257,7 +257,7 @@ private fun Questions(approval: Approval, busy: Boolean, onAnswer: (JsonObject) 
                 }
             }
             val typed = answers[question].orEmpty().takeIf { a -> q["options"].arr().orEmpty().none { it["label"].str() == a } }.orEmpty()
-            OutlinedTextField(typed, { answers[question] = it }, Modifier.fillMaxWidth(), placeholder = { Text("Or type an answer") }, shape = RoundedCornerShape(16.dp))
+            TonalField(typed, { answers[question] = it }, "Or type an answer", "Your answer")
         }
     }
     val done = qs.all { !answers[it["question"].str().orEmpty()].isNullOrBlank() }

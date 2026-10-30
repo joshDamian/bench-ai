@@ -108,7 +108,8 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         ) {
             composable("home") { HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }) }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
-            composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }) }
+            composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }, onAsk = { nav.navigate("ask") }) }
+            composable("ask") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }, askOnly = true) }
             composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
             composable("devices") { DevicesScreen(store, onBack = { nav.popBackStack() }) }
             composable("dashboard") { DashboardScreen(store, onBack = { nav.popBackStack() }) }

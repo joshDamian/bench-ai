@@ -374,11 +374,11 @@ fun ShipSheet(store: BenchStore, taskId: String, base: String, git: TaskGit?, on
     var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDone, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Merge into $base", fontSize = 22.sp)
+            Text("Merge into $base", fontSize = 22.sp, fontWeight = FontWeight.Medium)
             Text("${git?.ahead ?: 0} commits · ${git?.files ?: 0} files · +${git?.added ?: 0} −${git?.removed ?: 0}", fontSize = 13.sp, color = c.muted)
             git?.canMerge?.let { m -> Text(if (m.ok) "No conflicts with $base" else m.reason ?: "Can't merge yet", fontSize = 13.sp, color = if (m.ok) c.good else c.bad) }
             Segmented(listOf("squash" to "Squash", "keep" to "Keep commits"), if (squash) "squash" else "keep", { squash = it == "squash" }, height = 44.dp)
-            if (squash) OutlinedTextField(message, { message = it }, Modifier.fillMaxWidth(), label = { Text("Commit message") }, shape = RoundedCornerShape(16.dp), colors = fieldColors())
+            if (squash) TonalField(message, { message = it }, "Commit message", "What this change does")
             error?.let { Text(it, color = c.bad, fontSize = 13.sp) }
             BigButton(if (busy) "Merging…" else "Merge", primary = true, enabled = !busy && git?.canMerge?.ok != false) {
                 busy = true
@@ -389,7 +389,7 @@ fun ShipSheet(store: BenchStore, taskId: String, base: String, git: TaskGit?, on
                     } catch (e: BenchError) { error = e.message } finally { busy = false }
                 }
             }
-            BigButton("Open pull request instead", height = 48.dp, enabled = !busy) {
+            BigButton("Open a pull request instead", height = 52.dp, enabled = !busy) {
                 busy = true
                 scope.launch {
                     try { store.api.taskAction(taskId, "pr", buildJsonObject { put("title", t?.title.orEmpty()) }); onDone() }

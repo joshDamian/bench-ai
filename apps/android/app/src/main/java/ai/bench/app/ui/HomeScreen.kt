@@ -279,15 +279,15 @@ private fun Color.compositeOver(bg: Color) = Color(
 
 /** Every session, searchable by title or project. Opened from Home's search button. */
 @Composable
-fun SessionsScreen(store: BenchStore, onOpen: (String) -> Unit, onBack: () -> Unit) {
+fun SessionsScreen(store: BenchStore, onOpen: (String) -> Unit, onBack: () -> Unit, askOnly: Boolean = false) {
     val s by store.state.collectAsState()
     val c = Bench.colors
     var query by rememberSaveable { mutableStateOf("") }
     var archived by rememberSaveable { mutableStateOf(false) }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { if (!askOnly) runCatching { focus.requestFocus() } }
     val needs = s.approvals.map { it.session_id }.toSet()
-    val rows = s.sessions.filter { (archived || it.archived_at == null) && (query.isBlank() || it.title.contains(query, true) || where(it, store, null).contains(query, true)) }
+    val rows = s.sessions.filter { (!askOnly || it.project_id == null) && (archived || it.archived_at == null) && (query.isBlank() || it.title.contains(query, true) || where(it, store, null).contains(query, true)) }
         .sortedByDescending { it.updated_at }
     Scaffold(containerColor = c.bg, topBar = {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 6.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -298,7 +298,7 @@ fun SessionsScreen(store: BenchStore, onOpen: (String) -> Unit, onBack: () -> Un
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = c.text),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
                     modifier = Modifier.weight(1f).focusRequester(focus),
-                    decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search sessions", fontSize = 16.sp, color = c.muted); inner() } },
+                    decorationBox = { inner -> Box { if (query.isEmpty()) Text(if (askOnly) "Search Ask Bench" else "Search sessions", fontSize = 16.sp, color = c.muted); inner() } },
                 )
             }
         }
@@ -344,37 +344,45 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, onPick: (St
 
 // -- Projects --------------------------------------------------------------------------------
 
+/** Projects: Ask Bench first, then every project in one list with what's happening in it. */
 @Composable
-fun ProjectsScreen(store: BenchStore, onOpen: (String) -> Unit, onAdd: () -> Unit) {
+fun ProjectsScreen(store: BenchStore, onOpen: (String) -> Unit, onAdd: () -> Unit, onAsk: () -> Unit = {}) {
     val s by store.state.collectAsState()
     val c = Bench.colors
+    val asks = s.sessions.count { it.project_id == null && it.archived_at == null }
     Scaffold(
         containerColor = c.bg,
         topBar = { TabTitle("Projects") },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add project", fontSize = 15.sp, fontWeight = FontWeight.Medium) },
-                containerColor = c.accent.copy(alpha = 0.22f).compositeOver(c.surface1), contentColor = c.accent)
+            ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add project", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
+                containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(18.dp))
         },
     ) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = Space.lg, end = Space.lg, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (s.ready && s.projects.isEmpty()) item { MutedText("No projects yet. Add one to clone a repository or use a folder on the server.") }
-            items(s.projects, key = { it.id }) { p ->
-                val tasks = s.tasks.count { it.project_id == p.id && it.state == "active" }
-                val busy = s.sessions.any { it.project_id == p.id && it.status == "running" }
-                val needs = s.approvals.any { a -> s.sessions.firstOrNull { it.id == a.session_id }?.project_id == p.id }
-                Row(
-                    Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(20.dp)).clickable { onOpen(p.id) }.padding(horizontal = Space.lg, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Box(Modifier.size(10.dp).background(when { needs -> c.warn; busy -> c.accent; tasks > 0 -> c.accent.copy(alpha = 0.6f); else -> c.dotIdle.copy(alpha = 0.45f) }, CircleShape))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(p.name, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                        Text(p.path.replace(Regex("^/(home|Users)/[^/]+"), "~"), fontSize = 12.5.sp, color = c.muted, fontFamily = Mono, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Text(when (tasks) { 0 -> "No tasks"; 1 -> "1 task"; else -> "$tasks tasks" }, fontSize = 12.5.sp, color = c.muted)
+        LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 112.dp)) {
+            item("ask") {
+                Box(Modifier.padding(top = 4.dp)) {
+                    Grouped(listOf(0)) { ListRow("Ask Bench", "Questions about Bench itself: what's running, what it costs", "idle", if (asks > 0) "$asks" else null) { onAsk() } }
                 }
             }
+            if (s.projects.isNotEmpty()) {
+                item("l") { Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 22.dp, bottom = 10.dp)) { Text("Projects", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.weight(1f)); Text("${s.projects.size}", fontSize = 13.sp, color = c.muted) } }
+                item("list") {
+                    val lastUsed = s.sessions.groupBy { it.project_id }.mapValues { (_, v) -> v.maxOf { it.updated_at } }
+                    Grouped(s.projects.sortedByDescending { lastUsed[it.id].orEmpty() }) { p ->
+                        val tasks = s.tasks.count { it.project_id == p.id && it.state == "active" }
+                        val busy = s.sessions.any { it.project_id == p.id && it.status == "running" }
+                        val needs = s.approvals.any { a -> s.sessions.firstOrNull { it.id == a.session_id }?.project_id == p.id }
+                        ListRow(
+                            p.name,
+                            listOfNotNull(when (tasks) { 0 -> null; 1 -> "1 task"; else -> "$tasks tasks" }, lastUsed[p.id]?.let { "used ${Format.ago(it)} ago" }).joinToString(" · ").ifEmpty { "No work yet" },
+                            when { needs -> "waiting"; busy -> "running"; else -> "idle" },
+                            when { needs -> "Needs you"; busy -> "Working"; else -> null },
+                            if (needs) c.warn else c.accent,
+                        ) { onOpen(p.id) }
+                    }
+                }
+            }
+            if (s.ready && s.projects.isEmpty()) item { Text("No projects yet. Add one to clone a repository or use a folder on the server.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 24.dp)) }
         }
     }
 }

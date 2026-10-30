@@ -105,7 +105,7 @@ fun PairScreen() {
         ) {
             Column(Modifier.widthIn(max = 440.dp).padding(top = 48.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
                 Box(
-                    Modifier.size(72.dp).background(c.surface3, RoundedCornerShape(22.dp)).border(1.dp, c.line, RoundedCornerShape(22.dp)),
+                    Modifier.size(72.dp).background(c.surface2, RoundedCornerShape(22.dp)),
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.QrCodeScanner, null, tint = c.accent, modifier = Modifier.size(32.dp)) }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -120,18 +120,11 @@ fun PairScreen() {
                     )
                 }
                 if (pasting) {
-                    OutlinedTextField(
-                        link, { link = it }, Modifier.fillMaxWidth(),
-                        label = { Text("Pairing link") },
-                        placeholder = { Text("https://machine.tailnet.ts.net/#/pair/…") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                    )
-                    OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("This phone's name") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                    TonalField(link, { link = it }, "Pairing link", "https://machine.ts.net/#/pair/…")
+                    TonalField(name, { name = it }, "This phone's name", "Pixel", "How it appears in Devices on the server")
                 } else {
                     Box(
-                        Modifier.fillMaxWidth().height(220.dp).background(c.surface1, RoundedCornerShape(28.dp)).border(1.dp, c.line, RoundedCornerShape(28.dp)).clickable { scanNow() },
+                        Modifier.fillMaxWidth().height(220.dp).background(c.surface1, RoundedCornerShape(28.dp)).clickable { scanNow() },
                         contentAlignment = Alignment.Center,
                     ) {
                         Box(Modifier.size(140.dp).border(3.dp, c.accent.copy(alpha = 0.8f), RoundedCornerShape(20.dp)))
