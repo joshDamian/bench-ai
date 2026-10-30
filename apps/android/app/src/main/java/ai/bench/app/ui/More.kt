@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -263,7 +264,7 @@ fun PairDialog(link: String, onDismiss: () -> Unit) {
     )
 }
 
-fun android.graphics.Bitmap.asImageBitmapCompat() = androidx.compose.ui.graphics.asImageBitmap(this)
+fun android.graphics.Bitmap.asImageBitmapCompat(): androidx.compose.ui.graphics.ImageBitmap = this.asImageBitmap()
 
 fun qrBitmap(text: String): android.graphics.Bitmap? = runCatching {
     val m = com.google.zxing.qrcode.QRCodeWriter().encode(text, com.google.zxing.BarcodeFormat.QR_CODE, 512, 512)
