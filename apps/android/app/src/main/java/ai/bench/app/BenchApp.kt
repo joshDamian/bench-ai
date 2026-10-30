@@ -76,14 +76,31 @@ class BenchApp : Application() {
         store.start()
         // While the process lives, an approval that arrives with the app in the background
         // is a notification, so a phone in a pocket still hears that Claude is waiting.
+        val prefs = getSharedPreferences("alerts", 0)
         notifierJob = appScope.launch {
-            store.newApprovals.collect { a ->
-                if (!foreground) {
-                    val title = store.state.value.sessions.firstOrNull { it.id == a.session_id }?.title ?: "Session"
-                    Notifier.approval(this@BenchApp, a, title)
+            launch {
+                store.newApprovals.collect { a ->
+                    if (!foreground && prefs.getBoolean("needs", true)) {
+                        val title = store.state.value.sessions.firstOrNull { it.id == a.session_id }?.title ?: "Session"
+                        Notifier.approval(this@BenchApp, a, title)
+                    }
                 }
             }
+            // A session leaving "running" finished its turn, or stopped with an error.
+            var last = emptyMap<String, String>()
+            store.state.collect { st ->
+                val now = st.sessions.associate { it.id to it.status }
+                if (!foreground && last.isNotEmpty()) for (s in st.sessions) {
+                    if (last[s.id] != "running" || s.status == "running") continue
+                    when {
+                        s.status == "error" && prefs.getBoolean("errors", true) -> Notifier.turn(this@BenchApp, s.id, s.title, "Stopped with an error" + (s.error?.let { ": $it" } ?: ""))
+                        s.status == "idle" && prefs.getBoolean("finished", false) -> Notifier.turn(this@BenchApp, s.id, s.title, "Finished")
+                    }
+                }
+                last = now
+            }
         }
+        if (prefs.getBoolean("background", false)) ConnectionService.start(this)
     }
 
     companion object {

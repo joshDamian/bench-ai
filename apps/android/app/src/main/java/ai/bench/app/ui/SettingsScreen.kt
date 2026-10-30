@@ -130,8 +130,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
             section("This phone")
             item {
                 Card {
-                    SwitchRow("When a session needs you", "Approvals and questions", alertNeeds) { alertNeeds = it; prefs.edit().putBoolean("needs", it).apply() }
-                    SwitchRow("When a session finishes", "Only while the app is closed", alertDone) { alertDone = it; prefs.edit().putBoolean("finished", it).apply() }
+                    NavRow("Notifications", if (prefs.getBoolean("background", false)) "Always" else "While open") { onOpen("notifications") }
                     Custom {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(Space.md)) {
                             Text("Theme", fontSize = 15.5.sp)

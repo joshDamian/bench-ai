@@ -488,3 +488,37 @@ fun UsageLimitScreen(store: BenchStore, onBack: () -> Unit) {
         }
     }
 }
+
+// -- Notifications ---------------------------------------------------------------------------
+
+@Composable
+fun NotificationsScreen(onBack: () -> Unit) {
+    val c = Bench.colors
+    val app = ai.bench.app.BenchApp.instance
+    val prefs = remember { app.getSharedPreferences("alerts", 0) }
+    var background by remember { mutableStateOf(prefs.getBoolean("background", false)) }
+    var needs by remember { mutableStateOf(prefs.getBoolean("needs", true)) }
+    var finished by remember { mutableStateOf(prefs.getBoolean("finished", false)) }
+    var errors by remember { mutableStateOf(prefs.getBoolean("errors", true)) }
+    fun set(k: String, v: Boolean) = prefs.edit().putBoolean(k, v).apply()
+    Page("Notifications", "What reaches you when Bench isn't open", onBack) {
+        section("Connection")
+        item {
+            Card {
+                SwitchRow("Stay connected in the background", "Keeps a quiet notification so Android doesn't close the connection. Without it, alerts stop soon after you leave the app.", background) { on ->
+                    background = on; set("background", on)
+                    if (on) ai.bench.app.ConnectionService.start(app) else ai.bench.app.ConnectionService.stop(app)
+                }
+            }
+        }
+        section("Tell me when")
+        item {
+            Card {
+                SwitchRow("Claude needs you", "Approvals, questions and plans", needs) { needs = it; set("needs", it) }
+                SwitchRow("A turn finishes", null, finished) { finished = it; set("finished", it) }
+                SwitchRow("A turn stops with an error", null, errors) { errors = it; set("errors", it) }
+            }
+        }
+        item { Text("These are for this phone. Android's own settings decide sound and vibration.", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp)) }
+    }
+}
