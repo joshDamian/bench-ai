@@ -78,6 +78,13 @@ import ai.bench.app.ui.ApprovalSheet
 import ai.bench.app.data.Block
 import ai.bench.app.data.blocks
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
+import ai.bench.app.ui.Card
+import ai.bench.app.ui.NavRow
+import ai.bench.app.ui.SwitchRow
+import ai.bench.app.ui.Custom
+import ai.bench.app.ui.PickDialog
+import ai.bench.app.ui.Confirm
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -100,7 +107,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}) {
+fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}, onResume: () -> Unit = {}) {
     var providers by remember { mutableStateOf<List<ai.bench.app.data.ProviderInfo>>(emptyList()) }
     var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { providers = vm.providers() }
@@ -197,23 +204,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 },
                 actions = {
                     IconButton(onClick = onTerminal) { Icon(Icons.Default.Terminal, "Terminal") }
-                    Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                        DropdownMenu(menu, { menu = false }) {
-                            session?.task_id?.let { t -> DropdownMenuItem({ Text("Changes") }, onClick = { menu = false; onTask(t) }) }
-                            DropdownMenuItem({ Text("Permission mode…") }, onClick = { menu = false; modeMenu = true })
-                            DropdownMenuItem({ Text("Rename") }, onClick = { menu = false; renaming = true })
-                            DropdownMenuItem({ Text("Archive") }, onClick = { menu = false; vm.archive(onBack) })
-                        }
-                        DropdownMenu(modeMenu, { modeMenu = false }) {
-                            Mode.entries.forEach { m ->
-                                DropdownMenuItem(
-                                    { Text(m.label + if (m.wire == session?.permission_mode) "  ✓" else "") },
-                                    onClick = { modeMenu = false; vm.setMode(m.wire) },
-                                )
-                            }
-                        }
-                    }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Session settings") }
                 },
             )
         },
@@ -277,9 +268,21 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 )
             }
 
-            if (suggestion.isNotBlank() && !running && approvals.isEmpty() && draft.isEmpty()) {
-                LazyRow(contentPadding = PaddingValues(horizontal = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    item { AssistChip(onClick = { draft = suggestion }, label = { Text(suggestion, maxLines = 1, overflow = TextOverflow.Ellipsis) }) }
+            val commands by vm.commands.collectAsState()
+            val slash = if (draft.startsWith("/") && !draft.contains(' ')) commands.filter { it.name.startsWith(draft.drop(1), ignoreCase = true) }.take(6) else emptyList()
+            if (slash.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).background(Bench.colors.surface2, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp))) {
+                    slash.forEach { cmd ->
+                        Column(Modifier.fillMaxWidth().clickable { draft = "/${cmd.name} " }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text("/" + cmd.name + if (cmd.argumentHint.isNotBlank()) " " + cmd.argumentHint else "", fontFamily = ai.bench.app.ui.theme.Mono, fontSize = 14.sp)
+                            if (cmd.description.isNotBlank()) Text(cmd.description, fontSize = 12.5.sp, color = Bench.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            } else if (suggestion.isNotBlank() && !running && approvals.isEmpty() && draft.isEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp)) {
+                    Text(suggestion, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.background(Bench.colors.surface1, RoundedCornerShape(18.dp)).clickable { draft = suggestion }.padding(horizontal = 14.dp, vertical = 9.dp))
                 }
             }
 
@@ -320,6 +323,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 onStop = { vm.interrupt() },
             )
         }
+    }
+
+    if (menu) session?.let { ses ->
+        SessionSheet(ses, providers, vm, onDismiss = { menu = false }, onRename = { menu = false; renaming = true }, onTask = onTask, onResume = { menu = false; onResume() }, onDeleted = onBack)
     }
 
     if (picking) session?.let { ses ->
@@ -442,3 +449,43 @@ private fun Composer(
 /** The list's keys in drawing order (newest first), for finding a remembered item again. */
 private fun listKeys(bl: List<Block>, streaming: Boolean): List<String> =
     (if (streaming) listOf("stream") else emptyList()) + bl.asReversed().map { it.key }
+
+/** Session settings, as its board draws it: rename, mode, the usage limit, spend by model, archive and delete. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SessionSheet(
+    s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>, vm: SessionViewModel,
+    onDismiss: () -> Unit, onRename: () -> Unit, onTask: (String) -> Unit, onResume: () -> Unit, onDeleted: () -> Unit,
+) {
+    val c = Bench.colors
+    var mode by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Session", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 6.dp))
+            Card {
+                NavRow("Rename", null, s.title) { onRename() }
+                NavRow("Permission mode", Mode.of(s.permission_mode).label) { mode = true }
+                s.task_id?.let { t -> NavRow("Task", null, "Changes, log and loop") { onDismiss(); onTask(t) } }
+                if (s.claude_session_id != null) NavRow("Open in Claude Code", null, "Its own terminal UI, resumed on the server") { onResume() }
+                SwitchRow("Resume after the usage limit", s.pause?.let { "Paused: ${it.message}" } ?: "Picks up where it stopped when the limit lifts", s.auto_resume ?: true) { vm.setAutoResume(it) }
+                if (s.pause != null) NavRow("Resume now", labelColor = c.accent, chevron = false) { vm.resumeNow(); onDismiss() }
+            }
+            val usage = s.model_usage?.entries?.mapNotNull { (k, v) -> (v as? kotlinx.serialization.json.JsonObject)?.get("cost")?.let { k to (it.toString().toDoubleOrNull() ?: 0.0) } }.orEmpty().sortedByDescending { it.second }
+            Card {
+                NavRow("Spend", ai.bench.app.data.Format.cost(s.cost), "${s.input_tokens + s.output_tokens} tokens", chevron = false)
+                usage.forEach { (model, cost) ->
+                    NavRow(providers.flatMap { it.models }.firstOrNull { it.name == model || it.id == model }?.label ?: model, ai.bench.app.data.Format.cost(cost), chevron = false)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (s.archived_at == null) ai.bench.app.ui.BigButton("Archive", Modifier.weight(1f), height = 52.dp) { vm.archive(onDeleted) }
+                else ai.bench.app.ui.BigButton("Unarchive", Modifier.weight(1f), height = 52.dp) { vm.unarchive(); onDismiss() }
+                ai.bench.app.ui.BigButton("Delete", Modifier.weight(1f), height = 52.dp, danger = true) { deleting = true }
+            }
+        }
+    }
+    if (mode) PickDialog("Permission mode", Mode.entries.map { it.wire to it.label }, s.permission_mode, onDismiss = { mode = false }) { vm.setMode(it) }
+    if (deleting) Confirm("Delete this session?", "Its conversation is removed from Bench. This can't be undone.", "Delete", onDismiss = { deleting = false }) { vm.delete { onDismiss(); onDeleted() } }
+}

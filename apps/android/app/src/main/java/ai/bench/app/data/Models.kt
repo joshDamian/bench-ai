@@ -74,6 +74,10 @@ data class Session(
     val archived_at: String? = null,
     /** Set while the Claude login's usage limit has this session stopped. */
     val pause: SessionPause? = null,
+    /** Whether Bench resumes it when the limit lifts; null follows the default. */
+    val auto_resume: Boolean? = null,
+    /** Spend by model, subagents included. */
+    val model_usage: kotlinx.serialization.json.JsonObject? = null,
 )
 
 @Serializable

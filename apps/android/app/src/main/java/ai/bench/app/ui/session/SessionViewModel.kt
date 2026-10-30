@@ -1,5 +1,7 @@
 package ai.bench.app.ui.session
 
+import kotlinx.serialization.json.put
+
 import android.content.ContentResolver
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -187,6 +189,17 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
         runCatching { api.patch("/api/sessions/${ai.bench.app.data.BenchApi.enc(sessionId)}", body) }.onFailure { _errors.tryEmit(it.message ?: "") }
     }
     suspend fun providers() = runCatching { api.providers() }.getOrDefault(emptyList())
+
+    fun unarchive() = viewModelScope.launch { runCatching { api.archive(sessionId, false) }.onFailure { _errors.tryEmit(it.message ?: "") } }
+    fun delete(done: () -> Unit) = viewModelScope.launch {
+        runCatching { api.delete("/api/sessions/${ai.bench.app.data.BenchApi.enc(sessionId)}") }.onSuccess { done() }.onFailure { _errors.tryEmit(it.message ?: "") }
+    }
+    fun setAutoResume(on: Boolean) = viewModelScope.launch {
+        runCatching { api.post("/api/sessions/${ai.bench.app.data.BenchApi.enc(sessionId)}/limit", kotlinx.serialization.json.buildJsonObject { put("autoResume", on) }) }
+    }
+    fun resumeNow() = viewModelScope.launch {
+        runCatching { api.post("/api/sessions/${ai.bench.app.data.BenchApi.enc(sessionId)}/limit", kotlinx.serialization.json.buildJsonObject { put("resumeNow", true) }) }
+    }
 
     fun rename(title: String) = viewModelScope.launch { runCatching { api.rename(sessionId, title) }.onFailure { _errors.tryEmit(it.message ?: "") } }
 

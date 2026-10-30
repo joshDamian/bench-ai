@@ -46,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.bench.app.data.BenchError
+import ai.bench.app.data.get
+import ai.bench.app.data.str
 import ai.bench.app.data.BenchStore
 import ai.bench.app.data.GitRepo
 import ai.bench.app.data.Mode
@@ -331,7 +333,10 @@ fun AddProjectSheet(store: BenchStore, onDismiss: () -> Unit, onAdded: (String) 
                     }
                     TonalField(name, { name = it }, "Name", "my-app", "Cloned on the server with its GitHub login")
                 }
-                "folder" -> TonalField(folder, { folder = it }, "Path on the server", "~/code/my-app", "A git repository that's already there")
+                "folder" -> {
+                    TonalField(folder, { folder = it }, "Path on the server", "~/code/my-app", "A git repository that's already there")
+                    FolderBrowser(store, folder.ifBlank { null }) { folder = it }
+                }
                 else -> TonalField(name, { name = it }, "Name", "my-app", "Starts an empty git repository")
             }
             error?.let { Text(it, color = c.bad, fontSize = 13.sp) }
@@ -410,5 +415,43 @@ fun TonalField(value: String, onChange: (String) -> Unit, label: String, placeho
             decorationBox = { inner -> androidx.compose.foundation.layout.Box { if (value.isEmpty()) Text(placeholder, fontSize = 16.sp, color = c.muted); inner() } },
         )
         help?.let { Text(it, fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp)) }
+    }
+}
+
+/** Browse the server's folders: tap to go in, "Use" to choose one. Repositories are marked. */
+@Composable
+private fun FolderBrowser(store: BenchStore, start: String?, onPick: (String) -> Unit) {
+    val c = Bench.colors
+    var at by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
+    var path by remember { mutableStateOf(start) }
+    LaunchedEffect(path) {
+        at = runCatching { store.api.get("/api/fs" + (path?.let { "?path=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")) }.getOrNull()
+    }
+    val dir = at["path"].str()
+    Column(Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(dir?.replace(Regex("^/(home|Users)/[^/]+"), "~") ?: "Reading…", fontSize = 13.sp, color = c.muted, fontFamily = ai.bench.app.ui.theme.Mono, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.StartEllipsis, modifier = Modifier.weight(1f))
+            if (dir != null) Text("Use", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = c.accent, modifier = Modifier.clickable { onPick(dir) }.padding(start = 12.dp, top = 4.dp, bottom = 4.dp))
+        }
+        androidx.compose.material3.HorizontalDivider(color = c.line.copy(alpha = 0.5f))
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 260.dp)) {
+            at["parent"].str()?.let { parent -> item { BrowseRow("..", "Up a folder", c.muted) { path = parent } } }
+            val entries = (at["entries"] as? kotlinx.serialization.json.JsonArray).orEmpty()
+            items(entries.size) { i ->
+                val e = entries[i]
+                val name = e["name"].str().orEmpty()
+                BrowseRow(name, if (e["repo"].let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "true" }) "Git repository" else null, c.text) { path = "$dir/$name" }
+            }
+            if (entries.isEmpty() && at != null) item { Text("No folders here.", fontSize = 14.sp, color = c.muted, modifier = Modifier.padding(16.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun BrowseRow(name: String, sub: String?, color: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.Center) {
+        Text(name, fontSize = 15.sp, color = color)
+        sub?.let { Text(it, fontSize = 12.sp, color = Bench.colors.accent) }
     }
 }

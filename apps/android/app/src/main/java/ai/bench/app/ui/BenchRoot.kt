@@ -119,7 +119,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable
                 val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })
-                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") })
+                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") }, onResume = { nav.navigate("shell/claude/$id") })
             }
             composable("terminal/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable
@@ -140,6 +140,11 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
                 val kind = e.arguments?.getString("kind") ?: return@composable
                 val id = e.arguments?.getString("id") ?: return@composable
                 val st = store.state.value
+                if (kind == "claude") {
+                    val ses = st.sessions.firstOrNull { it.id == id }
+                    TerminalScreen(store.api, "session=${java.net.URLEncoder.encode(id, "UTF-8")}", ses?.title ?: "Session", "claude --resume", onBack = { nav.popBackStack() })
+                    return@composable
+                }
                 val (title, place) = if (kind == "task") st.tasks.firstOrNull { it.id == id }.let { (it?.title ?: "Task") to (it?.branch ?: "") }
                     else st.projects.firstOrNull { it.id == id }.let { (it?.name ?: "Project") to (it?.path?.replace(Regex("^/(home|Users)/[^/]+"), "~") ?: "") }
                 TerminalScreen(store.api, "$kind=${java.net.URLEncoder.encode(id, "UTF-8")}", title, place, onBack = { nav.popBackStack() })
