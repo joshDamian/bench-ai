@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -65,6 +66,15 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/** "mcp__claude_ai_Claude_Docs__batch" reads as "Use Claude Docs: batch". */
+fun toolName(tool: String): String {
+    if (!tool.startsWith("mcp__")) return "Use $tool"
+    val parts = tool.removePrefix("mcp__").split("__")
+    val server = parts.first().removePrefix("claude_ai_").replace('_', ' ')
+    val action = parts.drop(1).joinToString(" ").replace('_', ' ')
+    return "Use $server" + if (action.isNotBlank()) ": $action" else ""
+}
+
 /** What Claude is asking to do, as a short verb phrase. */
 fun askLine(a: Approval) = when (a.tool) {
     "Bash" -> "Run a command"
@@ -74,7 +84,7 @@ fun askLine(a: Approval) = when (a.tool) {
     "WebSearch" -> "Search the web"
     "ExitPlanMode" -> "Claude has a plan"
     "AskUserQuestion" -> "Claude is asking"
-    else -> a.title ?: "Use ${a.tool}"
+    else -> a.title ?: toolName(a.tool)
 }
 
 private fun answer(allow: Boolean, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}) =
@@ -95,6 +105,9 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
             .shadow(24.dp, RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
             .background(c.surface2, RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
             .navigationBarsPadding()
+            // Never taller than most of the screen; with the keyboard up it scrolls inside.
+            .heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.72f).dp)
+            .verticalScroll(rememberScrollState())
             .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -114,7 +127,10 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
             }
             "AskUserQuestion" -> Questions(approval, busy, onAnswer)
             else -> {
-                Preview(approval, cwd, big = true)
+                // While writing why, the request folds to its first lines so the note has room.
+                Box(Modifier.fillMaxWidth().heightIn(max = if (denying) 96.dp else 280.dp).verticalScroll(rememberScrollState())) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Preview(approval, cwd, big = true) }
+                }
                 BigButton("Allow", primary = true, enabled = !busy) { onAnswer(answer(true)) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     BigButton("Always allow", Modifier.weight(1f), height = 48.dp, enabled = !busy) { onAnswer(answer(true) { put("always", true) }) }
@@ -123,7 +139,16 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
             }
         }
         if (denying) {
-            OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth(), placeholder = { Text("Tell Claude why, or what to do instead") }, shape = RoundedCornerShape(16.dp))
+            val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+            androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+            androidx.compose.foundation.text.BasicTextField(
+                note, { note = it },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 22.sp, color = c.text),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 140.dp).background(c.surface1, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 15.dp)
+                    .focusRequester(focus),
+                decorationBox = { inner -> Box { if (note.isEmpty()) Text(if (approval.tool == "ExitPlanMode") "What should change?" else "Tell Claude why, or what to do instead", fontSize = 16.sp, color = c.muted); inner() } },
+            )
             BigButton(if (approval.tool == "ExitPlanMode") "Send" else "Deny", height = 48.dp, danger = approval.tool != "ExitPlanMode", enabled = !busy) {
                 onAnswer(answer(false) { put("message", note.ifBlank { if (approval.tool == "ExitPlanMode") "Keep planning." else "" }) })
             }
