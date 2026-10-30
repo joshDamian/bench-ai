@@ -153,7 +153,7 @@ fun TurnBlock(turn: Block.Turn, live: Boolean, cwd: String, thinking: Map<String
             }
         }
         turn.prose.forEach { MarkdownText(it) }
-        if (turn.reply.isNotEmpty()) MarkdownText(turn.reply)
+        if (turn.reply.isNotEmpty()) { MarkdownText(turn.reply); ArtifactCards(turn.reply) }
         if (turn.done && (turn.cost != null || turn.reply.isNotEmpty())) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             turn.cost?.let { Text(it, fontSize = 12.5.sp, color = c.muted) }
             if (turn.reply.isNotEmpty()) {

@@ -41,7 +41,7 @@ data class Stream(val text: String = "", val thinking: String = "")
 private const val PAGE = 400
 
 class SessionViewModel(val sessionId: String, private val store: BenchStore) : ViewModel() {
-    private val api = store.api
+    val api = store.api
 
     private val events = MutableStateFlow<List<SessionEvent>>(emptyList())
     private val _stream = MutableStateFlow(Stream())

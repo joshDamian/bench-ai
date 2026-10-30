@@ -159,6 +159,8 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     // scrolling of ours. Scrolled up to read, it stays put. Where you were reading is kept per
     // session and restored next time; at the bottom, nothing is kept and it opens at the end.
     val bl = remember(rows) { blocks(rows) }
+    val files = remember(vm.sessionId) { SessionFiles(vm.api, vm.sessionId) }
+    LaunchedEffect(bl) { files.stat(bl.mapNotNull { (it as? Block.Turn)?.reply?.takeIf { r -> r.isNotEmpty() } }) }
     val atBottom by remember { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 48 } }
     // Following the conversation: on while you're at the bottom, off once you scroll up to read,
     // on again when you come back down, jump to latest, or send. A list keeps the item you were
@@ -215,7 +217,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             )
         },
         containerColor = Bench.colors.bg,
-    ) { pad ->
+    ) { pad -> WithFiles(files) {
         Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
             Box(Modifier.weight(1f)) {
                 LazyColumn(
@@ -330,7 +332,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 onStop = { vm.interrupt() },
             )
         }
-    }
+    } }
 
     if (menu) session?.let { ses ->
         SessionSheet(ses, providers, vm, onDismiss = { menu = false }, onRename = { menu = false; renaming = true }, onTask = onTask, onResume = { menu = false; onResume() }, onDeleted = onBack)
