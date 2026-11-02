@@ -218,10 +218,48 @@ struct Composer: View {
     var focused: FocusState<Bool>.Binding
     @State private var importing = false
 
+    @State private var pick = 0
+
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.attachments.contains { $0.ref != nil } }
+
+    /// Typing "/name" with no space yet lists the matching commands.
+    private var matches: [SlashCommand] {
+        guard draft.hasPrefix("/"), !draft.contains(" "), !draft.contains("\n") else { return [] }
+        let q = draft.dropFirst().lowercased()
+        let all = model.commands.filter { q.isEmpty || $0.name.lowercased().hasPrefix(q) }
+        let rest = model.commands.filter { !q.isEmpty && !$0.name.lowercased().hasPrefix(q) && $0.name.lowercased().contains(q) }
+        return Array((all + rest).prefix(8))
+    }
+
+    private func choose(_ c: SlashCommand) {
+        draft = "/\(c.name) "
+        pick = 0
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
+            let list = matches
+            if !list.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(list.enumerated()), id: \.offset) { i, c in
+                        Button { choose(c) } label: {
+                            HStack(spacing: 10) {
+                                Text("/\(c.name)").font(.system(size: 13, design: .monospaced)).fixedSize()
+                                Text(c.description ?? "").font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10).frame(height: 30)
+                            .background(i == min(pick, list.count - 1) ? theme.colors.fill(0.1) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(6)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .background(theme.colors.surface3.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(theme.colors.fill(0.1)))
+            }
             if !model.suggestion.isEmpty && !running && draft.isEmpty {
                 Button(model.suggestion) { draft = model.suggestion }
                     .buttonStyle(TonalButton(height: 26))
@@ -254,7 +292,12 @@ struct Composer: View {
                     .font(.system(size: TypeScale.md))
                     .lineLimit(2...10)
                     .focused(focused)
-                    .onSubmit(send)
+                    .onSubmit { if let c = matches[safe: pick] { choose(c) } else { send() } }
+                    .onChange(of: draft) { _, _ in pick = 0 }
+                    .onKeyPress(.downArrow) { guard !matches.isEmpty else { return .ignored }; pick = min(pick + 1, matches.count - 1); return .handled }
+                    .onKeyPress(.upArrow) { guard !matches.isEmpty else { return .ignored }; pick = max(pick - 1, 0); return .handled }
+                    .onKeyPress(.tab) { guard let c = matches[safe: pick] else { return .ignored }; choose(c); return .handled }
+                    .onKeyPress(.escape) { guard !matches.isEmpty else { return .ignored }; draft = ""; return .handled }
                 HStack(spacing: Space.sm) {
                     Button { importing = true } label: { Image(systemName: "plus").font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26) }
                         .buttonStyle(.plain)
@@ -441,4 +484,8 @@ extension View {
     func pill(_ theme: BenchThemeSpec) -> some View {
         background(theme.colors.fill(0.08), in: Capsule())
     }
+}
+
+extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

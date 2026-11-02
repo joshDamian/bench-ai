@@ -28,6 +28,8 @@ final class SessionModel {
     var loading = true
     var hasOlder = false
     var suggestion = ""
+    /// The session's slash commands, for the composer's "/" list.
+    var commands: [SlashCommand] = []
     var attachments: [Attachment] = []
     var busyApprovals: Set<String> = []
     var thinking: [String: String] = [:]
@@ -68,6 +70,7 @@ final class SessionModel {
         do {
             let d = try await store.api.session(sessionId, after: after)
             store.apply(d.session)
+            if let c = d.commands, !c.isEmpty { commands = c }
             events = Transcript.merge(events, d.events, suffix: after != nil)
             if after == nil { hasOlder = d.events.count >= page }
             if d.events.contains(where: { Transcript.finishing.contains($0.kind) }) { clearStream() }
