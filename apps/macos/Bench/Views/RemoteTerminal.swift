@@ -26,8 +26,6 @@ final class RemoteShell: NSObject, TerminalViewDelegate {
         ws.resume()
         onState?(nil)
         receive(ws)
-        let t = view.getTerminal()
-        sendFrame(["type": "resize", "cols": t.cols, "rows": t.rows])
     }
 
     func close() { socket?.cancel(with: .goingAway, reason: nil); socket = nil }

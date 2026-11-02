@@ -43,7 +43,6 @@ struct SessionView: View {
         .navigationTitle(session?.title ?? "Session")
         .hideToolbarTitle()
         .toolbar { if !embedded { toolbar(session) } }
-        .toolbarBackground(.hidden, for: .windowToolbar)
         .inspector(isPresented: embedded ? .constant(false) : $app.showInspector) {
             SessionInspector(store: store, sessionId: sessionId, files: files)
                 .inspectorColumnWidth(min: 280, ideal: 340, max: 480)

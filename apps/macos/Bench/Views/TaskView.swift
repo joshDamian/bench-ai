@@ -84,7 +84,6 @@ struct TaskView: View {
         .navigationTitle(model.task?.title ?? "Task")
         .hideToolbarTitle()
         .toolbar { toolbar }
-        .toolbarBackground(.hidden, for: .windowToolbar)
         .task(id: store.task(taskId)) { await model.load() }
         .onChange(of: app.shipRequest) { _, _ in if model.task?.state == "active" { shipping = true } }
         .sheet(isPresented: $shipping) { ShipSheet(model: model).environment(\.theme, theme) }
