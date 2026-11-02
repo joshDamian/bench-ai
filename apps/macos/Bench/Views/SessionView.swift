@@ -43,6 +43,7 @@ struct SessionView: View {
         .navigationTitle(session?.title ?? "Session")
         .hideToolbarTitle()
         .toolbar { if !embedded { toolbar(session) } }
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .inspector(isPresented: embedded ? .constant(false) : $app.showInspector) {
             SessionInspector(store: store, sessionId: sessionId, files: files)
                 .inspectorColumnWidth(min: 280, ideal: 340, max: 480)
@@ -165,6 +166,14 @@ struct SessionView: View {
             .overlay(alignment: .bottom) {
                 if approvals.isEmpty {
                     Composer(model: model, draft: $draft, running: running, embedded: embedded, focused: $composerFocused)
+                        .padding(.top, 28)
+                        .background(alignment: .bottom) {
+                            VStack(spacing: 0) {
+                                LinearGradient(colors: [theme.colors.bg.opacity(0), theme.colors.bg], startPoint: .top, endPoint: .bottom).frame(height: 40)
+                                theme.colors.bg
+                            }
+                            .allowsHitTesting(false)
+                        }
                 }
             }
             .overlay(alignment: .bottomTrailing) {
@@ -347,9 +356,11 @@ struct ModelMenu: View {
                 Text(label)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
             }
+            .foregroundStyle(theme.colors.text)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .tint(theme.colors.text)
         .fixedSize()
         .help("Model and effort. Applies from your next message.")
         if capsule { menu.toolbarCapsule() } else { menu.font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) }
@@ -370,6 +381,7 @@ struct ModelMenu: View {
 
 /// The session's permission mode, as a toolbar capsule.
 struct ModeMenu: View {
+    @Environment(\.theme) private var theme
     let store: BenchStore
     let session: Session
 
@@ -385,9 +397,11 @@ struct ModeMenu: View {
                 Text(session.mode.label)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
             }
+            .foregroundStyle(theme.colors.text)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .tint(theme.colors.text)
         .fixedSize()
         .toolbarCapsule()
         .help("Permissions")

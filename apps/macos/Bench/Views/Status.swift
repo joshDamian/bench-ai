@@ -208,3 +208,34 @@ struct GroupLabel: View {
             .padding(.leading, 4).padding(.bottom, 2)
     }
 }
+
+/// The boards' segmented control: a tonal track with a quiet grey selection, not the
+/// system's accent-filled one.
+struct Segments<T: Hashable>: View {
+    @Environment(\.theme) private var theme
+    let options: [(T, String)]
+    @Binding var selection: T
+    var fill = false
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(options.enumerated()), id: \.offset) { _, o in
+                let on = o.0 == selection
+                Button { selection = o.0 } label: {
+                    Text(o.1)
+                        .font(.system(size: 12, weight: on ? .medium : .regular))
+                        .foregroundStyle(on ? theme.colors.text : theme.colors.muted)
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: fill ? .infinity : nil)
+                        .frame(height: 24)
+                        .background(on ? theme.colors.fill(0.14) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 9))
+    }
+}

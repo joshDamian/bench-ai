@@ -83,6 +83,7 @@ struct TaskView: View {
         .navigationTitle(model.task?.title ?? "Task")
         .hideToolbarTitle()
         .toolbar { toolbar }
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .task(id: store.task(taskId)) { await model.load() }
         .onChange(of: app.shipRequest) { _, _ in if model.task?.state == "active" { shipping = true } }
         .sheet(isPresented: $shipping) { ShipSheet(model: model).environment(\.theme, theme) }
@@ -161,12 +162,7 @@ struct TaskView: View {
             .padding(.leading, Space.xs)
         }
         ToolbarItem(placement: .principal) {
-            Picker("View", selection: $pane) {
-                ForEach(Pane.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            Segments(options: Pane.allCases.map { ($0, $0.rawValue) }, selection: $pane)
         }
         ToolbarItemGroup(placement: .primaryAction) {
             if let b = model.busy {

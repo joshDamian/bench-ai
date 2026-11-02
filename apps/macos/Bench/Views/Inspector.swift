@@ -173,13 +173,7 @@ struct SessionInspector: View {
     var body: some View {
         @Bindable var files = files
         VStack(spacing: 0) {
-            Picker("", selection: $tab) {
-                Text("Changes").tag("changes")
-                Text("Files").tag("files")
-                Text("Session").tag("session")
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            Segments(options: [("changes", "Changes"), ("files", "Files"), ("session", "Session")], selection: $tab, fill: true)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             switch tab {

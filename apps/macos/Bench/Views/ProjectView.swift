@@ -36,6 +36,7 @@ struct ProjectView: View {
         .navigationTitle(project?.name ?? "Project")
         .hideToolbarTitle()
         .toolbar { toolbar }
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .task(id: projectId) { await load() }
         .sheet(isPresented: $committing) {
             CommitSheet(store: store, projectId: projectId, git: git) { await load() }.environment(\.theme, theme)
