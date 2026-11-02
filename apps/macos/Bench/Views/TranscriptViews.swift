@@ -1,25 +1,105 @@
 import MarkdownUI
 import SwiftUI
 
+/// Claude's replies, typeset for reading: 14.5pt with generous leading, headings that
+/// step down clearly, roomy lists, code and tables on tonal wells.
 struct BenchMarkdown: View {
     @Environment(\.theme) private var theme
     let text: String
 
     var body: some View {
+        let c = theme.colors
         Markdown(text)
-            .markdownTextStyle { ForegroundColor(theme.colors.text); FontSize(TypeScale.md) }
-            .markdownBlockStyle(\.paragraph) { c in c.label.relativeLineSpacing(.em(0.3)).markdownMargin(top: 0, bottom: 10) }
-            .markdownTextStyle(\.code) { FontFamilyVariant(.monospaced); FontSize(.em(0.92)); BackgroundColor(theme.colors.surface2) }
-            .markdownBlockStyle(\.codeBlock) { configuration in
-                ScrollView(.horizontal) {
-                    configuration.label
-                        .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(TypeScale.sm); ForegroundColor(theme.colors.wellText) }
-                        .padding(Space.sm)
+            .markdownTextStyle { ForegroundColor(c.text); FontSize(14.5) }
+            .markdownTextStyle(\.code) {
+                FontFamilyVariant(.monospaced); FontSize(.em(0.88))
+                ForegroundColor(c.text); BackgroundColor(c.fill(0.08))
+            }
+            .markdownTextStyle(\.strong) { FontWeight(.semibold) }
+            .markdownTextStyle(\.link) { ForegroundColor(c.accent) }
+            .markdownBlockStyle(\.paragraph) { b in
+                b.label.relativeLineSpacing(.em(0.38)).markdownMargin(top: 0, bottom: 12)
+            }
+            .markdownBlockStyle(\.heading1) { b in
+                b.label.markdownTextStyle { FontSize(21); FontWeight(.semibold) }
+                    .relativeLineSpacing(.em(0.15)).markdownMargin(top: 22, bottom: 10)
+            }
+            .markdownBlockStyle(\.heading2) { b in
+                b.label.markdownTextStyle { FontSize(18); FontWeight(.semibold) }
+                    .relativeLineSpacing(.em(0.15)).markdownMargin(top: 20, bottom: 8)
+            }
+            .markdownBlockStyle(\.heading3) { b in
+                b.label.markdownTextStyle { FontSize(15.5); FontWeight(.semibold) }
+                    .markdownMargin(top: 16, bottom: 6)
+            }
+            .markdownBlockStyle(\.heading4) { b in
+                b.label.markdownTextStyle { FontSize(14.5); FontWeight(.semibold) }
+                    .markdownMargin(top: 14, bottom: 4)
+            }
+            .markdownBlockStyle(\.listItem) { b in b.label.markdownMargin(top: 4, bottom: 4) }
+            .markdownBlockStyle(\.blockquote) { b in
+                b.label
+                    .markdownTextStyle { ForegroundColor(c.muted) }
+                    .padding(.leading, 14)
+                    .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 1.5).fill(c.fill(0.2)).frame(width: 3) }
+                    .markdownMargin(top: 4, bottom: 12)
+            }
+            .markdownBlockStyle(\.codeBlock) { b in
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text(b.language?.isEmpty == false ? b.language! : "code").font(.system(size: 11)).foregroundStyle(c.muted)
+                        Spacer()
+                        CopyButton(text: b.content)
+                    }
+                    .padding(.horizontal, 12).frame(height: 30)
+                    Rectangle().fill(c.fill(0.06)).frame(height: 1)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        b.label
+                            .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(12.5); ForegroundColor(c.wellText) }
+                            .relativeLineSpacing(.em(0.3))
+                            .padding(12)
+                    }
                 }
-                .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: theme.radiusSm))
-                .markdownMargin(top: Space.xs, bottom: Space.sm)
+                .background(c.wellBg, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(c.fill(0.07)))
+                .markdownMargin(top: 4, bottom: 14)
+            }
+            .markdownBlockStyle(\.table) { b in
+                b.label
+                    .markdownTableBorderStyle(.init(color: c.fill(0.1)))
+                    .markdownTableBackgroundStyle(.alternatingRows(.clear, c.fill(0.03), header: c.fill(0.06)))
+                    .markdownMargin(top: 4, bottom: 14)
+            }
+            .markdownBlockStyle(\.tableCell) { b in
+                b.label
+                    .markdownTextStyle { FontWeight(b.row == 0 ? .semibold : .regular); FontSize(13.5) }
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .relativeLineSpacing(.em(0.25))
+            }
+            .markdownBlockStyle(\.thematicBreak) { _ in
+                Rectangle().fill(c.fill(0.1)).frame(height: 1).markdownMargin(top: 12, bottom: 12)
             }
             .textSelection(.enabled)
+    }
+}
+
+/// Copies a code block, and says so for a moment.
+struct CopyButton: View {
+    @Environment(\.theme) private var theme
+    let text: String
+    @State private var done = false
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            done = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { done = false }
+        } label: {
+            Label(done ? "Copied" : "Copy", systemImage: done ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11)).foregroundStyle(theme.colors.muted)
+        }
+        .buttonStyle(.plain)
     }
 }
 

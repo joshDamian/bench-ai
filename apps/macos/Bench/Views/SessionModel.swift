@@ -21,6 +21,8 @@ final class SessionModel {
         didSet { rebuild() }
     }
     private(set) var rows: [Row] = []
+    /// The transcript grouped into turns, worked out with the rows, not on every redraw.
+    private(set) var blocks: [Block] = []
     var streamText = ""
     var streamThinking = ""
     var loading = true
@@ -93,8 +95,9 @@ final class SessionModel {
         let snapshot = events
         rebuildTask = Task.detached(priority: .userInitiated) { [weak self] in
             let rows = Transcript.rows(snapshot)
+            let blocks = Transcript.blocks(rows)
             guard !Task.isCancelled else { return }
-            await MainActor.run { self?.rows = rows }
+            await MainActor.run { self?.rows = rows; self?.blocks = blocks }
         }
     }
 

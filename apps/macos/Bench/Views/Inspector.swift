@@ -55,9 +55,14 @@ final class SessionFiles {
         return out
     }
 
+    /// Each reply's paths, found once: the scan is a regex over the whole reply.
+    @ObservationIgnored private var pathCache: [Int: [String]] = [:]
+
     /// The artifacts one reply names, in the order it names them.
     func artifacts(in text: String) -> [FileInfo] {
-        Self.paths(text).compactMap { known[$0] }.filter(\.artifact)
+        let key = text.hashValue
+        let paths = pathCache[key] ?? { let p = Self.paths(text); pathCache[key] = p; return p }()
+        return paths.compactMap { known[$0] }.filter(\.artifact)
     }
 
     /// Every artifact the session has named so far.

@@ -75,7 +75,7 @@ struct SessionView: View {
         .onAppear { model.open(); composerFocused = true }
         .onDisappear { model.close() }
         .task(id: model.rows.count) {
-            let replies: [String] = Transcript.blocks(model.rows).compactMap { (b: Block) -> String? in
+            let replies: [String] = model.blocks.compactMap { (b: Block) -> String? in
                 if case .turn(_, _, let reply, _, _, _) = b { return reply }
                 return nil
             }
@@ -104,7 +104,7 @@ struct SessionView: View {
                             .frame(maxWidth: .infinity)
                             .padding(Space.xl)
                     }
-                    let blocks = Transcript.blocks(model.rows)
+                    let blocks = model.blocks
                     ForEach(blocks) { b in
                         switch b {
                         case .user(let r), .note(let r): RowView(row: r, cwd: cwd, model: model).id(b.id)
