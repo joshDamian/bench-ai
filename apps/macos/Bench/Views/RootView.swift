@@ -57,6 +57,7 @@ struct MainView: View {
             }
         }
         .background(theme.colors.bg)
+        .background(TrafficLights(inset: model.showSidebar ? CGPoint(x: 24, y: 30) : CGPoint(x: 20, y: 27)))
         .ignoresSafeArea()
         .safeAreaInset(edge: .top, spacing: 0) {
             if !store.connected && store.dropped {

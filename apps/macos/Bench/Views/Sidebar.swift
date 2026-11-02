@@ -23,6 +23,8 @@ struct Sidebar: View {
     private func newest(_ a: Session, _ b: Session) -> Bool { (a.updated_at ?? "") > (b.updated_at ?? "") }
 
     var body: some View {
+        VStack(spacing: 0) {
+        top
         List(selection: $selection) {
             Section {
                 placeRow(.needs, glyph: "circle.fill", tint: theme.colors.warn, count: store.approvals.count, loud: true)
@@ -92,8 +94,8 @@ struct Sidebar: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 28)
-        .safeAreaInset(edge: .top, spacing: 0) { top }
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        footer
+        }
     }
 
     private func placeRow(_ p: Place, glyph: String, tint: Color, count: Int, loud: Bool) -> some View {

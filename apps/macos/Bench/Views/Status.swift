@@ -303,3 +303,39 @@ struct WindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ v: NSView, context: Context) {}
 }
+
+/// Moves the window's traffic lights inside the sidebar pane, as the board draws them,
+/// and keeps them there when macOS lays the title bar out again.
+struct TrafficLights: NSViewRepresentable {
+    var inset = CGPoint(x: 22, y: 22)
+
+    final class Probe: NSView {
+        var inset = CGPoint.zero
+        private var observers: [Any] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+            observers = []
+            guard let w = window else { return }
+            for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didBecomeKeyNotification, NSWindow.didExitFullScreenNotification] {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: w, queue: .main) { [weak self] _ in self?.place() })
+            }
+            DispatchQueue.main.async { self.place() }
+        }
+
+        func place() {
+            guard let w = window, let close = w.standardWindowButton(.closeButton), let bar = close.superview else { return }
+            let kinds: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+            let gap: CGFloat = 20
+            for (i, k) in kinds.enumerated() {
+                guard let b = w.standardWindowButton(k) else { continue }
+                let y = bar.bounds.height - inset.y - b.frame.height / 2
+                b.setFrameOrigin(NSPoint(x: inset.x + CGFloat(i) * gap, y: y))
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> Probe { let p = Probe(); p.inset = inset; return p }
+    func updateNSView(_ v: Probe, context: Context) { v.inset = inset; DispatchQueue.main.async { v.place() } }
+}
