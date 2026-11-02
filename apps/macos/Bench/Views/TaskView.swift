@@ -256,13 +256,13 @@ private struct TaskOverview: View {
                     }
                     section("Check") {
                         Group2 {
-                            GroupRow(title: "Command", first: true) {
+                            GroupRow(title: "Command", first: true, muted: true) {
                                 TextField("", text: $check, prompt: Text("npm test"))
                                     .textFieldStyle(.plain).font(.system(size: 12.5, design: .monospaced))
                                     .multilineTextAlignment(.trailing).frame(maxWidth: 220)
                                     .onSubmit { save(["check": check]) }
                             }
-                            GroupRow(title: "Last run") {
+                            GroupRow(title: "Last run", muted: true) {
                                 HStack(spacing: 6) {
                                     MarkView(mark: t?.check_status == "passed" ? .ready : t?.check_status == "failed" ? .failed : t?.check_status == "running" ? .running : .idle)
                                     Text(lastRun(t)).foregroundStyle(theme.colors.muted)
@@ -303,10 +303,10 @@ private struct TaskOverview: View {
                                 .labelsHidden().toggleStyle(.switch).controlSize(.small)
                                 .disabled(check.trimmingCharacters(in: .whitespaces).isEmpty || t?.state != "active")
                             }
-                            GroupRow(title: "Attempts") { Stepper("\(attempts)", value: $attempts, in: 1...50).fixedSize() }
-                            GroupRow(title: "Time limit") { Stepper("\(minutes)m", value: $minutes, in: 5...600, step: 5).fixedSize() }
+                            GroupRow(title: "Attempts", muted: true) { PlusMinus(value: $attempts, range: 1...50, step: 1, unit: "") }
+                            GroupRow(title: "Time limit", muted: true) { PlusMinus(value: $minutes, range: 5...600, step: 5, unit: "m") }
                             if let l = t?.loop {
-                                GroupRow(title: "This run") {
+                                GroupRow(title: "This run", muted: true) {
                                     Text("Attempt \(l.attempts ?? 0) of \(l.max_attempts ?? attempts) · \(LoopState.label(l.state))").foregroundStyle(theme.colors.muted)
                                 }
                             }
@@ -722,5 +722,32 @@ struct ShipSheet: View {
             } catch { self.error = error.localizedDescription }
             working = false
         }
+    }
+}
+
+/// The board's − value + control.
+struct PlusMinus: View {
+    @Environment(\.theme) private var theme
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    let step: Int
+    let unit: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            button("minus") { value = max(range.lowerBound, value - step) }
+            Text("\(value)\(unit)").font(.system(size: 13)).monospacedDigit().frame(minWidth: 36)
+            button("plus") { value = min(range.upperBound, value + step) }
+        }
+    }
+
+    private func button(_ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .background(theme.colors.fill(0.1), in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

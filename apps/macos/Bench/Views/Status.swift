@@ -179,12 +179,13 @@ struct GroupRow<Trailing: View>: View {
     let title: String
     var sub: String? = nil
     var first = false
+    var muted = false
     @ViewBuilder let trailing: Trailing
 
     var body: some View {
         HStack(spacing: Space.md) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 13))
+                Text(title).font(.system(size: 13)).foregroundStyle(muted ? theme.colors.muted : theme.colors.text)
                 if let sub, !sub.isEmpty { Text(sub).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted) }
             }
             Spacer(minLength: Space.md)
