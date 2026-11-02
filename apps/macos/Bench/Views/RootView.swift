@@ -56,8 +56,12 @@ struct MainView: View {
                 .padding(.leading, 78).padding(.top, 14)
             }
         }
+        .overlay(alignment: .topLeading) {
+            if !model.showSidebar {
+                TrafficLights().padding(.leading, 18).padding(.top, 21)
+            }
+        }
         .background(theme.colors.bg)
-        .background(TrafficLights(inset: model.showSidebar ? CGPoint(x: 24, y: 30) : CGPoint(x: 20, y: 27)))
         .ignoresSafeArea()
         .safeAreaInset(edge: .top, spacing: 0) {
             if !store.connected && store.dropped {

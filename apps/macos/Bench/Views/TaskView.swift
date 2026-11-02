@@ -19,6 +19,8 @@ final class TaskModel {
     func load() async {
         do {
             detail = try await store.api.task(taskId)
+            // Archived sessions aren't in the live list; the conversation view reads from it.
+            for s in detail?.sessions ?? [] where store.session(s.id) == nil { store.apply(s) }
             diff = DiffFile.parse(try await store.api.taskDiff(taskId))
             log = try await store.api.taskLog(taskId)
         } catch { self.error = error.localizedDescription }
@@ -63,8 +65,11 @@ struct TaskView: View {
     }
 
     private var sessions: [Session] {
-        // A merged task's sessions are archived with it; its history still shows.
-        store.sessions.filter { $0.task_id == taskId }
+        // A merged task's sessions are archived and may not be in the store's list; the
+        // task's own detail carries them, so its history still shows.
+        var seen = Set<String>()
+        return (store.sessions.filter { $0.task_id == taskId } + (model.detail?.sessions ?? []))
+            .filter { seen.insert($0.id).inserted }
             .sorted { ($0.created_at ?? "") < ($1.created_at ?? "") }
     }
 
@@ -78,9 +83,10 @@ struct TaskView: View {
                         .frame(minHeight: 140, idealHeight: 250)
                 }
             } else {
-                content
+                content.frame(maxHeight: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(theme.colors.bg)
         .navigationTitle(model.task?.title ?? "Task")
         .task(id: store.task(taskId)) { await model.load() }

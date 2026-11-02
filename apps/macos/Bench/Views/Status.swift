@@ -304,51 +304,42 @@ struct WindowDragArea: NSViewRepresentable {
     func updateNSView(_ v: NSView, context: Context) {}
 }
 
-/// Moves the window's traffic lights inside the sidebar pane, as the board draws them,
-/// and keeps them there when macOS lays the title bar out again.
-struct TrafficLights: NSViewRepresentable {
-    var inset = CGPoint(x: 22, y: 22)
+/// The window's close, minimise and zoom buttons, drawn inside the sidebar pane as the
+/// board does. The system's own are hidden, since macOS keeps moving them back.
+struct TrafficLights: View {
+    @State private var hover = false
+    @State private var key = true
 
-    final class Probe: NSView {
-        var inset = CGPoint.zero { didSet { place() } }
-        private var observers: [Any] = []
-        private var watches: [NSKeyValueObservation] = []
-        private var placing = false
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            observers.forEach { NotificationCenter.default.removeObserver($0) }
-            observers = []
-            watches = []
-            guard let w = window else { return }
-            for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didBecomeKeyNotification,
-                         NSWindow.didResignKeyNotification, NSWindow.didExitFullScreenNotification, NSWindow.didUpdateNotification] {
-                observers.append(NotificationCenter.default.addObserver(forName: name, object: w, queue: .main) { [weak self] _ in self?.place() })
-            }
-            // macOS moves the buttons back whenever it lays the title bar out; put them back.
-            for k in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-                if let b = w.standardWindowButton(k) {
-                    watches.append(b.observe(\.frame, options: [.new]) { [weak self] _, _ in
-                        DispatchQueue.main.async { self?.place() }
-                    })
-                }
-            }
-            DispatchQueue.main.async { self.place() }
+    var body: some View {
+        HStack(spacing: 8) {
+            light(Color(red: 1, green: 0.373, blue: 0.341), "xmark") { NSApp.keyWindow?.performClose(nil) }
+            light(Color(red: 0.996, green: 0.737, blue: 0.180), "minus") { NSApp.keyWindow?.miniaturize(nil) }
+            light(Color(red: 0.157, green: 0.784, blue: 0.251), "plus") { NSApp.keyWindow?.toggleFullScreen(nil) }
         }
-
-        func place() {
-            guard !placing, let w = window, let close = w.standardWindowButton(.closeButton), let bar = close.superview else { return }
-            placing = true
-            defer { placing = false }
-            let kinds: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-            for (i, k) in kinds.enumerated() {
-                guard let b = w.standardWindowButton(k) else { continue }
-                let target = NSPoint(x: inset.x + CGFloat(i) * 20, y: bar.bounds.height - inset.y - b.frame.height / 2)
-                if abs(b.frame.origin.x - target.x) > 0.5 || abs(b.frame.origin.y - target.y) > 0.5 { b.setFrameOrigin(target) }
-            }
-        }
+        .onHover { hover = $0 }
+        .background(SystemLightsHider())
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in key = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in key = NSApp.keyWindow != nil }
     }
 
-    func makeNSView(context: Context) -> Probe { let p = Probe(); p.inset = inset; return p }
-    func updateNSView(_ v: Probe, context: Context) { if v.inset != inset { v.inset = inset } }
+    private func light(_ c: Color, _ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Circle().fill(key || hover ? c : Color.gray.opacity(0.35))
+                .frame(width: 12, height: 12)
+                .overlay { if hover { Image(systemName: icon).font(.system(size: 7, weight: .heavy)).foregroundStyle(.black.opacity(0.55)) } }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Hides the system's traffic lights in the window this view is in.
+private struct SystemLightsHider: NSViewRepresentable {
+    final class V: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            for k in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { window?.standardWindowButton(k)?.isHidden = true }
+        }
+    }
+    func makeNSView(context: Context) -> V { V() }
+    func updateNSView(_ v: V, context: Context) {}
 }

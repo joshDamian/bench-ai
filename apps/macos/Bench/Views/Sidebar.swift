@@ -134,6 +134,7 @@ struct Sidebar: View {
     /// The pane's top: room for the traffic lights, then hide-sidebar and new-session.
     private var top: some View {
         HStack(spacing: 2) {
+            TrafficLights().padding(.leading, 6)
             Spacer()
             Button { withAnimation(.snappy) { model.showSidebar = false } } label: {
                 Image(systemName: "sidebar.left").font(.system(size: 13)).frame(width: 28, height: 26).contentShape(Rectangle())
