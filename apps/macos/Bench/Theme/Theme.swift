@@ -4,7 +4,7 @@ import SwiftUI
 // from Space and TypeScale, never from a literal - CLAUDE.md's rule for the web components.
 
 private struct ThemeKey: EnvironmentKey {
-    static let defaultValue: BenchThemeSpec = benchThemes[0]
+    static let defaultValue: BenchThemeSpec = macDark
 }
 
 extension EnvironmentValues {
@@ -35,18 +35,16 @@ enum TypeScale {
 }
 
 struct Themed: ViewModifier {
-    @AppStorage("theme") private var themeId = "classic"
-    @AppStorage("theme.matchSystem") private var matchSystem = false
-    @AppStorage("theme.dark") private var darkId = "classic"
-    @AppStorage("theme.light") private var lightId = "quiet-temple"
+    @AppStorage("appearance") private var appearance = Appearance.system.rawValue
     @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
-        // Matching macOS follows the system's appearance; otherwise the theme sets it.
-        let t = themeById(matchSystem ? (scheme == .dark ? darkId : lightId) : themeId)
+        let a = Appearance(rawValue: appearance) ?? .system
+        let dark = a == .system ? scheme == .dark : a == .dark
+        let t = dark ? macDark : macLight
         content
             .environment(\.theme, t)
-            .preferredColorScheme(matchSystem ? nil : (t.dark ? .dark : .light))
+            .preferredColorScheme(a == .system ? nil : (a == .dark ? .dark : .light))
             .tint(t.colors.accent)
     }
 }

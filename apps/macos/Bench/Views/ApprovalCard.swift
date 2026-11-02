@@ -84,18 +84,19 @@ struct ApprovalCard: View {
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.colors.line))
                 }
                 HStack(spacing: Space.sm) {
-                    Button("Allow") { onAnswer(["allow": true]) }
-                        .buttonStyle(CapsuleButton(kind: .primary))
-                        .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: [.command, .shift]))
-                    Button("Allow for This Session") { onAnswer(["allow": true, "always": true]) }
-                        .buttonStyle(CapsuleButton(kind: .outline))
-                    Button("Deny") { onAnswer(["allow": false, "message": note]) }
-                        .buttonStyle(CapsuleButton(kind: .danger))
-                        .keyboardShortcut(compact ? nil : KeyboardShortcut(.delete, modifiers: .command))
-                    Spacer()
-                    if !compact && !inbox {
-                        Text("⇧⌘↩ allow · ⌘⌫ deny").font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted)
+                    Button { onAnswer(["allow": false, "message": note]) } label: {
+                        HStack(spacing: 6) { Text("Deny"); if !compact && !inbox { KeyHint("⌘⌫") } }
                     }
+                    .buttonStyle(CapsuleButton(kind: .danger))
+                    .keyboardShortcut(compact ? nil : KeyboardShortcut(.delete, modifiers: .command))
+                    Spacer()
+                    Button(Self.always(approval)) { onAnswer(["allow": true, "always": true]) }
+                        .buttonStyle(CapsuleButton(kind: .outline))
+                    Button { onAnswer(["allow": true]) } label: {
+                        HStack(spacing: 6) { Text("Allow"); if !compact && !inbox { KeyHint("⌘↩") } }
+                    }
+                    .buttonStyle(CapsuleButton(kind: .primary))
+                    .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: .command))
                 }
             }
         }
@@ -107,6 +108,9 @@ struct ApprovalCard: View {
         .overlay(RoundedRectangle(cornerRadius: inbox ? 14 : 16).strokeBorder(approval.tool == "ExitPlanMode" && inbox ? theme.colors.line : theme.colors.warn.opacity(0.35)))
         .background { if !inbox { RoundedRectangle(cornerRadius: 20).fill(theme.colors.warn.opacity(0.06)).padding(-4) } }
     }
+
+    /// The "don't ask again" button. The server remembers it for this session only.
+    static func always(_ a: Approval) -> String { "Allow for This Session" }
 
     /// What Claude is asking to do, as a short verb phrase.
     static func ask(_ a: Approval) -> String {
@@ -240,9 +244,8 @@ struct CapsuleButton: ButtonStyle {
             .foregroundStyle(kind == .primary ? theme.colors.onAccent : kind == .danger ? theme.colors.bad : theme.colors.text)
             .padding(.horizontal, kind == .primary ? 16 : 14)
             .frame(height: 30)
-            .background(kind == .primary ? theme.colors.accent : .clear, in: Capsule())
-            .overlay { if kind != .primary { Capsule().strokeBorder(theme.colors.lineStrong) } }
-            .opacity(configuration.isPressed ? 0.75 : enabled ? 1 : 0.45)
+            .background(kind == .primary ? theme.colors.accent : theme.colors.fill(configuration.isPressed ? 0.14 : 0.08), in: Capsule())
+            .opacity(configuration.isPressed && kind == .primary ? 0.8 : enabled ? 1 : 0.45)
             .contentShape(Capsule())
     }
 }

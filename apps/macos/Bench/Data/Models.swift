@@ -7,6 +7,7 @@ struct Project: Codable, Identifiable, Hashable {
     let id: String
     var name: String
     var path: String?
+    var last_used_at: String?
 }
 
 struct BenchTask: Codable, Identifiable, Hashable {
@@ -102,6 +103,12 @@ struct Session: Codable, Identifiable, Hashable {
     var archived_at: String?
     /// Set while the Claude login's usage limit has this session stopped.
     var pause: SessionPause?
+    /// Whether Bench resumes it when the limit lifts; nil follows the default.
+    var auto_resume: Bool?
+    /// Spend by model, subagents included: {"model": {"cost": 1.2, ...}}.
+    var model_usage: JSONValue?
+    var input_tokens: Double?
+    var output_tokens: Double?
 
     var mode: Mode { Mode(rawValue: permission_mode ?? "default") ?? .default }
 }

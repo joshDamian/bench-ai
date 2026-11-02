@@ -2,20 +2,20 @@ import MarkdownUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// A session, as the Mac v2 Session board draws it: the transcript in the middle with a
+/// floating composer, model and permissions in the toolbar, the inspector (⌘J) on the
+/// right and the terminal (⇧⌘T) underneath. Inside a task, the task draws the toolbar.
 struct SessionView: View {
     @Environment(AppModel.self) private var app
-    @State private var taskGit: TaskGit?
     @Environment(\.theme) private var theme
     let store: BenchStore
     let sessionId: String
-    /// Inside a task's tabs, which draw their own header.
     var embedded = false
     @State private var model: SessionModel
+    @State private var files: SessionFiles
     @State private var draft = ""
     @State private var follow = true
     @State private var dropTargeted = false
-    @State private var renaming = false
-    @State private var newTitle = ""
     @FocusState private var composerFocused: Bool
 
     init(store: BenchStore, sessionId: String, embedded: Bool = false) {
@@ -23,115 +23,159 @@ struct SessionView: View {
         self.store = store
         self.sessionId = sessionId
         _model = State(initialValue: SessionModel(sessionId: sessionId, store: store))
+        _files = State(initialValue: SessionFiles(api: store.api, sessionId: sessionId))
     }
 
     var body: some View {
+        @Bindable var app = app
+        let session = model.session
+        Group {
+            if !embedded && app.showTerminal {
+                VSplitView {
+                    conversation.frame(minHeight: 260)
+                    RemoteTerminalView(store: store, query: "session=\(BenchAPI.enc(sessionId))&shell=1", place: session?.cwd ?? "Shell")
+                        .frame(minHeight: 140, idealHeight: 250)
+                }
+            } else {
+                conversation
+            }
+        }
+        .navigationTitle(session?.title ?? "Session")
+        .hideToolbarTitle()
+        .toolbar { if !embedded { toolbar(session) } }
+        .inspector(isPresented: embedded ? .constant(false) : $app.showInspector) {
+            SessionInspector(store: store, sessionId: sessionId, files: files)
+                .inspectorColumnWidth(min: 280, ideal: 340, max: 480)
+        }
+        .environment(files)
+        .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+            Button("OK") { model.error = nil }
+        } message: { Text(model.error ?? "") }
+        .onAppear { model.open(); composerFocused = true }
+        .onDisappear { model.close() }
+        .task(id: model.rows.count) {
+            await files.stat(Transcript.blocks(model.rows).compactMap { if case .turn(_, _, let reply, _, _, _) = $0 { return reply } else { return nil } })
+        }
+    }
+
+    @ToolbarContentBuilder
+    private func toolbar(_ session: Session?) -> some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(session?.title ?? "Session").font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
+                Text(subtitle(session)).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted).lineLimit(1)
+            }
+            .padding(.leading, Space.xs)
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            if let session {
+                ModelMenu(store: store, session: session, capsule: true)
+                ModeMenu(store: store, session: session)
+            }
+            Spacer().frame(width: Space.sm)
+            Toggle(isOn: Binding(get: { app.showTerminal }, set: { app.showTerminal = $0 })) {
+                Label("Terminal", systemImage: "terminal")
+            }
+            .help("Terminal (⇧⌘T)")
+            Toggle(isOn: Binding(get: { app.showInspector }, set: { app.showInspector = $0 })) {
+                Label("Inspector", systemImage: "sidebar.right")
+            }
+            .help("Inspector (⌘J)")
+        }
+    }
+
+    private var conversation: some View {
         let session = model.session
         let cwd = session?.cwd ?? ""
         let approvals = model.approvals
         let running = session?.status == "running"
-
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 22) {
-                        if model.hasOlder {
-                            Button("Show earlier messages") { Task { await model.loadOlder() } }
-                                .buttonStyle(.link)
-                                .frame(maxWidth: .infinity)
-                        }
-                        if model.loading && model.rows.isEmpty {
-                            ProgressView().frame(maxWidth: .infinity).padding(Space.xl)
-                        } else if model.rows.isEmpty {
-                            Text("Nothing here yet. Tell Claude what to work on.")
-                                .foregroundStyle(theme.colors.muted)
-                                .frame(maxWidth: .infinity)
-                                .padding(Space.xl)
-                        }
-                        let blocks = Transcript.blocks(model.rows)
-                        ForEach(blocks) { b in
-                            switch b {
-                            case .user(let r), .note(let r): RowView(row: r, cwd: cwd, model: model).id(b.id)
-                            case .turn(_, let steps, let reply, let label, let ok, let cost):
-                                TurnView(steps: steps, reply: reply, label: label, ok: ok, cost: cost,
-                                         live: running && b.id == blocks.last?.id, cwd: cwd, model: model).id(b.id)
-                            }
-                        }
-                        if !model.streamText.isEmpty || !model.streamThinking.isEmpty {
-                            VStack(alignment: .leading, spacing: Space.xs) {
-                                if model.streamText.isEmpty {
-                                    Text("Thinking…").foregroundStyle(theme.colors.muted).font(.system(size: TypeScale.sm))
-                                } else {
-                                    BenchMarkdown(text: model.streamText)
-                                }
-                            }
-                            .id("stream")
-                        }
-                        Color.clear.frame(height: 1).id("bottom")
-                            .onAppear { follow = true }
-                            .onDisappear { follow = false }
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    if model.hasOlder {
+                        Button("Show earlier messages") { Task { await model.loadOlder() } }
+                            .buttonStyle(.link)
+                            .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: 720)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, Space.lg)
-                    .frame(maxWidth: .infinity)
-                }
-                .scrollContentBackground(.hidden)
-                .background(theme.colors.bg)
-                .onChange(of: model.rows.count) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
-                .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
-                .onChange(of: approvals.count) { _, _ in if follow { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } } }
-                .onChange(of: model.loading) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
-                .overlay(alignment: .bottomTrailing) {
-                    if !follow {
-                        Button { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
-                            Image(systemName: "arrow.down").padding(Space.sm)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .clipShape(Circle())
-                        .padding(Space.lg)
-                        .help("Jump to latest")
-                    }
-                }
-            }
-
-            if let p = session?.pause {
-                Text(p.message ?? "Paused by the usage limit")
-                    .font(.system(size: TypeScale.sm))
-                    .foregroundStyle(theme.colors.warn)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Space.lg)
-                    .padding(.vertical, Space.sm)
-                    .background(theme.colors.warn.opacity(0.10))
-            }
-            // What Claude is waiting on takes the composer's place until it is answered.
-            if let a = approvals.first {
-                VStack(alignment: .leading, spacing: Space.xs) {
-                    if approvals.count > 1 {
-                        Text("1 of \(approvals.count) waiting")
-                            .font(.system(size: TypeScale.xs))
+                    if model.loading && model.rows.isEmpty {
+                        ProgressView().frame(maxWidth: .infinity).padding(Space.xl)
+                    } else if model.rows.isEmpty {
+                        Text("Nothing here yet. Tell Claude what to work on.")
                             .foregroundStyle(theme.colors.muted)
+                            .frame(maxWidth: .infinity)
+                            .padding(Space.xl)
                     }
-                    ScrollView {
-                        ApprovalCard(approval: a, cwd: cwd, busy: model.busyApprovals.contains(a.id)) { body in model.answer(a, body) }
-                            .padding(4)
-                            .id(a.id)
+                    let blocks = Transcript.blocks(model.rows)
+                    ForEach(blocks) { b in
+                        switch b {
+                        case .user(let r), .note(let r): RowView(row: r, cwd: cwd, model: model).id(b.id)
+                        case .turn(_, let steps, let reply, let label, let ok, let cost):
+                            VStack(alignment: .leading, spacing: Space.md) {
+                                TurnView(steps: steps, reply: reply, label: label, ok: ok, cost: cost,
+                                         live: running && b.id == blocks.last?.id, cwd: cwd, model: model)
+                                ArtifactCards(reply: reply)
+                            }
+                            .id(b.id)
+                        }
                     }
-                    .scrollBounceBehavior(.basedOnSize)
-                    .frame(maxHeight: 460)
-                    .fixedSize(horizontal: false, vertical: true)
+                    if !model.streamText.isEmpty || !model.streamThinking.isEmpty {
+                        VStack(alignment: .leading, spacing: Space.xs) {
+                            if model.streamText.isEmpty {
+                                Text("Thinking…").foregroundStyle(theme.colors.muted).font(.system(size: TypeScale.sm))
+                            } else {
+                                BenchMarkdown(text: model.streamText)
+                            }
+                        }
+                        .id("stream")
+                    }
+                    if let p = session?.pause {
+                        Text(p.message ?? "Paused by the usage limit")
+                            .font(.system(size: TypeScale.sm))
+                            .foregroundStyle(theme.colors.warn)
+                    }
+                    if let a = approvals.first {
+                        VStack(alignment: .leading, spacing: Space.xs) {
+                            if approvals.count > 1 {
+                                Text("1 of \(approvals.count) waiting").font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted)
+                            }
+                            ApprovalCard(approval: a, cwd: cwd, busy: model.busyApprovals.contains(a.id)) { body in model.answer(a, body) }
+                                .id(a.id)
+                        }
+                        .id("approval")
+                    }
+                    Color.clear.frame(height: approvals.isEmpty ? 150 : 24).id("bottom")
+                        .onAppear { follow = true }
+                        .onDisappear { follow = false }
                 }
-                .frame(maxWidth: 728)
-                .padding(.horizontal, 28)
+                .frame(maxWidth: 700)
+                .padding(.horizontal, 40)
                 .padding(.top, Space.md)
-                .padding(.bottom, Space.lg)
                 .frame(maxWidth: .infinity)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else {
-                Composer(model: model, draft: $draft, running: running, focused: $composerFocused)
+            }
+            .scrollContentBackground(.hidden)
+            .background(theme.colors.bg)
+            .onChange(of: model.rows.count) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: approvals.first?.id) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: model.loading) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+            .overlay(alignment: .bottom) {
+                if approvals.isEmpty {
+                    Composer(model: model, draft: $draft, running: running, embedded: embedded, focused: $composerFocused)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !follow {
+                    Button { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
+                        Image(systemName: "arrow.down").font(.system(size: 12, weight: .semibold)).frame(width: 30, height: 30)
+                            .background(theme.colors.surface3, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, Space.lg)
+                    .padding(.bottom, approvals.isEmpty ? 150 : Space.lg)
+                    .help("Jump to latest")
+                }
             }
         }
-        .animation(.snappy, value: approvals.first?.id)
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             for p in providers {
                 _ = p.loadObject(ofClass: URL.self) { url, _ in
@@ -148,105 +192,13 @@ struct SessionView: View {
                     .allowsHitTesting(false)
             }
         }
-        .navigationTitle(session?.title ?? "Session")
-        .hideToolbarTitle()
-        .task(id: session?.task_id) {
-            if let t = session?.task_id { taskGit = try? await store.api.task(t).git }
-        }
-        .toolbar {
-            if !embedded {
-            ToolbarItem(placement: .navigation) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(session?.title ?? "Session")
-                        .font(.system(size: TypeScale.md, weight: .semibold))
-                        .lineLimit(1)
-                    Text(session?.status == "waiting" || !approvals.isEmpty ? "Needs you" : subtitle(session))
-                        .font(.system(size: TypeScale.xs))
-                        .foregroundStyle(session?.status == "waiting" || !approvals.isEmpty ? theme.colors.warn : theme.colors.muted)
-                        .lineLimit(1)
-                }
-                .padding(.leading, Space.sm)
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                if let session {
-                    HStack(spacing: Space.md) {
-                        Menu {
-                            ForEach(Mode.allCases) { m in
-                                Button { Task { try? await store.api.setMode(session.id, m) } } label: {
-                                    if m == session.mode { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(session.mode.label)
-                                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-                            }
-                            .padding(.horizontal, 10)
-                            .frame(height: 26)
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .pill(theme)
-                        .help("Permission Mode")
-
-                        HStack(spacing: 2) {
-                            if let t = session.task_id {
-                                Button { app.selection = "task:\(t)" } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "arrow.left.arrow.right").font(.system(size: 11))
-                                        if let g = taskGit {
-                                            Text("+\(g.added)").foregroundStyle(theme.colors.good)
-                                            Text("−\(g.removed)").foregroundStyle(theme.colors.bad)
-                                        } else { Text("Changes") }
-                                    }
-                                    .padding(.horizontal, 10).frame(height: 26).contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .help("Changes")
-                            }
-                            Button { TerminalLauncher.open(session, store: store) } label: {
-                                Image(systemName: "apple.terminal").frame(width: 30, height: 26).contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(session.claude_session_id == nil)
-                            .help("Open in Terminal")
-                            Menu {
-                                Button("Rename…") { newTitle = session.title; renaming = true }
-                                SessionMenu(store: store, session: session)
-                            } label: { Image(systemName: "ellipsis").frame(width: 30, height: 26) }
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
-                            .fixedSize()
-                            .help("More")
-                        }
-                        .foregroundStyle(theme.colors.text.opacity(0.8))
-                        .padding(.horizontal, 4)
-                        .pill(theme)
-                    }
-                    .font(.system(size: TypeScale.sm))
-                }
-            }
-            }
-        }
-        .alert("Rename session", isPresented: $renaming) {
-            TextField("Title", text: $newTitle)
-            Button("Rename") { Task { try? await store.api.rename(sessionId, newTitle) } }
-            Button("Cancel", role: .cancel) {}
-        }
-        .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("OK") { model.error = nil }
-        } message: { Text(model.error ?? "") }
-        .onAppear { model.open(); composerFocused = true }
-        .onDisappear { model.close() }
     }
 
     private func subtitle(_ s: Session?) -> String {
         guard let s else { return "" }
-        // "bench-src · task bench/native-clients", as the design reads.
         let project = store.project(s.project_id)?.name ?? (s.project_id == nil ? "Ask Bench" : nil)
-        let task = store.task(s.task_id).map { "task \($0.branch ?? $0.title)" }
-        return [project, task].compactMap { $0 }.joined(separator: " · ")
+        let branch = store.task(s.task_id)?.branch
+        return [project, branch].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -255,6 +207,7 @@ struct Composer: View {
     let model: SessionModel
     @Binding var draft: String
     let running: Bool
+    var embedded = false
     var focused: FocusState<Bool>.Binding
     @State private var importing = false
 
@@ -264,79 +217,83 @@ struct Composer: View {
         VStack(alignment: .leading, spacing: Space.sm) {
             if !model.suggestion.isEmpty && !running && draft.isEmpty {
                 Button(model.suggestion) { draft = model.suggestion }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(TonalButton(height: 26))
                     .lineLimit(1)
             }
-            if !model.attachments.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Space.sm) {
-                        ForEach(model.attachments) { a in
-                            HStack(spacing: Space.xs) {
-                                if a.ref == nil && a.error == nil { ProgressView(value: a.progress).frame(width: 36) }
-                                Text(a.error.map { "\(a.name): \($0)" } ?? a.name)
-                                    .foregroundStyle(a.error == nil ? theme.colors.text : theme.colors.bad)
-                                    .lineLimit(1)
-                                Button { model.remove(a.id) } label: { Image(systemName: "xmark.circle.fill") }
-                                    .buttonStyle(.plain)
-                                    .foregroundStyle(theme.colors.muted)
+            VStack(alignment: .leading, spacing: Space.sm) {
+                if !model.attachments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Space.sm) {
+                            ForEach(model.attachments) { a in
+                                HStack(spacing: Space.xs) {
+                                    if a.ref == nil && a.error == nil { ProgressView(value: a.progress).frame(width: 36) }
+                                    Text(a.error.map { "\(a.name): \($0)" } ?? a.name)
+                                        .foregroundStyle(a.error == nil ? theme.colors.text : theme.colors.bad)
+                                        .lineLimit(1)
+                                    Button { model.remove(a.id) } label: { Image(systemName: "xmark.circle.fill") }
+                                        .buttonStyle(.plain)
+                                        .foregroundStyle(theme.colors.muted)
+                                }
+                                .font(.system(size: TypeScale.sm))
+                                .padding(.horizontal, Space.sm)
+                                .padding(.vertical, Space.xs)
+                                .background(theme.colors.fill(0.08), in: Capsule())
                             }
-                            .font(.system(size: TypeScale.sm))
-                            .padding(.horizontal, Space.sm)
-                            .padding(.vertical, Space.xs)
-                            .background(theme.colors.surface2, in: Capsule())
                         }
                     }
                 }
-            }
-            VStack(alignment: .leading, spacing: Space.sm) {
-                TextField(running ? "Queue a message" : "Message Claude", text: $draft, axis: .vertical)
+                TextField("", text: $draft, prompt: Text(running ? "Queue a message" : "Reply to Claude, / for commands"), axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: TypeScale.md))
                     .lineLimit(2...10)
                     .focused(focused)
                     .onSubmit(send)
                 HStack(spacing: Space.sm) {
-                    Button { importing = true } label: { Image(systemName: "plus") }
-                        .buttonStyle(.borderless)
+                    Button { importing = true } label: { Image(systemName: "plus").font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(theme.colors.muted)
                         .help("Attach Files")
-                    if let s = model.session { ModelMenu(store: model.store, session: s) }
+                    if embedded, let s = model.session { ModelMenu(store: model.store, session: s, capsule: false) }
+                    Text(running ? "Claude is working. Messages queue until it's done." : "")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(theme.colors.muted)
+                        .lineLimit(1)
                     Spacer()
                     if running {
                         Button(action: model.interrupt) {
-                            HStack(spacing: 6) {
-                                RoundedRectangle(cornerRadius: 2).fill(theme.colors.bad).frame(width: 8, height: 8)
-                                Text("Stop")
-                            }
+                            RoundedRectangle(cornerRadius: 2).fill(theme.colors.bg).frame(width: 10, height: 10)
+                                .frame(width: 30, height: 30)
+                                .background(theme.colors.text, in: Circle())
                         }
-                        .buttonStyle(.bordered)
-                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
                         .keyboardShortcut(".", modifiers: .command)
                         .help("Stop (⌘.)")
                     }
-                    Button(action: send) {
-                        Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(theme.colors.onAccent)
-                            .frame(width: 26, height: 26)
-                            .background(canSend ? theme.colors.accent : theme.colors.accent.opacity(0.35), in: Circle())
+                    if !running || canSend {
+                        Button(action: send) {
+                            Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(theme.colors.onAccent)
+                                .frame(width: 30, height: 30)
+                                .background(canSend ? theme.colors.accent : theme.colors.accent.opacity(0.35), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .disabled(!canSend)
+                        .help("Send (Return)")
                     }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!canSend)
-                    .help("Send (Return)")
                 }
-                .controlSize(.small)
             }
-            .padding(.leading, Space.lg)
+            .padding(.leading, 18)
             .padding([.top, .trailing], Space.md)
-            .padding(.bottom, Space.sm)
-            .background(theme.colors.surface2, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.colors.line))
+            .padding(.bottom, 10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+            .background(theme.colors.surface3.opacity(0.6), in: RoundedRectangle(cornerRadius: 22))
+            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(theme.colors.fill(0.1)))
+            .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
         }
         .frame(maxWidth: 720)
-        .padding(.horizontal, Space.xl)
-        .padding(.top, Space.md)
-        .padding(.bottom, Space.lg)
+        .padding(.horizontal, 40)
+        .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { model.attach(urls) }
@@ -351,14 +308,15 @@ struct Composer: View {
     }
 }
 
-/// "Opus · high effort": choose the session's model and effort. Applies from the next turn.
+/// "Opus · High": the session's model and effort. Applies from the next message.
 struct ModelMenu: View {
     @Environment(\.theme) private var theme
     let store: BenchStore
     let session: Session
+    var capsule = true
 
     var body: some View {
-        Menu {
+        let menu = Menu {
             ForEach(store.providers.filter { $0.enabled }) { p in
                 Section(p.ready == false ? "\(p.name) (not set up)" : p.name) {
                     ForEach(p.models.filter(\.enabled)) { m in
@@ -370,7 +328,7 @@ struct ModelMenu: View {
                 }
             }
             Divider()
-            Menu("Effort") {
+            Section("Effort") {
                 Button { set(["effort": NSNull()]) } label: {
                     if session.effort == nil { Label("Model default", systemImage: "checkmark") } else { Text("Model default") }
                 }
@@ -381,12 +339,24 @@ struct ModelMenu: View {
                 }
             }
         } label: {
-            Text(store.modelLine(session)).font(.system(size: TypeScale.xs))
+            HStack(spacing: 6) {
+                Text(label)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            }
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
-        .foregroundStyle(theme.colors.muted)
-        .help("Model and Effort")
+        .help("Model and effort. Applies from your next message.")
+        if capsule { menu.toolbarCapsule() } else { menu.font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) }
+    }
+
+    /// "Opus · High"
+    private var label: String {
+        let m = store.providers.flatMap(\.models).first { $0.id == session.model_id }
+        let name = m?.label ?? store.providers.first { $0.id == session.provider_id }?.name ?? "Default model"
+        guard let e = session.effort.flatMap(Effort.init(rawValue:)) else { return name }
+        return "\(name) · \(e.label)"
     }
 
     private func set(_ body: [String: Any]) {
@@ -394,15 +364,35 @@ struct ModelMenu: View {
     }
 }
 
-extension View {
-    /// The capsule the session header's controls sit in.
-    func pill(_ theme: BenchThemeSpec) -> some View {
-        background(theme.colors.text.opacity(0.07), in: Capsule())
-            .overlay(Capsule().strokeBorder(theme.colors.text.opacity(0.08)))
-    }
+/// The session's permission mode, as a toolbar capsule.
+struct ModeMenu: View {
+    let store: BenchStore
+    let session: Session
 
-    /// The header draws its own title; the window keeps one for the Window menu.
-    @ViewBuilder func hideToolbarTitle() -> some View {
-        if #available(macOS 15.0, *) { toolbar(removing: .title) } else { self }
+    var body: some View {
+        Menu {
+            ForEach(Mode.allCases) { m in
+                Button { Task { try? await store.api.setMode(session.id, m) } } label: {
+                    if m == session.mode { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(session.mode.label)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .toolbarCapsule()
+        .help("Permissions")
+    }
+}
+
+extension View {
+    /// The capsule older views put their controls in.
+    func pill(_ theme: BenchThemeSpec) -> some View {
+        background(theme.colors.fill(0.08), in: Capsule())
     }
 }

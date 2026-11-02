@@ -29,22 +29,9 @@ struct MainView: View {
         @Bindable var model = model
         NavigationSplitView {
             Sidebar(store: store, selection: $model.selection)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 400)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 256, max: 360)
         } detail: {
-            if let id = model.selection, let place = Place(rawValue: id) {
-                PlaceView(store: store, place: place) { model.selection = $0 }
-            } else if let id = model.selection, id.hasPrefix("project:") {
-                let pid = String(id.dropFirst("project:".count))
-                ProjectView(store: store, projectId: pid) { model.selection = $0 }.id(pid)
-            } else if let id = model.selection, id.hasPrefix("task:") {
-                let tid = String(id.dropFirst("task:".count))
-                TaskView(store: store, taskId: tid, sessionId: nil, selection: $model.selection).id(tid)
-            } else if let id = model.selection, store.session(id) != nil {
-                SessionView(store: store, sessionId: id)
-                    .id(id)
-            } else {
-                EmptyDetail(store: store)
-            }
+            detail
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if !store.connected && store.dropped {
@@ -57,7 +44,7 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $model.showNewSession) {
-            NewSessionSheet(store: store) { id in model.selection = id }
+            NewSessionSheet(store: store, project: model.newSessionProject) { id in model.selection = id }
                 .environment(\.theme, theme)
         }
         .sheet(isPresented: $model.showAddProject) {
@@ -65,127 +52,134 @@ struct MainView: View {
                 .environment(\.theme, theme)
         }
         .sheet(isPresented: $model.showQuickOpen) {
-            QuickOpen(store: store) { id in model.selection = id }
+            CommandPalette(store: store)
                 .environment(\.theme, theme)
+        }
+        .onAppear { model.panel.hide() }
+    }
+
+    @ViewBuilder private var detail: some View {
+        if let id = model.selection, let place = Place(rawValue: id) {
+            PlaceView(store: store, place: place)
+        } else if let id = model.selection, id.hasPrefix("project:") {
+            let pid = String(id.dropFirst("project:".count))
+            ProjectView(store: store, projectId: pid).id(pid)
+        } else if let id = model.selection, id.hasPrefix("task:") {
+            let tid = String(id.dropFirst("task:".count))
+            TaskView(store: store, taskId: tid).id(tid)
+        } else if let id = model.selection, let s = store.session(id) {
+            if let t = s.task_id, store.task(t) != nil {
+                TaskView(store: store, taskId: t, sessionId: id).id(t)
+            } else {
+                SessionView(store: store, sessionId: id).id(id)
+            }
+        } else {
+            EmptyDetail(store: store)
         }
     }
 }
 
+/// First run, or nothing chosen: one thing to do next.
 private struct EmptyDetail: View {
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
     let store: BenchStore
 
     var body: some View {
-        VStack(spacing: Space.md) {
-            Image(systemName: "rectangle.split.3x1")
-                .font(.system(size: 36))
+        let empty = store.projects.isEmpty
+        VStack(spacing: 18) {
+            Text(empty ? "No sessions yet" : "Nothing open").font(.system(size: 20, weight: .semibold))
+            Text(empty ? "Add a project from your server, then start a session in it. Or ask Bench something without a project."
+                       : "Choose a session in the sidebar, or start a new one.")
+                .font(.system(size: 13.5))
                 .foregroundStyle(theme.colors.muted)
-            Text(store.projects.isEmpty ? "Add a project to get started." : "Choose a session, or start a new one.")
-                .foregroundStyle(theme.colors.muted)
-            HStack {
-                Button("Add Project…") { model.showAddProject = true }
-                    .buttonStyle(CapsuleButton(kind: store.projects.isEmpty ? .primary : .outline))
-                if !store.projects.isEmpty {
-                    Button("New Session") { model.showNewSession = true }
-                        .buttonStyle(CapsuleButton(kind: .primary))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            HStack(spacing: 10) {
+                if empty {
+                    Button("Ask Bench") { model.newSession() }.buttonStyle(TonalButton(height: 34))
+                    Button("Add Project…") { model.showAddProject = true }.buttonStyle(PrimaryButton(height: 34))
+                } else {
+                    Button("Add Project…") { model.showAddProject = true }.buttonStyle(TonalButton(height: 34))
+                    Button("New Session") { model.newSession() }.buttonStyle(PrimaryButton(height: 34))
                 }
             }
+            .padding(.top, 6)
+            Text("⌘N new session · ⌘K go anywhere").font(.system(size: 12)).foregroundStyle(theme.colors.muted).padding(.top, Space.sm)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.colors.bg)
     }
 }
 
-/// Needs you and Working, as the Needs you board draws them: answerable cards, then
-/// what finished recently.
+/// Needs you, Running and All sessions.
 struct PlaceView: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
     let store: BenchStore
     let place: Place
-    let open: (String) -> Void
-
-    private func context(_ s: Session?, _ when: String?) -> String {
-        [store.project(s?.project_id)?.name ?? "Ask Bench", s?.title, Format.ago(when)].compactMap { $0 }.joined(separator: " · ")
-    }
 
     var body: some View {
-        let working = store.sessions.filter { $0.status == "running" }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
-        let finished = store.sessions
-            .filter { $0.status == "idle" && $0.archived_at == nil && Format.age($0.updated_at) < 3 * 86400 }
-            .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
-            .prefix(6)
-        let count = place == .needs ? store.approvals.count : working.count
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Text(place == .needs ? "Needs you" : "Working").font(.system(size: 15, weight: .semibold))
-                if count > 0 {
-                    let c = place == .needs ? theme.colors.warn : theme.colors.accent
-                    Text("\(count)").font(.system(size: 11)).foregroundStyle(c)
-                        .padding(.horizontal, 7).padding(.vertical, 1)
-                        .overlay(Capsule().strokeBorder(c.opacity(0.4)))
-                }
-            }
-            .padding(.horizontal, Space.xl)
-            .padding(.top, 18)
-            .padding(.bottom, Space.md)
-            ScrollView {
-                VStack(alignment: .leading, spacing: Space.lg) {
-                    if place == .needs {
-                        if store.approvals.isEmpty {
-                            Text("Nothing needs you. Questions, plans and permission requests show up here.")
-                                .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
-                        }
-                        ForEach(store.approvals) { a in
-                            let s = store.session(a.session_id)
-                            ApprovalCard(approval: a, cwd: s?.cwd ?? "", sessionTitle: context(s, a.created_at ?? s?.updated_at),
-                                         inbox: true, openSession: { open(a.session_id) }, busy: false) { body in
-                                Task { try? await store.answer(a, body) }
-                            }
-                        }
-                    } else {
-                        if working.isEmpty {
-                            Text("Nothing is running.").font(.system(size: 13)).foregroundStyle(theme.colors.muted)
-                        }
-                        VStack(spacing: 6) {
-                            ForEach(working) { s in row(s, dot: s.status) }
+        let live = store.sessions.filter { $0.archived_at == nil }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.lg) {
+                switch place {
+                case .needs:
+                    if store.approvals.isEmpty {
+                        Text("Nothing needs you. Questions, plans and permission requests show up here.")
+                            .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
+                    }
+                    ForEach(store.approvals) { a in
+                        let s = store.session(a.session_id)
+                        ApprovalCard(approval: a, cwd: s?.cwd ?? "",
+                                     sessionTitle: [store.project(s?.project_id)?.name ?? "Ask Bench", s?.title, Format.ago(a.created_at)].compactMap { $0 }.joined(separator: " · "),
+                                     inbox: true, openSession: { model.selection = a.session_id }, busy: false) { body in
+                            Task { try? await store.answer(a, body) }
                         }
                     }
-                    if !finished.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Finished recently").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.colors.muted).padding(.bottom, 4)
-                            ForEach(Array(finished)) { s in row(s, dot: "done") }
-                        }
-                        .padding(.top, Space.sm)
-                    }
+                case .running:
+                    let running = live.filter { $0.status == "running" }
+                    if running.isEmpty { Text("Nothing is running.").font(.system(size: 13)).foregroundStyle(theme.colors.muted) }
+                    list(running)
+                case .all:
+                    list(live)
                 }
-                .frame(maxWidth: 760, alignment: .leading)
-                .padding(.horizontal, 32)
-                .padding(.top, Space.sm)
-                .padding(.bottom, Space.xl)
-                .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.horizontal, 32)
+            .padding(.vertical, Space.lg)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(theme.colors.bg)
-        .navigationTitle(place == .needs ? "Needs You" : "Working")
-        .hideToolbarTitle()
+        .navigationTitle(place.title)
     }
 
-    private func row(_ s: Session, dot: String) -> some View {
-        Button { open(s.id) } label: {
-            HStack(spacing: Space.md) {
-                if dot == "done" { Circle().fill(theme.colors.good).frame(width: 7, height: 7).frame(width: 13) }
-                else { StatusDot(status: dot) }
-                Text(s.title).font(.system(size: 13)).lineLimit(1)
-                Spacer()
-                Text(Format.ago(s.updated_at)).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+    private func list(_ sessions: [Session]) -> some View {
+        Group2 {
+            ForEach(Array(sessions.enumerated()), id: \.element.id) { i, s in
+                Button { model.selection = s.id } label: {
+                    HStack(spacing: Space.sm) {
+                        MarkView(mark: Mark.of(s, store: store))
+                        Text(s.title).font(.system(size: 13)).lineLimit(1)
+                        Text(store.project(s.project_id)?.name ?? "Ask Bench").font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                        Spacer(minLength: Space.sm)
+                        Text(Describe.session(s, store: store)).font(.system(size: 12)).foregroundStyle(theme.colors.muted).fixedSize()
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1) } }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .contextMenu { SessionMenu(store: store, session: s) }
             }
-            .padding(.horizontal, Space.md)
-            .frame(height: 36)
-            .background(theme.colors.surface1, in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+    }
+}
+
+extension View {
+    /// The header draws its own title; the window keeps one for the Window menu.
+    @ViewBuilder func hideToolbarTitle() -> some View {
+        if #available(macOS 15.0, *) { toolbar(removing: .title) } else { self }
     }
 }

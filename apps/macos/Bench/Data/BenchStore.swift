@@ -22,6 +22,8 @@ final class BenchStore {
     var providers: [ProviderInfo] = []
     var me: Me?
     var version: String?
+    /// Settings › Usage limit: whether sessions resume when the limit lifts, unless one says otherwise.
+    var autoResumeDefault = true
 
     /// Session-scoped traffic, for whichever session views are open.
     @ObservationIgnored private var listeners: [UUID: (ServerMessage) -> Void] = [:]
@@ -84,6 +86,8 @@ final class BenchStore {
             me = s.me
             version = s.version
             if let p = try? await api.providers() { providers = p }
+            if let d = try? await api.call("/api/defaults"), let v = try? JSONDecoder().decode(JSONValue.self, from: d),
+               case .bool(let on)? = v["limits"]["autoResume"] { autoResumeDefault = on }
             ready = true
             unauthorized = false
             error = nil
