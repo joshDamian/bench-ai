@@ -310,32 +310,45 @@ struct TrafficLights: NSViewRepresentable {
     var inset = CGPoint(x: 22, y: 22)
 
     final class Probe: NSView {
-        var inset = CGPoint.zero
+        var inset = CGPoint.zero { didSet { place() } }
         private var observers: [Any] = []
+        private var watches: [NSKeyValueObservation] = []
+        private var placing = false
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             observers.forEach { NotificationCenter.default.removeObserver($0) }
             observers = []
+            watches = []
             guard let w = window else { return }
-            for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didBecomeKeyNotification, NSWindow.didExitFullScreenNotification] {
+            for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didBecomeKeyNotification,
+                         NSWindow.didResignKeyNotification, NSWindow.didExitFullScreenNotification, NSWindow.didUpdateNotification] {
                 observers.append(NotificationCenter.default.addObserver(forName: name, object: w, queue: .main) { [weak self] _ in self?.place() })
+            }
+            // macOS moves the buttons back whenever it lays the title bar out; put them back.
+            for k in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                if let b = w.standardWindowButton(k) {
+                    watches.append(b.observe(\.frame, options: [.new]) { [weak self] _, _ in
+                        DispatchQueue.main.async { self?.place() }
+                    })
+                }
             }
             DispatchQueue.main.async { self.place() }
         }
 
         func place() {
-            guard let w = window, let close = w.standardWindowButton(.closeButton), let bar = close.superview else { return }
+            guard !placing, let w = window, let close = w.standardWindowButton(.closeButton), let bar = close.superview else { return }
+            placing = true
+            defer { placing = false }
             let kinds: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-            let gap: CGFloat = 20
             for (i, k) in kinds.enumerated() {
                 guard let b = w.standardWindowButton(k) else { continue }
-                let y = bar.bounds.height - inset.y - b.frame.height / 2
-                b.setFrameOrigin(NSPoint(x: inset.x + CGFloat(i) * gap, y: y))
+                let target = NSPoint(x: inset.x + CGFloat(i) * 20, y: bar.bounds.height - inset.y - b.frame.height / 2)
+                if abs(b.frame.origin.x - target.x) > 0.5 || abs(b.frame.origin.y - target.y) > 0.5 { b.setFrameOrigin(target) }
             }
         }
     }
 
     func makeNSView(context: Context) -> Probe { let p = Probe(); p.inset = inset; return p }
-    func updateNSView(_ v: Probe, context: Context) { v.inset = inset; DispatchQueue.main.async { v.place() } }
+    func updateNSView(_ v: Probe, context: Context) { if v.inset != inset { v.inset = inset } }
 }
