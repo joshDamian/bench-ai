@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="512" android:viewportHeight="512">
+    <!-- Bench's mark from web/icons/icon.svg, scaled into the adaptive icon's safe zone. -->
+    <group android:pivotX="256" android:pivotY="256" android:scaleX="0.6" android:scaleY="0.6" android:translateX="2">
+        <path android:pathData="M168,136H264a62,62 0 0,1 0,124H168" android:strokeColor="#A7BEFF" android:strokeWidth="38" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"/>
+        <path android:pathData="M168,260H278a65,65 0 0,1 0,130H168" android:strokeColor="#A7BEFF" android:strokeWidth="38" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"/>
+        <path android:pathData="M168,122V390" android:strokeColor="#E8EEFF" android:strokeWidth="38" android:strokeLineCap="round"/>
+        <path android:pathData="M326,198m-27,0a27,27 0 1,0 54,0a27,27 0 1,0 -54,0" android:fillColor="#0F1626" android:strokeColor="#F0F4FF" android:strokeWidth="15"/>
+        <path android:pathData="M343,325m-27,0a27,27 0 1,0 54,0a27,27 0 1,0 -54,0" android:fillColor="#0F1626" android:strokeColor="#F0F4FF" android:strokeWidth="15"/>
+        <path android:pathData="M168,390m-37,0a37,37 0 1,0 74,0a37,37 0 1,0 -74,0" android:fillColor="#6FE0A1" android:strokeColor="#0A0F18" android:strokeWidth="11"/>
+    </group>
+</vector>
