@@ -345,8 +345,7 @@ private struct CommitSheet: View {
             .frame(maxHeight: 180)
             .background(theme.colors.fill(0.05), in: RoundedRectangle(cornerRadius: 12))
             Text("Message").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
-            TextField("", text: $message, axis: .vertical)
-                .textFieldStyle(.plain).lineLimit(2...6).font(.system(size: 13.5))
+            GrowingEditor(text: $message, placeholder: "What changed", size: 13.5, minLines: 2, maxLines: 6)
                 .padding(10)
                 .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 10))
             if let error { Text(error).font(.system(size: 12)).foregroundStyle(theme.colors.bad).textSelection(.enabled) }

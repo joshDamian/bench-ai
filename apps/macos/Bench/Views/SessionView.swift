@@ -287,12 +287,11 @@ struct Composer: View {
                         }
                     }
                 }
-                TextField("", text: $draft, prompt: Text(running ? "Queue a message" : "Reply to Claude, / for commands"), axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: TypeScale.md))
-                    .lineLimit(2...10)
+                GrowingEditor(text: $draft, placeholder: running ? "Queue a message" : "Reply to Claude, / for commands",
+                              size: TypeScale.md, minLines: 2, maxLines: 10) {
+                    if let c = matches[safe: pick] { choose(c) } else { send() }
+                }
                     .focused(focused)
-                    .onSubmit { if let c = matches[safe: pick] { choose(c) } else { send() } }
                     .onChange(of: draft) { _, _ in pick = 0 }
                     .onKeyPress(.downArrow) { guard !matches.isEmpty else { return .ignored }; pick = min(pick + 1, matches.count - 1); return .handled }
                     .onKeyPress(.upArrow) { guard !matches.isEmpty else { return .ignored }; pick = max(pick - 1, 0); return .handled }
