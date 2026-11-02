@@ -170,7 +170,7 @@ struct ProjectView: View {
             }
             .padding(.leading, Space.xs)
         }
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .automatic) {
             if let busy { HStack(spacing: 6) { ProgressView().controlSize(.small); Text(busy).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) } }
             HStack(spacing: 0) {
                 Button { branching = true } label: {

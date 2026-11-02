@@ -30,7 +30,11 @@ struct Sidebar: View {
                          count: store.sessions.filter { $0.status == "running" && $0.archived_at == nil }.count, loud: false)
                 placeRow(.all, glyph: "line.3.horizontal", tint: theme.colors.muted, count: 0, loud: false)
             }
-            ForEach(store.projects) { p in
+            let quiet = store.projects.filter { p in
+                !store.tasks.contains { $0.project_id == p.id && $0.state == "active" } &&
+                !store.sessions.contains { $0.project_id == p.id && $0.task_id == nil && $0.archived_at == nil }
+            }
+            ForEach(store.projects.filter { p in !quiet.contains(p) }) { p in
                 let tasks = store.tasks.filter { $0.project_id == p.id && $0.state == "active" }
                     .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
                 let loose = store.sessions.filter { $0.project_id == p.id && $0.task_id == nil && $0.archived_at == nil }
@@ -54,6 +58,21 @@ struct Sidebar: View {
                     .buttonStyle(.plain)
                     .help("Open \(p.name)")
                 }
+                .collapsible(false)
+            }
+            // Projects with nothing open: one row each, so they stay one click away.
+            if !quiet.isEmpty {
+                Section {
+                    ForEach(quiet) { p in
+                        HStack(spacing: Space.sm) {
+                            Image(systemName: "folder").font(.system(size: 11)).foregroundStyle(theme.colors.muted).frame(width: 18)
+                            Text(p.name).lineLimit(1)
+                        }
+                        .font(.system(size: 13))
+                        .tag("project:\(p.id)")
+                    }
+                } header: { Text("Projects").textCase(nil).font(.system(size: 11, weight: .semibold)) }
+                .collapsible(false)
             }
             let known = Set(store.projects.map(\.id))
             let ask = store.sessions
@@ -67,9 +86,11 @@ struct Sidebar: View {
                             .contextMenu { SessionMenu(store: store, session: s) }
                     }
                 } header: { Text("Ask Bench").textCase(nil).font(.system(size: 11, weight: .semibold)) }
+                .collapsible(false)
             }
         }
         .listStyle(.sidebar)
+        .environment(\.defaultMinListRowHeight, 28)
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .toolbar {
             ToolbarItem {

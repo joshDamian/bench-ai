@@ -72,7 +72,7 @@ struct SessionView: View {
             }
             .padding(.leading, Space.xs)
         }
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .automatic) {
             if let session {
                 ModelMenu(store: store, session: session, capsule: true)
                 ModeMenu(store: store, session: session)

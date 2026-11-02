@@ -44,49 +44,73 @@ struct SettingsView: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
-    @State private var section: Section? = .server
+    @State private var section: Section = .server
 
     var body: some View {
-        NavigationSplitView {
-            List(Section.allCases, selection: $section) { s in
-                HStack(spacing: 8) {
-                    Image(systemName: s.icon).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
-                        .frame(width: 22, height: 22).background(s.tint.gradient, in: RoundedRectangle(cornerRadius: 6))
-                    Text(s.title)
-                }
-                .tag(s)
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(220)
-            .toolbar(removing: .sidebarToggle)
-        } detail: {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    if let store = model.store {
-                        switch section ?? .server {
-                        case .server: ServerPage(store: store)
-                        case .models: ModelsPage(store: store)
-                        case .subagents: SubagentsPage(store: store)
-                        case .limit: LimitPage(store: store)
-                        case .devices: DevicesPage(store: store)
-                        case .notifications: NotificationsPage()
-                        case .appearance: AppearancePage()
-                        case .shortcuts: ShortcutsPage()
+        HStack(spacing: 0) {
+            // The board's sidebar: a tonal pane inset from the window, with a quiet selection.
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(Section.allCases) { s in
+                    Button { section = s } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: s.icon).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
+                                .frame(width: 22, height: 22).background(s.tint.gradient, in: RoundedRectangle(cornerRadius: 6))
+                            Text(s.title).font(.system(size: 13, weight: s == section ? .medium : .regular))
+                            Spacer(minLength: 0)
                         }
-                    } else if section == .appearance {
-                        AppearancePage()
-                    } else {
-                        Text("Not connected to a server").foregroundStyle(theme.colors.muted)
+                        .foregroundStyle(theme.colors.text)
+                        .padding(.horizontal, 6)
+                        .frame(height: 32)
+                        .background(s == section ? theme.colors.fill(0.11) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 20)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer()
             }
-            .navigationTitle((section ?? .server).title)
-            .background(theme.colors.bg)
+            .padding(.horizontal, 8)
+            .padding(.top, 44)
+            .frame(width: 220)
+            .frame(maxHeight: .infinity)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(8)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(section.title).font(.system(size: 15, weight: .semibold))
+                    .padding(.horizontal, 28)
+                    .frame(height: 52, alignment: .center)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        if let store = model.store {
+                            switch section {
+                            case .server: ServerPage(store: store)
+                            case .models: ModelsPage(store: store)
+                            case .subagents: SubagentsPage(store: store)
+                            case .limit: LimitPage(store: store)
+                            case .devices: DevicesPage(store: store)
+                            case .notifications: NotificationsPage()
+                            case .appearance: AppearancePage()
+                            case .shortcuts: ShortcutsPage()
+                            }
+                        } else if section == .appearance {
+                            AppearancePage()
+                        } else {
+                            Text("Not connected to a server").foregroundStyle(theme.colors.muted)
+                        }
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 4)
+                    .padding(.bottom, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 880, height: 620)
+        .frame(width: 920, height: 640)
+        .background(theme.colors.bg)
+        .ignoresSafeArea()
+        .hideToolbarTitle()
+        .toolbarBackground(.hidden, for: .windowToolbar)
     }
 }
 

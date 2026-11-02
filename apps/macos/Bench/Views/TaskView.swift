@@ -63,7 +63,8 @@ struct TaskView: View {
     }
 
     private var sessions: [Session] {
-        store.sessions.filter { $0.task_id == taskId && $0.archived_at == nil }
+        // A merged task's sessions are archived with it; its history still shows.
+        store.sessions.filter { $0.task_id == taskId }
             .sorted { ($0.created_at ?? "") < ($1.created_at ?? "") }
     }
 
@@ -164,7 +165,7 @@ struct TaskView: View {
         ToolbarItem(placement: .principal) {
             Segments(options: Pane.allCases.map { ($0, $0.rawValue) }, selection: $pane)
         }
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .automatic) {
             if let b = model.busy {
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text(b).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) }
             }
