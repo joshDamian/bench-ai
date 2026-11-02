@@ -54,7 +54,11 @@ struct SessionView: View {
         .onAppear { model.open(); composerFocused = true }
         .onDisappear { model.close() }
         .task(id: model.rows.count) {
-            await files.stat(Transcript.blocks(model.rows).compactMap { if case .turn(_, _, let reply, _, _, _) = $0 { return reply } else { return nil } })
+            let replies: [String] = Transcript.blocks(model.rows).compactMap { (b: Block) -> String? in
+                if case .turn(_, _, let reply, _, _, _) = b { return reply }
+                return nil
+            }
+            await files.stat(replies)
         }
     }
 
