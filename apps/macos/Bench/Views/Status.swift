@@ -239,3 +239,66 @@ struct Segments<T: Hashable>: View {
         .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 9))
     }
 }
+
+/// A pane's header, as the boards draw it: 54pt, title on the left, controls at the
+/// pane's own right edge. The window has no title bar; headers drag it.
+struct PaneHeader<Leading: View, Trailing: View>: View {
+    @ViewBuilder let leading: Leading
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: Space.sm) {
+            leading
+            Spacer(minLength: Space.md)
+            trailing
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, 12)
+        .frame(height: 54)
+        .background(WindowDragArea())
+    }
+}
+
+/// The title block a header leads with: name, and where it is.
+struct HeaderTitle: View {
+    @Environment(\.theme) private var theme
+    let title: String
+    let sub: String
+    var mono = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
+            if !sub.isEmpty {
+                Text(sub).font(.system(size: 11.5, design: mono ? .monospaced : .default)).foregroundStyle(theme.colors.muted).lineLimit(1).truncationMode(.middle)
+            }
+        }
+    }
+}
+
+/// A round icon toggle for headers: terminal, inspector.
+struct HeaderToggle: View {
+    @Environment(\.theme) private var theme
+    let icon: String
+    let help: String
+    @Binding var on: Bool
+
+    var body: some View {
+        Button { on.toggle() } label: {
+            Image(systemName: icon).font(.system(size: 13))
+                .foregroundStyle(on ? theme.colors.text : theme.colors.muted)
+                .frame(width: 30, height: 30)
+                .background(on ? theme.colors.fill(0.1) : .clear, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+/// Empty space that moves the window, for a window with no title bar.
+struct WindowDragArea: NSViewRepresentable {
+    final class DragView: NSView { override var mouseDownCanMoveWindow: Bool { true } }
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ v: NSView, context: Context) {}
+}

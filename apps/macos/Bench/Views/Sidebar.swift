@@ -90,14 +90,10 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 28)
+        .safeAreaInset(edge: .top, spacing: 0) { top }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
-        .toolbar {
-            ToolbarItem {
-                Button { model.showNewSession = true } label: { Label("New Session", systemImage: "square.and.pencil") }
-                    .help("New Session (⌘N)")
-            }
-        }
     }
 
     private func placeRow(_ p: Place, glyph: String, tint: Color, count: Int, loud: Bool) -> some View {
@@ -131,6 +127,25 @@ struct Sidebar: View {
                 .fixedSize()
         }
         .font(.system(size: 13))
+    }
+
+    /// The pane's top: room for the traffic lights, then hide-sidebar and new-session.
+    private var top: some View {
+        HStack(spacing: 2) {
+            Spacer()
+            Button { withAnimation(.snappy) { model.showSidebar = false } } label: {
+                Image(systemName: "sidebar.left").font(.system(size: 13)).frame(width: 28, height: 26).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help("Hide Sidebar (⌃⌘S)")
+            Button { model.newSession() } label: {
+                Image(systemName: "square.and.pencil").font(.system(size: 13)).frame(width: 28, height: 26).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help("New Session (⌘N)")
+        }
+        .foregroundStyle(theme.colors.muted)
+        .padding(.horizontal, 10)
+        .frame(height: 46)
+        .background(WindowDragArea())
     }
 
     private var footer: some View {

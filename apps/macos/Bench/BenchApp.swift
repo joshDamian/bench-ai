@@ -17,6 +17,7 @@ final class AppModel {
         didSet { UserDefaults.standard.set(showInspector, forKey: "inspector") }
     }
     var showTerminal = false
+    var showSidebar = true
     /// Asks the task on screen to open its ship sheet (⇧⌘M).
     var shipRequest = 0
     @ObservationIgnored let panel = ApprovalPanel()
@@ -107,6 +108,7 @@ struct BenchMacApp: App {
                 .themed()
                 .onAppear { delegate.model = model }
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1320, height: 840)
         .commands { BenchCommands(model: model) }
 
@@ -172,6 +174,8 @@ struct BenchCommands: Commands {
             Button("Dashboard") { openWindow(id: "dashboard") }.keyboardShortcut("d", modifiers: [.command, .shift])
         }
         CommandGroup(after: .sidebar) {
+            Button(model.showSidebar ? "Hide Sidebar" : "Show Sidebar") { withAnimation(.snappy) { model.showSidebar.toggle() } }
+                .keyboardShortcut("s", modifiers: [.command, .control])
             Button(model.showInspector ? "Hide Inspector" : "Show Inspector") { model.showInspector.toggle() }
                 .keyboardShortcut("j", modifiers: [.command])
             Button(model.showTerminal ? "Hide Terminal" : "Show Terminal") { model.showTerminal.toggle() }

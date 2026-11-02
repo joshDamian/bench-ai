@@ -29,24 +29,40 @@ struct SessionView: View {
     var body: some View {
         @Bindable var app = app
         let session = model.session
-        Group {
-            if !embedded && app.showTerminal {
-                VSplitView {
-                    conversation.frame(minHeight: 260)
-                    RemoteTerminalView(store: store, query: "session=\(BenchAPI.enc(sessionId))&shell=1", place: session?.cwd ?? "Shell")
-                        .frame(minHeight: 140, idealHeight: 250)
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                if !embedded {
+                    PaneHeader {
+                        HeaderTitle(title: session?.title ?? "Session", sub: subtitle(session))
+                    } trailing: {
+                        if let session {
+                            ModelMenu(store: store, session: session, capsule: true)
+                            ModeMenu(store: store, session: session)
+                        }
+                        Spacer().frame(width: Space.sm)
+                        HeaderToggle(icon: "terminal", help: "Terminal (⇧⌘T)", on: $app.showTerminal)
+                        HeaderToggle(icon: "sidebar.right", help: "Inspector (⌘J)", on: $app.showInspector)
+                    }
                 }
-            } else {
-                conversation
+                if !embedded && app.showTerminal {
+                    VSplitView {
+                        conversation.frame(minHeight: 260)
+                        RemoteTerminalView(store: store, query: "session=\(BenchAPI.enc(sessionId))&shell=1", place: session?.cwd ?? "Shell")
+                            .frame(minHeight: 140, idealHeight: 250)
+                    }
+                } else {
+                    conversation
+                }
+            }
+            if !embedded && app.showInspector {
+                Rectangle().fill(theme.colors.fill(0.06)).frame(width: 1)
+                SessionInspector(store: store, sessionId: sessionId, files: files)
+                    .frame(width: 340)
+                    .transition(.move(edge: .trailing))
             }
         }
+        .animation(.snappy, value: app.showInspector)
         .navigationTitle(session?.title ?? "Session")
-        .hideToolbarTitle()
-        .toolbar { if !embedded { toolbar(session) } }
-        .inspector(isPresented: embedded ? .constant(false) : $app.showInspector) {
-            SessionInspector(store: store, sessionId: sessionId, files: files)
-                .inspectorColumnWidth(min: 280, ideal: 340, max: 480)
-        }
         .environment(files)
         .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
@@ -59,32 +75,6 @@ struct SessionView: View {
                 return nil
             }
             await files.stat(replies)
-        }
-    }
-
-    @ToolbarContentBuilder
-    private func toolbar(_ session: Session?) -> some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(session?.title ?? "Session").font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
-                Text(subtitle(session)).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted).lineLimit(1)
-            }
-            .padding(.leading, Space.xs)
-        }
-        ToolbarItemGroup(placement: .automatic) {
-            if let session {
-                ModelMenu(store: store, session: session, capsule: true)
-                ModeMenu(store: store, session: session)
-            }
-            Spacer().frame(width: Space.sm)
-            Toggle(isOn: Binding(get: { app.showTerminal }, set: { app.showTerminal = $0 })) {
-                Label("Terminal", systemImage: "terminal")
-            }
-            .help("Terminal (⇧⌘T)")
-            Toggle(isOn: Binding(get: { app.showInspector }, set: { app.showInspector = $0 })) {
-                Label("Inspector", systemImage: "sidebar.right")
-            }
-            .help("Inspector (⌘J)")
         }
     }
 
@@ -320,57 +310,91 @@ struct Composer: View {
     }
 }
 
-/// "Opus · High": the session's model and effort. Applies from the next message.
+/// "Opus · High": the session's model and effort, chosen in a popover as the board draws
+/// it: models grouped by provider with a check on the current one, effort underneath.
 struct ModelMenu: View {
     @Environment(\.theme) private var theme
     let store: BenchStore
     let session: Session
     var capsule = true
+    @State private var open = false
 
     var body: some View {
-        let menu = Menu {
-            ForEach(store.providers.filter { $0.enabled }) { p in
-                Section(p.ready == false ? "\(p.name) (not set up)" : p.name) {
-                    ForEach(p.models.filter(\.enabled)) { m in
-                        Button { set(["providerId": p.id, "modelId": m.id]) } label: {
-                            if m.id == session.model_id { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
-                        }
-                        .disabled(p.ready == false)
-                    }
-                }
-            }
-            Divider()
-            Section("Effort") {
-                Button { set(["effort": NSNull()]) } label: {
-                    if session.effort == nil { Label("Model default", systemImage: "checkmark") } else { Text("Model default") }
-                }
-                ForEach(Effort.allCases) { e in
-                    Button { set(["effort": e.rawValue]) } label: {
-                        if session.effort == e.rawValue { Label(e.label, systemImage: "checkmark") } else { Text(e.label) }
-                    }
-                }
-            }
-        } label: {
+        Button { open.toggle() } label: {
             HStack(spacing: 6) {
-                Text(label)
+                Text(label).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
             }
-            .foregroundStyle(theme.colors.text)
+            .foregroundStyle(capsule ? theme.colors.text : theme.colors.muted)
+            .modifier(CapsuleIf(on: capsule))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .tint(theme.colors.text)
-        .fixedSize()
-        .help("Model and effort. Applies from your next message.")
-        if capsule { menu.toolbarCapsule() } else { menu.font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) }
+        .buttonStyle(.plain)
+        .help("Model and effort")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            ModelPopover(store: store, session: session).environment(\.theme, theme)
+        }
     }
 
-    /// "Opus · High"
     private var label: String {
         let m = store.providers.flatMap(\.models).first { $0.id == session.model_id }
         let name = m?.label ?? store.providers.first { $0.id == session.provider_id }?.name ?? "Default model"
         guard let e = session.effort.flatMap(Effort.init(rawValue:)) else { return name }
         return "\(name) · \(e.label)"
+    }
+}
+
+private struct CapsuleIf: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on { content.toolbarCapsule() } else { content.font(.system(size: TypeScale.xs)) }
+    }
+}
+
+private struct ModelPopover: View {
+    @Environment(\.theme) private var theme
+    let store: BenchStore
+    let session: Session
+    @State private var effort: String = ""
+
+    var body: some View {
+        let providers = store.providers.filter { $0.enabled && $0.ready != false && !$0.models.filter(\.enabled).isEmpty }
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(providers) { p in
+                        Text(p.name).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.colors.muted)
+                            .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 3)
+                        ForEach(p.models.filter(\.enabled)) { m in
+                            let on = m.id == session.model_id
+                            Button { set(["providerId": p.id, "modelId": m.id]) } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).opacity(on ? 1 : 0).frame(width: 14)
+                                    Text(m.label).font(.system(size: 13))
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 10)
+                                .frame(height: 28)
+                                .background(on ? theme.colors.fill(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(6)
+            }
+            .frame(maxHeight: 360)
+            Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1).padding(.horizontal, 10)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Effort").font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.colors.muted)
+                Segments(options: [("", "Default")] + Effort.allCases.map { ($0.rawValue, $0 == .xhigh ? "XHigh" : $0.label) },
+                         selection: Binding(get: { effort }, set: { v in effort = v; set(["effort": v.isEmpty ? NSNull() : v]) }), fill: true)
+                Text("Applies from your next message.").font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+            }
+            .padding(14)
+        }
+        .frame(width: 340)
+        .onAppear { effort = session.effort ?? "" }
     }
 
     private func set(_ body: [String: Any]) {

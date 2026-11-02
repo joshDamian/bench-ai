@@ -27,12 +27,37 @@ struct MainView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView {
-            Sidebar(store: store, selection: $model.selection)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 256, max: 360)
-        } detail: {
-            detail
+        // The board's window: an inset, rounded sidebar pane, then the place on the right.
+        // No title bar; the traffic lights sit inside the sidebar pane.
+        HStack(spacing: 0) {
+            if model.showSidebar {
+                Sidebar(store: store, selection: $model.selection)
+                    .frame(width: 256)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    .background(theme.colors.surface3.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(theme.colors.fill(0.07)))
+                    .padding(8)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            VStack(spacing: 0) {
+                if !model.showSidebar { Color.clear.frame(height: 0) }
+                detail
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.leading, model.showSidebar ? 0 : 112)
         }
+        .overlay(alignment: .topLeading) {
+            if !model.showSidebar {
+                Button { withAnimation(.snappy) { model.showSidebar = true } } label: {
+                    Image(systemName: "sidebar.left").font(.system(size: 13)).foregroundStyle(theme.colors.muted)
+                        .frame(width: 28, height: 26).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).help("Show Sidebar (⌃⌘S)")
+                .padding(.leading, 78).padding(.top, 14)
+            }
+        }
+        .background(theme.colors.bg)
+        .ignoresSafeArea()
         .safeAreaInset(edge: .top, spacing: 0) {
             if !store.connected && store.dropped {
                 Text(store.error ?? "Reconnecting…")
@@ -121,6 +146,8 @@ struct PlaceView: View {
 
     var body: some View {
         let live = store.sessions.filter { $0.archived_at == nil }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+        VStack(spacing: 0) {
+        PaneHeader { HeaderTitle(title: place.title, sub: "") } trailing: { EmptyView() }
         ScrollView {
             VStack(alignment: .leading, spacing: Space.lg) {
                 switch place {
@@ -149,6 +176,7 @@ struct PlaceView: View {
             .padding(.horizontal, 32)
             .padding(.vertical, Space.lg)
             .frame(maxWidth: .infinity)
+        }
         }
         .background(theme.colors.bg)
         .navigationTitle(place.title)

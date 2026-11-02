@@ -69,7 +69,8 @@ struct TaskView: View {
     }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            header
             if app.showTerminal {
                 VSplitView {
                     content.frame(minHeight: 260)
@@ -82,8 +83,6 @@ struct TaskView: View {
         }
         .background(theme.colors.bg)
         .navigationTitle(model.task?.title ?? "Task")
-        .hideToolbarTitle()
-        .toolbar { toolbar }
         .task(id: store.task(taskId)) { await model.load() }
         .onChange(of: app.shipRequest) { _, _ in if model.task?.state == "active" { shipping = true } }
         .sheet(isPresented: $shipping) { ShipSheet(model: model).environment(\.theme, theme) }
@@ -140,36 +139,34 @@ struct TaskView: View {
         }
     }
 
-    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+    private var header: some View {
         let t = model.task
         let g = model.git
-        ToolbarItem(placement: .navigation) {
+        return PaneHeader {
             VStack(alignment: .leading, spacing: 1) {
                 Text(t?.title ?? "Task").font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 4) {
-                    Text("\(t?.branch ?? "") → \(model.base)").font(.system(size: 11.5, design: .monospaced))
+                    Text("\(t?.branch ?? "") → \(model.base)").font(.system(size: 11.5, design: .monospaced)).truncationMode(.middle)
                     if let g, !g.conflicted.isEmpty {
-                        Text("· \(g.conflicted.count) conflict\(g.conflicted.count == 1 ? "" : "s")").foregroundStyle(theme.colors.bad)
+                        Text("· \(g.conflicted.count) conflict\(g.conflicted.count == 1 ? "" : "s")").foregroundStyle(theme.colors.bad).fixedSize()
                     } else if let c = t?.check_status {
                         Text("· " + (c == "passed" ? "check passed" : c == "failed" ? "check failed" : "checking…"))
                             .foregroundStyle(c == "passed" ? theme.colors.good : c == "failed" ? theme.colors.bad : theme.colors.muted)
+                            .fixedSize()
                     }
                 }
                 .font(.system(size: 11.5))
                 .foregroundStyle(theme.colors.muted)
                 .lineLimit(1)
             }
-            .padding(.leading, Space.xs)
-        }
-        ToolbarItem(placement: .principal) {
-            Segments(options: Pane.allCases.map { ($0, $0.rawValue) }, selection: $pane)
-        }
-        ToolbarItemGroup(placement: .automatic) {
+            .layoutPriority(-1)
+        } trailing: {
             if let b = model.busy {
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text(b).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) }
             }
-            Toggle(isOn: Binding(get: { app.showTerminal }, set: { app.showTerminal = $0 })) { Label("Terminal", systemImage: "terminal") }
-                .help("Terminal (⇧⌘T)")
+            Segments(options: Pane.allCases.map { ($0, $0.rawValue) }, selection: $pane).fixedSize()
+            Spacer().frame(width: Space.xs)
+            HeaderToggle(icon: "terminal", help: "Terminal (⇧⌘T)", on: Binding(get: { app.showTerminal }, set: { app.showTerminal = $0 }))
             Menu {
                 Button("Rename…") { newTitle = t?.title ?? ""; renaming = true }
                 Button("New Session in This Task") { newSession() }
@@ -184,10 +181,13 @@ struct TaskView: View {
                 } else {
                     Button("Reopen Task") { model.run("Reopening…") { try await store.api.taskAction(taskId, "reopen") } }
                 }
-            } label: { Label("More", systemImage: "ellipsis.circle") }
+            } label: { Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(theme.colors.muted).frame(width: 30, height: 30) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("More")
             if t?.state == "active", g?.conflicted.isEmpty ?? true {
-                Button { shipping = true } label: { Text("Merge into \(model.base)") }
+                Button { shipping = true } label: { Text("Merge into \(model.base)").lineLimit(1) }
                     .buttonStyle(PrimaryButton(height: 28))
+                    .fixedSize()
                     .disabled(model.busy != nil)
                     .help("Merge or ship (⇧⌘M)")
             }

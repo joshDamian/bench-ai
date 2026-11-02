@@ -21,7 +21,8 @@ struct ProjectView: View {
     private func newest(_ a: BenchTask, _ b: BenchTask) -> Bool { (a.updated_at ?? "") > (b.updated_at ?? "") }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            header
             if app.showTerminal {
                 VSplitView {
                     content.frame(minHeight: 260)
@@ -34,8 +35,6 @@ struct ProjectView: View {
         }
         .background(theme.colors.bg)
         .navigationTitle(project?.name ?? "Project")
-        .hideToolbarTitle()
-        .toolbar { toolbar }
         .task(id: projectId) { await load() }
         .sheet(isPresented: $committing) {
             CommitSheet(store: store, projectId: projectId, git: git) { await load() }.environment(\.theme, theme)
@@ -157,19 +156,12 @@ struct ProjectView: View {
         .buttonStyle(.plain)
     }
 
-    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(project?.name ?? "").font(.system(size: 13.5, weight: .semibold))
-                if let p = project?.path {
-                    Text(p.replacingOccurrences(of: #"^/(home|Users)/[^/]+"#, with: "~", options: .regularExpression))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(theme.colors.muted)
-                }
-            }
-            .padding(.leading, Space.xs)
-        }
-        ToolbarItemGroup(placement: .automatic) {
+    private var header: some View {
+        PaneHeader {
+            HeaderTitle(title: project?.name ?? "",
+                        sub: (project?.path ?? "").replacingOccurrences(of: #"^/(home|Users)/[^/]+"#, with: "~", options: .regularExpression),
+                        mono: true)
+        } trailing: {
             if let busy { HStack(spacing: 6) { ProgressView().controlSize(.small); Text(busy).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) } }
             HStack(spacing: 0) {
                 Button { branching = true } label: {
@@ -177,12 +169,13 @@ struct ProjectView: View {
                         Text(git?.branch ?? "…").font(.system(size: 12, design: .monospaced))
                         Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
                     }
-                    .padding(.horizontal, 10).frame(height: 26).contentShape(Rectangle())
+                    .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $branching, arrowEdge: .bottom) {
                     BranchPopover(store: store, projectId: projectId, git: git) { await load() }.environment(\.theme, theme)
                 }
+                Rectangle().fill(theme.colors.fill(0.15)).frame(width: 1, height: 14)
                 groupButton("Pull", count: git?.behind) { act("Pulling…") { try await store.api.projectAction(projectId, "pull") } }
                     .disabled(git?.hasRemote == false)
                 groupButton("Push", count: git?.ahead) { act("Pushing…") { try await store.api.projectAction(projectId, "push") } }
@@ -191,19 +184,23 @@ struct ProjectView: View {
                     .disabled((git?.dirty.count ?? 0) == 0)
             }
             .font(.system(size: 12.5))
+            .foregroundStyle(theme.colors.text)
             .padding(.horizontal, 2)
             .background(theme.colors.fill(0.08), in: Capsule())
             .disabled(busy != nil)
-            Toggle(isOn: Binding(get: { app.showTerminal }, set: { app.showTerminal = $0 })) { Label("Terminal", systemImage: "terminal") }
-                .help("Terminal (⇧⌘T)")
+            .fixedSize()
+            HeaderToggle(icon: "terminal", help: "Terminal (⇧⌘T)", on: Binding(get: { app.showTerminal }, set: { app.showTerminal = $0 }))
             Menu {
                 Button("Fetch") { act("Fetching…") { try await store.api.projectAction(projectId, "fetch") } }
                 Button("Rename…") { newName = project?.name ?? ""; renaming = true }
                 Divider()
                 Button("Remove from Bench…") { confirmRemove = true }
-            } label: { Label("More", systemImage: "ellipsis.circle") }
+            } label: { Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(theme.colors.muted).frame(width: 30, height: 30) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("More")
             Button("New Task") { app.newSession(in: projectId) }
                 .buttonStyle(PrimaryButton(height: 28))
+                .fixedSize()
         }
     }
 

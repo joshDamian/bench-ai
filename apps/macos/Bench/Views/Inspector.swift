@@ -175,7 +175,8 @@ struct SessionInspector: View {
         VStack(spacing: 0) {
             Segments(options: [("changes", "Changes"), ("files", "Files"), ("session", "Session")], selection: $tab, fill: true)
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .frame(height: 54)
+            .background(WindowDragArea())
             switch tab {
             case "files": FilesTab(files: files)
             case "session": SessionTab(store: store, sessionId: sessionId)
