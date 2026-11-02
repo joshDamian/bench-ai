@@ -34,6 +34,9 @@ final class SessionFiles {
     @ObservationIgnored private var asked = Set<String>()
     /// The local copy Quick Look is showing.
     var previewing: URL?
+    /// A Markdown file, which Bench renders itself: Quick Look shows Markdown as raw text.
+    var reading: Reading?
+    struct Reading: Identifiable { let id = UUID(); let file: FileInfo; let text: String }
 
     init(api: BenchAPI, sessionId: String) { self.api = api; self.sessionId = sessionId }
 
@@ -85,7 +88,17 @@ final class SessionFiles {
         do { try d.write(to: url); return url } catch { return nil }
     }
 
-    func preview(_ f: FileInfo) { Task { previewing = await local(f) } }
+    func preview(_ f: FileInfo) {
+        Task {
+            guard let url = await local(f) else { return }
+            let ext = url.pathExtension.lowercased()
+            if ["md", "markdown", "mdx"].contains(ext), let text = try? String(contentsOf: url, encoding: .utf8) {
+                reading = Reading(file: f, text: text)
+            } else {
+                previewing = url
+            }
+        }
+    }
 
     func save(_ f: FileInfo) {
         Task {
@@ -185,7 +198,7 @@ struct SessionInspector: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(theme.colors.surfaceRail)
-        .quickLookPreview($files.previewing)
+
     }
 }
 
@@ -429,5 +442,41 @@ private struct SessionTab: View {
         let n = (s?.input_tokens ?? 0) + (s?.output_tokens ?? 0)
         guard n > 0 else { return nil }
         return n >= 1000 ? "\(Int(n / 1000))k tokens" : "\(Int(n)) tokens"
+    }
+}
+
+/// A Markdown file, rendered: the board's viewer with Open With…, Save to Downloads and Done.
+struct MarkdownViewer: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
+    let reading: SessionFiles.Reading
+    let files: SessionFiles
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Space.sm) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(reading.file.name).font(.system(size: 13, weight: .semibold))
+                    Text(reading.file.meta).font(.system(size: 11)).foregroundStyle(theme.colors.muted)
+                }
+                Spacer()
+                Button("Open With…") { files.openWith(reading.file) }.buttonStyle(TonalButton(height: 28))
+                Button("Save to Downloads") { files.save(reading.file) }.buttonStyle(TonalButton(height: 28))
+                Button("Done") { dismiss() }.buttonStyle(PrimaryButton(height: 28)).keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, 18)
+            .frame(height: 54)
+            Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1)
+            ScrollView {
+                BenchMarkdown(text: reading.text)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 720, alignment: .leading)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(minWidth: 720, idealWidth: 820, minHeight: 560, idealHeight: 720)
+        .background(theme.colors.bg)
     }
 }

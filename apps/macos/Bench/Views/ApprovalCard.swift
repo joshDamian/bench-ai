@@ -53,18 +53,26 @@ struct ApprovalCard: View {
                         .padding(.horizontal, Space.sm)
                 }
             case "AskUserQuestion":
-                Text("Answer a question").font(.system(size: TypeScale.md, weight: .semibold))
+                HStack(spacing: 10) {
+                    if !inbox { Circle().fill(theme.colors.warn).frame(width: 8, height: 8) }
+                    Text("Claude is asking").font(.system(size: TypeScale.md, weight: .semibold))
+                    Spacer()
+                }
                 let qs = i["questions"].array
                 ForEach(Array(qs.enumerated()), id: \.offset) { _, q in
                     questionView(q)
                 }
                 let done = qs.allSatisfy { !(answers[$0["question"].string ?? ""] ?? "").isEmpty }
-                HStack {
-                    Button("Answer") { onAnswer(["allow": true, "answers": answers]) }
-                        .buttonStyle(CapsuleButton(kind: .primary))
-                        .disabled(!done)
+                HStack(spacing: Space.sm) {
                     Button("Skip") { onAnswer(["allow": false, "message": "The user declined to answer."]) }
                         .buttonStyle(CapsuleButton(kind: .outline))
+                    Spacer()
+                    Button { onAnswer(["allow": true, "answers": answers]) } label: {
+                        HStack(spacing: 6) { Text("Answer"); if !compact && !inbox { KeyHint("⌘↩") } }
+                    }
+                    .buttonStyle(CapsuleButton(kind: .primary))
+                    .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: .command))
+                    .disabled(!done)
                 }
             default:
                 HStack(spacing: 10) {
@@ -130,20 +138,54 @@ struct ApprovalCard: View {
         let question = q["question"].string ?? ""
         let multi = q["multiSelect"].bool
         let options = q["options"].array
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Text(question)
-            FlowChips(options: options.map { ($0["label"].string ?? "", $0["description"].string) }, selected: selected(question, multi)) { label in
-                let cur = answers[question] ?? ""
-                if !multi { answers[question] = label; return }
-                var set = cur.components(separatedBy: ", ").filter { !$0.isEmpty }
-                if let k = set.firstIndex(of: label) { set.remove(at: k) } else { set.append(label) }
-                answers[question] = set.joined(separator: ", ")
+        VStack(alignment: .leading, spacing: Space.sm) {
+            Text(question).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true)
+            // Options as a list of choices, the board's grouped rows: a mark, the label, and its
+            // description underneath.
+            VStack(spacing: 0) {
+                ForEach(Array(options.enumerated()), id: \.offset) { k, o in
+                    let label = o["label"].string ?? ""
+                    let on = selected(question, multi).contains(label)
+                    Button {
+                        let cur = answers[question] ?? ""
+                        if !multi { answers[question] = label; return }
+                        var set = cur.components(separatedBy: ", ").filter { !$0.isEmpty }
+                        if let x = set.firstIndex(of: label) { set.remove(at: x) } else { set.append(label) }
+                        answers[question] = set.joined(separator: ", ")
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Group {
+                                if multi {
+                                    RoundedRectangle(cornerRadius: 4).strokeBorder(on ? theme.colors.accent : theme.colors.fill(0.3), lineWidth: on ? 5 : 1.5)
+                                } else {
+                                    Circle().strokeBorder(on ? theme.colors.accent : theme.colors.fill(0.3), lineWidth: on ? 5 : 1.5)
+                                }
+                            }
+                            .frame(width: 16, height: 16).padding(.top, 1)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(label).font(.system(size: 13))
+                                if let d = o["description"].string, !d.isEmpty {
+                                    Text(d).font(.system(size: 12)).foregroundStyle(theme.colors.muted).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .overlay(alignment: .top) { if k > 0 { Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1) } }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            TextField("Or type an answer", text: Binding(
+            .background(theme.colors.fill(0.05), in: RoundedRectangle(cornerRadius: 10))
+            TextField("", text: Binding(
                 get: { let a = answers[question] ?? ""; return options.contains { $0["label"].string == a } ? "" : a },
                 set: { answers[question] = $0 }
-            ))
-            .textFieldStyle(.roundedBorder)
+            ), prompt: Text("Or type an answer"))
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .padding(.horizontal, 12).frame(height: 32)
+            .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 9))
         }
     }
 

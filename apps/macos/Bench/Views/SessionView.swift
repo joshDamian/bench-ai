@@ -1,3 +1,4 @@
+import QuickLook
 import MarkdownUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -64,6 +65,10 @@ struct SessionView: View {
         .animation(.snappy, value: app.showInspector)
         .navigationTitle(session?.title ?? "Session")
         .environment(files)
+        .sheet(item: Binding(get: { files.reading }, set: { files.reading = $0 })) { r in
+            MarkdownViewer(reading: r, files: files).environment(\.theme, theme)
+        }
+        .quickLookPreview(Binding(get: { files.previewing }, set: { files.previewing = $0 }))
         .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }

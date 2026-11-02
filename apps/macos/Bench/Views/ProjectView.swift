@@ -66,13 +66,14 @@ struct ProjectView: View {
             .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
         return ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                if active.isEmpty && loose.isEmpty {
+                if active.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("No tasks yet").font(.system(size: 15, weight: .semibold))
+                        Text("No open tasks").font(.system(size: 15, weight: .semibold))
                         Text("A task runs on its own branch, so you can review and merge it when it's done.")
                             .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
                     }
-                    .padding(.top, Space.lg)
+                    .padding(.horizontal, 12)
+                    .padding(.top, Space.md)
                 } else {
                     table(active)
                 }
@@ -80,7 +81,7 @@ struct ProjectView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         GroupLabel("In the checkout")
                         ForEach(loose) { s in
-                            row(mark: Mark.of(s, store: store), title: s.title, branch: git?.branch ?? "", status: Describe.session(s, store: store),
+                            row(mark: Mark.of(s, store: store), title: s.title, branch: git?.branch ?? "", status: Mark.of(s, store: store) == .idle ? "Idle" : Describe.session(s, store: store),
                                 tint: Mark.of(s, store: store).tint(theme.colors), when: Format.ago(s.updated_at)) { app.selection = s.id }
                         }
                         if let n = git?.dirty.count, n > 0 {

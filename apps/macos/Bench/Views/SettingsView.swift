@@ -50,6 +50,10 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             // The board's sidebar: a tonal pane inset from the window, with a quiet selection.
             VStack(alignment: .leading, spacing: 1) {
+                HStack { TrafficLights(); Spacer() }
+                    .padding(.leading, 8)
+                    .frame(height: 40)
+                    .background(WindowDragArea())
                 ForEach(Section.allCases) { s in
                     Button { section = s } label: {
                         HStack(spacing: 10) {
@@ -69,7 +73,7 @@ struct SettingsView: View {
                 Spacer()
             }
             .padding(.horizontal, 8)
-            .padding(.top, 44)
+            .padding(.top, 4)
             .frame(width: 220)
             .frame(maxHeight: .infinity)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
