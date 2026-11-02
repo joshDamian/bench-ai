@@ -309,6 +309,8 @@ struct WindowDragArea: NSViewRepresentable {
 struct TrafficLights: View {
     @State private var hover = false
     @State private var key = true
+    /// In full screen macOS shows its own title bar on hover, with its own buttons.
+    @State private var full = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -316,8 +318,12 @@ struct TrafficLights: View {
             light(Color(red: 0.996, green: 0.737, blue: 0.180), "minus") { NSApp.keyWindow?.miniaturize(nil) }
             light(Color(red: 0.157, green: 0.784, blue: 0.251), "plus") { NSApp.keyWindow?.toggleFullScreen(nil) }
         }
+        .opacity(full ? 0 : 1)
+        .allowsHitTesting(!full)
         .onHover { hover = $0 }
         .background(SystemLightsHider())
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in full = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in full = false }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in key = true }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in key = NSApp.keyWindow != nil }
     }
@@ -335,9 +341,23 @@ struct TrafficLights: View {
 /// Hides the system's traffic lights in the window this view is in.
 private struct SystemLightsHider: NSViewRepresentable {
     final class V: NSView {
+        private var observers: [Any] = []
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            for k in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { window?.standardWindowButton(k)?.isHidden = true }
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+            observers = []
+            guard let w = window else { return }
+            set(hidden: !w.styleMask.contains(.fullScreen))
+            // Full screen's hover title bar needs the real buttons and the window's name.
+            observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: w, queue: .main) { [weak self] _ in self?.set(hidden: false) })
+            observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification, object: w, queue: .main) { [weak self] _ in self?.set(hidden: true) })
+        }
+
+        private func set(hidden: Bool) {
+            guard let w = window else { return }
+            for k in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { w.standardWindowButton(k)?.isHidden = hidden }
+            w.titleVisibility = hidden ? .hidden : .visible
         }
     }
     func makeNSView(context: Context) -> V { V() }
