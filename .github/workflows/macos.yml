@@ -41,7 +41,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # A self-hosted Mac uses the Node it has; downloading one there can stall.
       - uses: actions/setup-node@v5
+        if: runner.environment == 'github-hosted'
         with:
           node-version: 22
       - name: Themes match the stylesheet
