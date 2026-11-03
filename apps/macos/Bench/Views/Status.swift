@@ -377,31 +377,32 @@ struct GrowingEditor: View {
 
     var body: some View {
         let line = size * 1.32
-        ZStack(alignment: .topLeading) {
-            // Sizes the box: the text itself, invisible, capped at maxLines.
-            Text(text.isEmpty ? " " : text + " ")
-                .font(.system(size: size))
-                .lineLimit(maxLines)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: line * CGFloat(minLines), alignment: .topLeading)
-                .opacity(0)
-                .allowsHitTesting(false)
-            TextEditor(text: $text)
-                .font(.system(size: size))
-                .scrollContentBackground(.hidden)
-                .scrollIndicators(.never)
-                .padding(.horizontal, -5)
-                .onKeyPress(.return, phases: .down) { press in
-                    guard let onReturn else { return .ignored }
-                    if press.modifiers.contains(.shift) || press.modifiers.contains(.option) { return .ignored }
-                    if press.modifiers.contains(.command) { return .ignored }
-                    onReturn()
-                    return .handled
+        // The invisible copy of the text sets the height (up to maxLines); the editor is laid
+        // over it and takes exactly that height, so the box grows with what's typed.
+        Text(text.isEmpty ? " " : text + " ")
+            .font(.system(size: size))
+            .lineLimit(maxLines)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: line * CGFloat(minLines), alignment: .topLeading)
+            .opacity(0)
+            .overlay(alignment: .topLeading) {
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $text)
+                        .font(.system(size: size))
+                        .scrollContentBackground(.hidden)
+                        .scrollIndicators(.never)
+                        .padding(.horizontal, -5)
+                        .onKeyPress(.return, phases: .down) { press in
+                            guard let onReturn else { return .ignored }
+                            if press.modifiers.contains(.shift) || press.modifiers.contains(.option) || press.modifiers.contains(.command) { return .ignored }
+                            onReturn()
+                            return .handled
+                        }
+                    if text.isEmpty {
+                        Text(placeholder).font(.system(size: size)).foregroundStyle(theme.colors.muted).allowsHitTesting(false)
+                    }
                 }
-            if text.isEmpty {
-                Text(placeholder).font(.system(size: size)).foregroundStyle(theme.colors.muted).allowsHitTesting(false)
             }
-        }
     }
 }
