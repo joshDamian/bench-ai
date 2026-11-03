@@ -73,7 +73,10 @@ jobs:
             echo "name=0.0.0-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
+      # The tests launch a copy of Bench as their host. On Josh's Mac that copy competes with
+      # the Bench he's using and hangs, so they run on GitHub's Macs only.
       - name: Test
+        if: runner.environment == 'github-hosted'
         run: |
           set -o pipefail
           xcodebuild test -project Bench.xcodeproj -scheme Bench -destination 'platform=macOS' \
