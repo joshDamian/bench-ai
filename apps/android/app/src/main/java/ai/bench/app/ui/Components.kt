@@ -98,6 +98,8 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
     val c = Bench.colors
     val body = TextStyle(fontSize = 15.sp, lineHeight = 23.sp, color = c.text)
     val head = body.copy(fontWeight = FontWeight.SemiBold)
+    // Long-press any text in a reply to select and copy it.
+    androidx.compose.foundation.text.selection.SelectionContainer {
     Markdown(
         content = text,
         modifier = modifier,
@@ -129,6 +131,7 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
             codeBlock = { m -> com.mikepenz.markdown.compose.elements.MarkdownCodeBlock(m.content, m.node) { code, lang, _ -> CodeCard(code, lang) } },
         ),
     )
+    }
 }
 
 /** A code block as a card: the language and Copy on top, highlighted code that scrolls sideways. */
