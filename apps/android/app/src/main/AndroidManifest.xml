@@ -50,6 +50,8 @@
                 android:resource="@xml/files" />
         </provider>
 
+        <receiver android:name=".ActionReceiver" android:exported="false" />
+
         <service
             android:name=".ConnectionService"
             android:exported="false"

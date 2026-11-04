@@ -500,6 +500,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
     var needs by remember { mutableStateOf(prefs.getBoolean("needs", true)) }
     var finished by remember { mutableStateOf(prefs.getBoolean("finished", false)) }
     var errors by remember { mutableStateOf(prefs.getBoolean("errors", true)) }
+    var live by remember { mutableStateOf(prefs.getBoolean("live", true)) }
     fun set(k: String, v: Boolean) = prefs.edit().putBoolean(k, v).apply()
     Page("Notifications", "What reaches you when Bench isn't open", onBack) {
         section("Connection")
@@ -517,6 +518,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
                 SwitchRow("Claude needs you", "Approvals, questions and plans", needs) { needs = it; set("needs", it) }
                 SwitchRow("A turn finishes", null, finished) { finished = it; set("finished", it) }
                 SwitchRow("A turn stops with an error", null, errors) { errors = it; set("errors", it) }
+                SwitchRow("Live card while Claude works", "On the lock screen and status bar, with Stop", live) { live = it; set("live", it) }
             }
         }
         item { Text("These are for this phone. Android's own settings decide sound and vibration.", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp)) }

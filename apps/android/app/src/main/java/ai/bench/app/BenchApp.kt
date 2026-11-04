@@ -88,8 +88,24 @@ class BenchApp : Application() {
             }
             // A session leaving "running" finished its turn, or stopped with an error.
             var last = emptyMap<String, String>()
+            val since = HashMap<String, Long>()
             store.state.collect { st ->
                 val now = st.sessions.associate { it.id to it.status }
+                // The live card for each running session: posted when it starts, gone when it stops.
+                val live = prefs.getBoolean("live", true)
+                for (s in st.sessions) {
+                    if (s.status == "running" && live) {
+                        val first = since.getOrPut(s.id) { System.currentTimeMillis() }
+                        if (last[s.id] != "running" || !since.containsKey(s.id + ":posted")) {
+                            val project = st.projects.firstOrNull { it.id == s.project_id }?.name ?: "Ask Bench"
+                            Notifier.running(this@BenchApp, s, project, first)
+                            since[s.id + ":posted"] = first
+                        }
+                    } else if (since.remove(s.id) != null) {
+                        since.remove(s.id + ":posted")
+                        Notifier.stopRunning(this@BenchApp, s.id)
+                    }
+                }
                 if (!foreground && last.isNotEmpty()) for (s in st.sessions) {
                     if (last[s.id] != "running" || s.status == "running") continue
                     when {
