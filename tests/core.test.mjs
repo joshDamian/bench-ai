@@ -72,6 +72,28 @@ async function until(fn, ms = 3000) {
   throw new Error('timed out');
 }
 
+test('messages a session has no use for yet leave the turn and the next one alone', async () => {
+  const { svc, project } = setup();
+  const s = svc.createSession({ projectId: project.id });
+  svc.send(s.id, 'new kinds');
+  await until(() => svc.session(s.id).status === 'idle' && svc.events(s.id).some((e) => e.kind === 'result'));
+  assert.equal(svc.session(s.id).error, null);
+  assert.deepEqual(replies(svc, s.id), ['echo: new kinds']);
+  svc.send(s.id, 'still here');
+  await until(() => replies(svc, s.id).includes('echo: still here'));
+  assert.equal(svc.events(s.id).filter((e) => e.kind === 'error').length, 0);
+});
+
+test('a refused start-up says why in the transcript, whatever the reason', async () => {
+  const { svc, project } = setup();
+  for (const reason of ['config_file_invalid', 'initialize_not_first', 'sandbox_required_unavailable', 'a_reason_from_a_later_sdk']) {
+    const s = svc.createSession({ projectId: project.id });
+    svc.send(s.id, `refuse ${reason}`);
+    await until(() => svc.events(s.id).some((e) => e.kind === 'result'));
+    assert.equal(svc.events(s.id).find((e) => e.kind === 'result').data.text, `refused: ${reason}`);
+  }
+});
+
 test('a task starts from a branch the checkout does not have out, and leaves the checkout alone', () => {
   const { svc, dir, project } = setup();
   const { task, session } = svc.createTask(project.id, { title: 'Fix the thing', baseBranch: 'feature' });

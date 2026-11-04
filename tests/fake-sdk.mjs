@@ -13,6 +13,9 @@
 //                          `fakeLimit.resetsAt`, then a synthetic message saying so. While
 //                          `fakeLimit.on` is set, every message does this.
 //   "delegate"             reports a subagent's model alongside the session's own
+//   "new kinds"            sends what a session has no use for yet: a failed hook's warning,
+//                          a message type nothing knows, and session_writes_lost after the result
+//   "refuse <reason>"      ends the turn as a refused start-up, with that startup_failure_reason
 //   anything else          replies "echo: <text>"
 //
 // Every turn reasons first, in a thinking block of its own, before the reply - a real
@@ -107,6 +110,14 @@ export function fakeQuery({ prompt, options }) {
       else if (text === 'new skill') {
         record.commands = [...COMMANDS, { name: 'deploy', description: 'Ship it', argumentHint: '<env>' }];
         emit({ type: 'system', subtype: 'commands_changed', commands: record.commands, session_id: sessionId });
+      } else if (text === 'new kinds') {
+        emit({ type: 'system', subtype: 'informational', content: 'PreToolUse: Hook callback hook_0 failed', level: 'warning', tag: 'hook_callback_failed', session_id: sessionId });
+        emit({ type: 'not_invented_yet', session_id: sessionId });
+        emit({ type: 'system', subtype: 'not_invented_yet', session_id: sessionId });
+      } else if (text.startsWith('refuse ')) {
+        const reason = text.slice('refuse '.length);
+        emit({ type: 'result', subtype: 'error_during_execution', is_error: true, duration_ms: 0, num_turns: 0, total_cost_usd: 0, queued_turn_count: 0, errors: [`refused: ${reason}`], startup_failure_reason: reason });
+        continue;
       }
       // Reasoning first, in a message of its own, the way it arrives: it is the largest
       // part of a real transcript by a long way and the transcript view folds it away, so
@@ -148,6 +159,7 @@ export function fakeQuery({ prompt, options }) {
         queued_turn_count: 0,
         errors: isError ? ['it failed'] : [],
       });
+      if (text === 'new kinds') emit({ type: 'system', subtype: 'session_writes_lost', error_code: 'ENOSPC', lost: ['transcript'], transcript_session_ids: [sessionId], session_id: sessionId });
     }
     record.closed = true;
     notify?.();
