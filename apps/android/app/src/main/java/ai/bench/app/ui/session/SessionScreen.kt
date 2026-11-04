@@ -170,6 +170,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     LaunchedEffect(list) {
         snapshotFlow { list.isScrollInProgress to atBottom }.collect { (scrolling, bottom) -> if (scrolling || bottom) stick = bottom }
     }
+    // How many messages arrived since you scrolled up to read; shown on the jump button.
+    var seenAt by remember(vm.sessionId) { mutableStateOf(0) }
+    LaunchedEffect(stick, bl.size) { if (stick) seenAt = bl.size }
+    val unseen = (bl.size - seenAt).coerceAtLeast(0)
     val newest = (if (stream.text.isNotEmpty() || stream.thinking.isNotEmpty()) "stream" else "") + (bl.lastOrNull()?.key ?: "") + approvals.size
     LaunchedEffect(newest) { if (stick && restored) list.animateScrollToItem(0) }
     val memory = remember { BenchApp.instance.getSharedPreferences("scroll", 0) }
@@ -260,10 +264,14 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
                     exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
                 ) {
-                    SmallFloatingActionButton(
-                        onClick = { stick = true; scope.launch { list.animateScrollToItem(0) } },
-                        shape = CircleShape, containerColor = Bench.colors.surface3, contentColor = Bench.colors.text,
-                    ) { Icon(Icons.Default.KeyboardArrowDown, "Jump to latest") }
+                    androidx.compose.material3.BadgedBox(badge = {
+                        if (unseen > 0) androidx.compose.material3.Badge(containerColor = Bench.colors.accent) { Text("$unseen") }
+                    }) {
+                        SmallFloatingActionButton(
+                            onClick = { stick = true; scope.launch { list.animateScrollToItem(0) } },
+                            shape = CircleShape, containerColor = Bench.colors.surface3, contentColor = Bench.colors.text,
+                        ) { Icon(Icons.Default.KeyboardArrowDown, if (unseen > 0) "Jump to $unseen new" else "Jump to latest") }
+                    }
                 }
             }
 
