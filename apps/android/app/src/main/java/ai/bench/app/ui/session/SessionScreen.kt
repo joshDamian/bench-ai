@@ -194,7 +194,11 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     LaunchedEffect(stick, bl.size) { if (stick) seenAt = bl.size }
     val unseen = (bl.size - seenAt).coerceAtLeast(0)
     val newest = (if (stream.text.isNotEmpty() || stream.thinking.isNotEmpty()) "stream" else "") + (bl.lastOrNull()?.key ?: "") + approvals.size
-    LaunchedEffect(newest) { if (stick && restored) list.animateScrollToItem(0) }
+    // Following: hold the newest item in place without an animated scroll per step, which
+    // fought the list's own movement. Only nudge when something actually pushed it off.
+    LaunchedEffect(newest) {
+        if (stick && restored && (list.firstVisibleItemIndex != 0 || list.firstVisibleItemScrollOffset != 0)) list.scrollToItem(0)
+    }
     val memory = remember { BenchApp.instance.getSharedPreferences("scroll", 0) }
     LaunchedEffect(bl.isNotEmpty(), loading) {
         if (restored || bl.isEmpty() || loading) return@LaunchedEffect
@@ -255,14 +259,14 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 ) {
                     // Newest first: item 0 sits at the bottom of the screen.
                     if (stream.text.isNotEmpty() || stream.thinking.isNotEmpty()) item("stream") {
-                        Column(Modifier.animateItem(), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                             if (stream.thinking.isNotEmpty() && stream.text.isEmpty()) MutedText("Thinking…")
                             val smooth = rememberSmoothText(stream.text)
                             if (smooth.isNotEmpty()) MarkdownText(smooth)
                         }
                     }
                     items(bl.asReversed(), key = { it.key }, contentType = { it::class }) { b ->
-                        Box(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(180), placementSpec = null, fadeOutSpec = null)) {
+                        Box {
                             when (b) {
                                 is Block.User -> TranscriptRow(b.row, cwd, thinking, vm::openThinking)
                                 is Block.Note -> TranscriptRow(b.row, cwd, thinking, vm::openThinking)

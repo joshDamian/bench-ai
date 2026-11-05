@@ -405,9 +405,9 @@ fun rememberSmoothText(target: String): String {
     if (shown > target.length) shown = target.length
     LaunchedEffect(target) {
         while (shown < target.length) {
-            kotlinx.coroutines.delay(32)
+            kotlinx.coroutines.delay(50)
             val behind = target.length - shown
-            shown = (shown + maxOf(2, behind / 10)).coerceAtMost(target.length)
+            shown = (shown + maxOf(4, behind / 6)).coerceAtMost(target.length)
         }
     }
     // Cut at a word boundary so half-words don't flicker in.

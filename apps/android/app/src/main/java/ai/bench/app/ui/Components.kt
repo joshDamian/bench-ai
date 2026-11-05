@@ -101,9 +101,13 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
     val head = body.copy(fontWeight = FontWeight.SemiBold)
     // Long-press any text in a reply to select and copy it.
     androidx.compose.foundation.text.selection.SelectionContainer {
+    // Parsed right away, not in the background: the default shows an empty box while it
+    // parses, which made streaming text flash and replies jump in height as they scrolled in.
     Markdown(
-        content = text,
+        markdownState = com.mikepenz.markdown.model.rememberMarkdownState(text, immediate = true),
         modifier = modifier,
+        // Blocks take their new size at once; animating each one made the list wobble.
+        animations = com.mikepenz.markdown.model.markdownAnimations(animateTextSize = { this }),
         colors = markdownColor(
             text = c.text,
             codeText = c.wellText,
