@@ -197,6 +197,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
 }
 
 /** Shared-element plumbing: set inside the layout and each screen's transition. */
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 val LocalShared = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.animation.SharedTransitionScope?> { null }
 val LocalNavScope = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.animation.AnimatedVisibilityScope?> { null }
 
