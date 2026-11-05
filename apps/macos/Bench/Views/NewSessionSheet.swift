@@ -22,10 +22,7 @@ struct NewSessionSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("New Session").font(.system(size: 15, weight: .semibold))
-            TextField("", text: $prompt, prompt: Text("What should Claude do?"), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: TypeScale.md))
-                .lineLimit(5...12)
+            GrowingEditor(text: $prompt, placeholder: "What should Claude do?", size: TypeScale.md, minLines: 5, maxLines: 12)
                 .focused($focused)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)

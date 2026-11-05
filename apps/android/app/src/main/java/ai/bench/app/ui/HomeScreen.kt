@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.imePadding
@@ -53,6 +54,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -112,7 +114,7 @@ fun SectionLabel(text: String, color: Color = Bench.colors.muted, top: Boolean =
 fun <T> Grouped(items: List<T>, row: @Composable (T) -> Unit) {
     Column(Modifier.fillMaxWidth().background(Bench.colors.surface1, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp))) {
         items.forEachIndexed { i, it ->
-            row(it)
+            androidx.compose.runtime.key(it) { row(it) }
             if (i < items.size - 1) HorizontalDivider(color = Bench.colors.line.copy(alpha = 0.5f), modifier = Modifier.padding(start = 50.dp))
         }
     }
@@ -130,15 +132,17 @@ fun BigDot(status: String) {
 }
 
 @Composable
-fun ListRow(title: String, sub: String?, dot: String, trailing: String? = null, trailingColor: Color = Bench.colors.muted, onClick: () -> Unit) {
+fun ListRow(title: String, sub: String?, dot: String, trailing: String? = null, trailingColor: Color = Bench.colors.muted, id: String? = null, selected: Boolean = false, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(onClick = onClick).padding(horizontal = Space.lg),
+        Modifier.fillMaxWidth().heightIn(min = 64.dp)
+            .background(if (selected) Bench.colors.accent.copy(alpha = 0.12f) else Color.Transparent)
+            .clickable(onClick = onClick).padding(horizontal = Space.lg),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         BigDot(dot)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedTitle(id))
             sub?.let { Text(it, fontSize = 12.5.sp, color = Bench.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
         trailing?.let { Text(it, fontSize = 12.sp, color = trailingColor) }
@@ -172,7 +176,7 @@ private fun dayOf(iso: String): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit) {
+fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit, selected: String? = null) {
     val s by store.state.collectAsState()
     val c = Bench.colors
     val scope = rememberCoroutineScope()
@@ -180,6 +184,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     var refreshing by remember { mutableStateOf(false) }
     var answering by remember { mutableStateOf(setOf<String>()) }
     val shared by BenchApp.instance.pendingShare.collectAsState()
+    val sharedText by BenchApp.instance.pendingText.collectAsState()
 
     val needs = s.approvals.map { it.session_id }.toSet()
     val working = s.sessions.filter { it.status == "running" && it.archived_at == null }.sortedByDescending { it.updated_at }
@@ -222,8 +227,8 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 112.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (shared.isNotEmpty()) item("share") {
-                    Text("Choose a session to attach ${shared.size} shared file${if (shared.size == 1) "" else "s"} to", color = c.info, fontSize = 14.sp,
+                if (shared.isNotEmpty() || sharedText != null) item("share") {
+                    Text(if (shared.isEmpty()) "Choose a session to send what you shared to" else "Choose a session to attach ${shared.size} shared file${if (shared.size == 1) "" else "s"} to", color = c.info, fontSize = 14.sp,
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp).background(c.info.copy(alpha = 0.10f), RoundedCornerShape(18.dp)).padding(16.dp))
                 }
                 if (s.approvals.isNotEmpty()) {
@@ -250,12 +255,22 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                 }
                 if (working.isNotEmpty()) {
                     item("working") { Label("Working", c.muted, "${working.size}") }
-                    item("working-list") { Grouped(working) { w -> ListRow(w.title, where(w, store, "Working · ${Format.ago(w.updated_at)}"), "running") { onOpen(w.id) } } }
+                    item("working-list") { Grouped(working) { w -> ListRow(w.title, where(w, store, "Working · ${Format.ago(w.updated_at)}"), "running", id = w.id, selected = w.id == selected) { onOpen(w.id) } } }
                 }
                 byDay.forEach { (day, list) ->
                     item("day-$day") { Label(day) }
-                    item("list-$day") { Grouped(list) { r -> ListRow(r.title, where(r, store, null), r.status, Format.ago(r.updated_at)) { onOpen(r.id) } } }
+                    item("list-$day") { Grouped(list) { r ->
+                        SwipeToArchive(onArchive = {
+                            scope.launch {
+                                runCatching { store.api.archive(r.id, true) }
+                                val undo = snackbar.showSnackbar("Archived “${r.title}”", actionLabel = "Undo", duration = androidx.compose.material3.SnackbarDuration.Short)
+                                if (undo == androidx.compose.material3.SnackbarResult.ActionPerformed) runCatching { store.api.archive(r.id, false) }
+                                store.refresh()
+                            }
+                        }) { ListRow(r.title, where(r, store, null), r.status, Format.ago(r.updated_at), id = r.id, selected = r.id == selected) { onOpen(r.id) } }
+                    } }
                 }
+                if (!s.ready && s.sessions.isEmpty()) item("skeleton") { ListSkeleton() }
                 if (s.ready && s.sessions.isEmpty()) item("empty") {
                     Text(if (s.projects.isEmpty()) "Add a project to get started." else "No sessions yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(top = 32.dp, start = 6.dp))
                 }
@@ -410,4 +425,48 @@ fun TabButton(label: String, on: Boolean, dot: String? = null, onClick: () -> Un
         }
         Box(Modifier.height(3.dp).fillMaxWidth().background(if (on) c.accent else Color.Transparent, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)))
     }
+}
+
+
+/**
+ * Swipe a row toward the start to archive it, deliberately: the row has to be dragged
+ * past half its width and released there. A quick flick or a diagonal brush while
+ * scrolling springs back. Crossing the line ticks once and the backing turns solid,
+ * so you know letting go will archive.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SwipeToArchive(onArchive: () -> Unit, content: @Composable () -> Unit) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var width by remember { mutableStateOf(1) }
+    val holder = remember { arrayOfNulls<androidx.compose.material3.SwipeToDismissBoxState>(1) }
+    val state = androidx.compose.material3.rememberSwipeToDismissBoxState(
+        positionalThreshold = { it * 0.5f },
+        confirmValueChange = { v ->
+            // Only a drag held past halfway counts; a fast fling from a short drag does not.
+            val dragged = holder[0]?.let { st -> runCatching { -st.requireOffset() }.getOrDefault(0f) } ?: 0f
+            if (v == androidx.compose.material3.SwipeToDismissBoxValue.EndToStart && dragged >= width * 0.5f) {
+                onArchive(); true
+            } else false
+        },
+    )
+    holder[0] = state
+    val past by remember { androidx.compose.runtime.derivedStateOf { runCatching { -state.requireOffset() }.getOrDefault(0f) >= width * 0.5f } }
+    LaunchedEffect(past) { if (past) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+    androidx.compose.material3.SwipeToDismissBox(
+        state = state,
+        modifier = Modifier.onSizeChanged { width = it.width.coerceAtLeast(1) },
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            val c = Bench.colors
+            val tint by androidx.compose.animation.animateColorAsState(if (past) c.warn else c.warn.copy(alpha = 0.18f), label = "archive")
+            Row(
+                Modifier.fillMaxSize().background(tint).padding(horizontal = Space.lg),
+                horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Archive, null, tint = if (past) c.onAccent else c.warn)
+                Text(if (past) "Release to archive" else "Archive", color = if (past) c.onAccent else c.warn, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = Space.sm))
+            }
+        },
+    ) { Box(Modifier.background(Bench.colors.surface1)) { content() } }
 }

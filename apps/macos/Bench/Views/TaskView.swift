@@ -243,8 +243,7 @@ private struct TaskOverview: View {
                     section("Done means") {
                         Group2 {
                             if editingDone {
-                                TextField("", text: $done, prompt: Text("What does done look like?"), axis: .vertical)
-                                    .textFieldStyle(.plain).font(.system(size: 13.5)).lineLimit(3...8)
+                                GrowingEditor(text: $done, placeholder: "What does done look like?", size: 13.5, minLines: 3, maxLines: 8)
                                     .padding(12)
                                 GroupRow(title: "") {
                                     Button("Cancel") { editingDone = false; done = t?.done ?? "" }.buttonStyle(TonalButton(height: 24))
@@ -699,10 +698,7 @@ struct ShipSheet: View {
     }
 
     private func field(_ text: Binding<String>, _ prompt: String, lines: Int) -> some View {
-        TextField("", text: text, prompt: Text(prompt), axis: .vertical)
-            .textFieldStyle(.plain)
-            .lineLimit(lines...max(lines, 6))
-            .font(.system(size: 13))
+        GrowingEditor(text: text, placeholder: prompt, size: 13, minLines: lines, maxLines: max(lines, 6))
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 9))
     }

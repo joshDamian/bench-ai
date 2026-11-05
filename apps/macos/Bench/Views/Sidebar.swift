@@ -22,6 +22,14 @@ struct Sidebar: View {
 
     private func newest(_ a: Session, _ b: Session) -> Bool { (a.updated_at ?? "") > (b.updated_at ?? "") }
 
+    /// Projects with the most recently active session or task first.
+    private var byRecency: [Project] {
+        var last: [String: String] = [:]
+        for s in store.sessions { if let p = s.project_id, let u = s.updated_at, u > (last[p] ?? "") { last[p] = u } }
+        for t in store.tasks { if let p = t.project_id, let u = t.updated_at, u > (last[p] ?? "") { last[p] = u } }
+        return store.projects.sorted { (last[$0.id] ?? $0.last_used_at ?? "") > (last[$1.id] ?? $1.last_used_at ?? "") }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
         top
@@ -36,7 +44,7 @@ struct Sidebar: View {
                 !store.tasks.contains { $0.project_id == p.id && $0.state == "active" } &&
                 !store.sessions.contains { $0.project_id == p.id && $0.task_id == nil && $0.archived_at == nil }
             }
-            ForEach(store.projects.filter { p in !quiet.contains(p) }) { p in
+            ForEach(byRecency.filter { p in !quiet.contains(p) }) { p in
                 let tasks = store.tasks.filter { $0.project_id == p.id && $0.state == "active" }
                     .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
                 let loose = store.sessions.filter { $0.project_id == p.id && $0.task_id == nil && $0.archived_at == nil }
