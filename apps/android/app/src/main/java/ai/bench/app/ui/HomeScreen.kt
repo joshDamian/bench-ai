@@ -54,6 +54,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -428,32 +429,43 @@ fun TabButton(label: String, on: Boolean, dot: String? = null, onClick: () -> Un
 
 
 /**
- * Swipe a row toward the start to archive it: the row slides off over a tinted
- * "Archive" backing, with a tick of haptics as it passes the threshold.
+ * Swipe a row toward the start to archive it, deliberately: the row has to be dragged
+ * past half its width and released there. A quick flick or a diagonal brush while
+ * scrolling springs back. Crossing the line ticks once and the backing turns solid,
+ * so you know letting go will archive.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeToArchive(onArchive: () -> Unit, content: @Composable () -> Unit) {
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var width by remember { mutableStateOf(1) }
+    val holder = remember { arrayOfNulls<androidx.compose.material3.SwipeToDismissBoxState>(1) }
     val state = androidx.compose.material3.rememberSwipeToDismissBoxState(
+        positionalThreshold = { it * 0.5f },
         confirmValueChange = { v ->
-            if (v == androidx.compose.material3.SwipeToDismissBoxValue.EndToStart) {
-                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            // Only a drag held past halfway counts; a fast fling from a short drag does not.
+            val dragged = holder[0]?.let { st -> runCatching { -st.requireOffset() }.getOrDefault(0f) } ?: 0f
+            if (v == androidx.compose.material3.SwipeToDismissBoxValue.EndToStart && dragged >= width * 0.5f) {
                 onArchive(); true
             } else false
         },
     )
+    holder[0] = state
+    val past by remember { androidx.compose.runtime.derivedStateOf { runCatching { -state.requireOffset() }.getOrDefault(0f) >= width * 0.5f } }
+    LaunchedEffect(past) { if (past) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
     androidx.compose.material3.SwipeToDismissBox(
         state = state,
+        modifier = Modifier.onSizeChanged { width = it.width.coerceAtLeast(1) },
         enableDismissFromStartToEnd = false,
         backgroundContent = {
             val c = Bench.colors
+            val tint by androidx.compose.animation.animateColorAsState(if (past) c.warn else c.warn.copy(alpha = 0.18f), label = "archive")
             Row(
-                Modifier.fillMaxSize().background(c.warn.copy(alpha = 0.18f)).padding(horizontal = Space.lg),
+                Modifier.fillMaxSize().background(tint).padding(horizontal = Space.lg),
                 horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Default.Archive, null, tint = c.warn)
-                Text("Archive", color = c.warn, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = Space.sm))
+                Icon(Icons.Default.Archive, null, tint = if (past) c.onAccent else c.warn)
+                Text(if (past) "Release to archive" else "Archive", color = if (past) c.onAccent else c.warn, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = Space.sm))
             }
         },
     ) { Box(Modifier.background(Bench.colors.surface1)) { content() } }
