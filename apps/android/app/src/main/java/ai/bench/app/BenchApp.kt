@@ -39,6 +39,12 @@ class BenchApp : Application() {
     /** Files shared into the app, waiting for a session to go to. */
     val pendingShare = MutableStateFlow<List<Uri>>(emptyList())
 
+    /** Text shared into the app (a link, a snippet), waiting to go into a session's message box. */
+    val pendingText = MutableStateFlow<String?>(null)
+
+    /** The widget or a tile asked for a new session. */
+    val requestNew = MutableStateFlow(false)
+
     var foreground = false
         private set
 
@@ -90,6 +96,7 @@ class BenchApp : Application() {
             var last = emptyMap<String, String>()
             val since = HashMap<String, Long>()
             store.state.collect { st ->
+                SystemReach.publish(this@BenchApp, Glance.of(st))
                 val now = st.sessions.associate { it.id to it.status }
                 // The live card for each running session: posted when it starts, gone when it stops.
                 val live = prefs.getBoolean("live", true)

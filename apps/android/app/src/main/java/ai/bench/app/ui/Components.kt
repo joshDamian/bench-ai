@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -192,5 +193,41 @@ fun ConnectionBanner(connected: Boolean, dropped: Boolean, error: String?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(msg, color = Bench.colors.warn, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+/** A placeholder bar that shimmers gently while the real content loads. */
+@Composable
+fun SkeletonBar(modifier: Modifier = Modifier, height: androidx.compose.ui.unit.Dp = 14.dp) {
+    val t = rememberInfiniteTransition(label = "skeleton")
+    val a by t.animateFloat(0.05f, 0.11f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "a")
+    Box(modifier.height(height).background(Bench.colors.text.copy(alpha = a), RoundedCornerShape(height / 2)))
+}
+
+/** The shape of a conversation before it arrives: a message, then a reply's lines. */
+@Composable
+fun TranscriptSkeleton(modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().padding(vertical = Space.lg), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.md)) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { SkeletonBar(Modifier.fillMaxWidth(0.55f), 40.dp) }
+        SkeletonBar(Modifier.fillMaxWidth(0.35f), 24.dp)
+        SkeletonBar(Modifier.fillMaxWidth(0.95f))
+        SkeletonBar(Modifier.fillMaxWidth(0.88f))
+        SkeletonBar(Modifier.fillMaxWidth(0.6f))
+    }
+}
+
+/** Rows of a list before it arrives. */
+@Composable
+fun ListSkeleton(rows: Int = 5) {
+    Column(Modifier.fillMaxWidth().padding(top = Space.xl), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.lg)) {
+        repeat(rows) { i ->
+            Row(Modifier.padding(horizontal = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).background(Bench.colors.text.copy(alpha = 0.08f), CircleShape))
+                Column(Modifier.padding(start = Space.md), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                    SkeletonBar(Modifier.fillMaxWidth(if (i % 2 == 0) 0.7f else 0.55f))
+                    SkeletonBar(Modifier.fillMaxWidth(0.35f), 10.dp)
+                }
+            }
+        }
     }
 }

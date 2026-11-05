@@ -1,5 +1,10 @@
 package ai.bench.app.ui.session
 
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.ui.graphics.graphicsLayer
+
+import ai.bench.app.ui.sharedTitle
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -127,7 +132,9 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val list = rememberLazyListState()
-    var draft by rememberSaveable(vm.sessionId) { mutableStateOf("") }
+    var draft by rememberSaveable(vm.sessionId) { mutableStateOf(Drafts.get(vm.sessionId)) }
+    LaunchedEffect(draft) { kotlinx.coroutines.delay(400); Drafts.put(vm.sessionId, draft) }
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
     var modeMenu by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
@@ -145,7 +152,19 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             BenchApp.instance.pendingShare.value = emptyList()
         }
     }
+    val sharedText by BenchApp.instance.pendingText.collectAsState()
+    LaunchedEffect(sharedText) {
+        sharedText?.let { t -> draft = if (draft.isBlank()) t else draft.trimEnd() + "\n\n" + t; BenchApp.instance.pendingText.value = null }
+    }
 
+    // Live dictation: words land in the message box as you speak. What was typed before the
+    // take stays put; the take replaces itself as the recogniser revises it.
+    var beforeTake by remember { mutableStateOf("") }
+    val live = rememberLiveDictation { heard, _ -> draft = if (beforeTake.isBlank()) heard else beforeTake.trimEnd() + " " + heard }
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) { beforeTake = draft; live.start() } }
+    val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(8)) { uris ->
+        if (uris.isNotEmpty()) vm.attach(context.contentResolver, uris)
+    }
     // Dictation goes through the phone's own speech recogniser and lands in the message box.
     val dictate = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { said -> draft = if (draft.isBlank()) said else "$draft $said" }
@@ -206,7 +225,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     val st = session?.status ?: "idle"
                     val waiting = approvals.isNotEmpty() || st == "waiting"
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(session?.title ?: "Session", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                        Text(session?.title ?: "Session", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 17.sp, fontWeight = FontWeight.Medium, modifier = Modifier.sharedTitle(vm.sessionId))
                         Text(
                             if (waiting) "Needs you" else statusLabel(st) + (session?.let { " · " + Mode.of(it.permission_mode).label } ?: ""),
                             fontSize = 12.5.sp, maxLines = 1,
@@ -221,7 +240,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             )
         },
         containerColor = Bench.colors.bg,
-    ) { pad -> WithFiles(files) {
+    ) { pad -> androidx.compose.runtime.CompositionLocalProvider(LocalMessageActions provides MessageActions(
+        quote = { t -> draft = (if (draft.isBlank()) "" else draft.trimEnd() + "\n\n") + quoted(t) },
+        retry = { t -> scope.launch { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); stick = true; list.scrollToItem(0); vm.send(t) } },
+    )) { WithFiles(files) {
         Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
             Box(Modifier.weight(1f)) {
                 LazyColumn(
@@ -235,7 +257,8 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     if (stream.text.isNotEmpty() || stream.thinking.isNotEmpty()) item("stream") {
                         Column(Modifier.animateItem(), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                             if (stream.thinking.isNotEmpty() && stream.text.isEmpty()) MutedText("Thinking…")
-                            if (stream.text.isNotEmpty()) MarkdownText(stream.text)
+                            val smooth = rememberSmoothText(stream.text)
+                            if (smooth.isNotEmpty()) MarkdownText(smooth)
                         }
                     }
                     items(bl.asReversed(), key = { it.key }, contentType = { it::class }) { b ->
@@ -250,9 +273,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     if (!loading && rows.isEmpty()) item("empty") {
                         MutedText("Nothing here yet. Tell Claude what to work on.", Modifier.fillMaxWidth().padding(Space.xl))
                     }
-                    if (loading && rows.isEmpty()) item("loading") {
-                        Box(Modifier.fillMaxWidth().padding(Space.xl), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
-                    }
+                    if (loading && rows.isEmpty()) item("loading") { ai.bench.app.ui.TranscriptSkeleton() }
                     if (hasOlder) item("older") {
                         // Reaching the top loads the earlier part on its own.
                         LaunchedEffect(Unit) { vm.loadOlder() }
@@ -330,8 +351,20 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 running = running,
                 canSend = draft.isNotBlank() || attachments.any { it.ref != null },
                 onAttach = { picker.launch("*/*") },
-                onDictate = { runCatching { dictate.launch(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)) } },
+                onPhotos = { photos.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                listening = live.listening,
+                level = live.level,
+                onDictate = if (live.available) ({
+                    when {
+                        live.listening -> live.stop()
+                        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED -> { beforeTake = draft; live.start() }
+                        else -> askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                }) else ({ runCatching { dictate.launch(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)) }; Unit }),
                 onSend = {
+                    if (live.listening) live.stop()
+                    Drafts.put(vm.sessionId, "")
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
                     val text = draft
                     draft = ""
                     stick = true
@@ -340,7 +373,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                 onStop = { vm.interrupt() },
             )
         }
-    } }
+    } } }
 
     if (menu) session?.let { ses ->
         SessionSheet(ses, providers, vm, onDismiss = { menu = false }, onRename = { menu = false; renaming = true }, onTask = onTask, onResume = { menu = false; onResume() }, onDeleted = onBack)
@@ -413,6 +446,9 @@ private fun Composer(
     running: Boolean,
     canSend: Boolean,
     onAttach: () -> Unit,
+    onPhotos: () -> Unit,
+    listening: Boolean,
+    level: Float,
     onDictate: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -434,13 +470,14 @@ private fun Composer(
             modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp, max = 180.dp).padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 6.dp),
             decorationBox = { inner ->
                 Box {
-                    if (draft.isEmpty()) Text(if (running) "Queue a message" else "Message Claude", fontSize = 16.sp, color = c.muted)
+                    if (draft.isEmpty()) Text(if (listening) "Listening…" else if (running) "Queue a message" else "Message Claude", fontSize = 16.sp, color = c.muted)
                     inner()
                 }
             },
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(onClick = onAttach, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Add, "Attach", tint = c.muted) }
+            IconButton(onClick = onAttach, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Add, "Attach a file", tint = c.muted) }
+            IconButton(onClick = onPhotos, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Image, "Attach photos", tint = c.muted) }
             Row(
                 Modifier.height(32.dp).background(c.text.copy(alpha = 0.06f), RoundedCornerShape(16.dp)).clickable(onClick = onModel).padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -450,7 +487,14 @@ private fun Composer(
                 Icon(Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(16.dp))
             }
             Box(Modifier.weight(1f))
-            if (running && !canSend) {
+            if (listening) {
+                // Listening: the mic pulses with your voice; tap to stop.
+                val pulse by androidx.compose.animation.core.animateFloatAsState(1f + level * 0.35f, androidx.compose.animation.core.spring(stiffness = 900f), label = "mic")
+                FilledIconButton(
+                    onClick = onDictate, modifier = Modifier.size(44.dp).graphicsLayer { scaleX = pulse; scaleY = pulse },
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent.copy(alpha = 0.2f), contentColor = c.accent),
+                ) { Icon(Icons.Default.Mic, "Stop dictating") }
+            } else if (running && !canSend) {
                 FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
                     Box(Modifier.size(12.dp).background(c.bad, RoundedCornerShape(3.dp)))
                 }

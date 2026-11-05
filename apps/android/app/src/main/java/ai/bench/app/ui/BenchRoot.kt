@@ -10,6 +10,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,6 +68,7 @@ fun BenchRoot(openSession: MutableStateFlow<String?>) {
     }
 }
 
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     val nav = rememberNavController()
@@ -94,19 +97,41 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     val tabs = listOf("home", "projects", "settings")
     var newSession by remember { mutableStateOf(false) }
     var addProject by remember { mutableStateOf(false) }
-    val open: (String) -> Unit = { nav.navigate("session/$it") }
+    val askedNew by BenchApp.instance.requestNew.collectAsState()
+    LaunchedEffect(askedNew) { if (askedNew) { newSession = true; BenchApp.instance.requestNew.value = false } }
+    // Tablets and unfolded foldables: Home stays docked on the left, what you open shows beside it.
+    val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 700
+    val open: (String) -> Unit = {
+        nav.navigate("session/$it") { if (wide) popUpTo("home"); launchSingleTop = true }
+    }
+    // Material 3 Expressive motion: screens move on springs, so they settle rather than stop.
+    val move = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.85f, stiffness = 380f)
+    val fade = androidx.compose.animation.core.spring<Float>(stiffness = 500f)
 
-    Column(Modifier.fillMaxSize()) {
+    androidx.compose.animation.SharedTransitionLayout {
+    androidx.compose.runtime.CompositionLocalProvider(LocalShared provides this) {
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+    if (wide) {
+        Box(Modifier.width(380.dp).fillMaxHeight()) {
+            HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
+        }
+        androidx.compose.material3.VerticalDivider(color = Bench.colors.line)
+    }
+    Column(Modifier.weight(1f).fillMaxHeight()) {
         NavHost(
             nav,
             startDestination = "home",
             modifier = Modifier.weight(1f),
-            enterTransition = { if (initialState.destination.route in tabs && targetState.destination.route in tabs) fadeIn() else slideInHorizontally { it / 4 } + fadeIn() },
-            exitTransition = { fadeOut() },
-            popEnterTransition = { fadeIn() },
-            popExitTransition = { slideOutHorizontally { it / 4 } + fadeOut() },
+            enterTransition = { if (initialState.destination.route in tabs && targetState.destination.route in tabs) fadeIn(fade) else slideInHorizontally(move) { it / 3 } + fadeIn(fade) },
+            exitTransition = { fadeOut(fade) + androidx.compose.animation.scaleOut(targetScale = 0.96f) },
+            popEnterTransition = { fadeIn(fade) + androidx.compose.animation.scaleIn(initialScale = 0.96f) },
+            popExitTransition = { slideOutHorizontally(move) { it / 3 } + fadeOut(fade) },
         ) {
-            composable("home") { HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }) }
+            composable("home") {
+                if (wide) EmptyDetail() else androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
+                    HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") })
+                }
+            }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }, onAsk = { nav.navigate("ask") }) }
             composable("ask") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }, askOnly = true) }
@@ -122,7 +147,9 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable
                 val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })
+                androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
                 SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") }, onResume = { nav.navigate("shell/claude/$id") })
+                }
             }
             composable("terminal/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id") ?: return@composable
@@ -161,9 +188,34 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             }
         }
     }
+    }
+    }
+    }
 
     if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) })
     if (addProject) AddProjectSheet(store, onDismiss = { addProject = false }, onAdded = { addProject = false; nav.navigate("project/$it") })
+}
+
+/** Shared-element plumbing: set inside the layout and each screen's transition. */
+val LocalShared = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.animation.SharedTransitionScope?> { null }
+val LocalNavScope = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.animation.AnimatedVisibilityScope?> { null }
+
+/** A session's title travels from its row into the session's header and back. */
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+@Composable
+fun Modifier.sharedTitle(key: String?): Modifier {
+    val shared = LocalShared.current ?: return this
+    val scope = LocalNavScope.current ?: return this
+    if (key == null) return this
+    return with(shared) { this@sharedTitle.sharedBounds(rememberSharedContentState("title-$key"), scope, resizeMode = androidx.compose.animation.SharedTransitionScope.ResizeMode.ScaleToBounds()) }
+}
+
+/** The right pane on a wide screen before anything is open. */
+@Composable
+private fun EmptyDetail() {
+    Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Text("Pick a session on the left, or start a new one.", color = Bench.colors.muted, fontSize = 15.sp)
+    }
 }
 
 /** The navigation bar every tab shares, as its board draws it. */

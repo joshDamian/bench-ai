@@ -3,6 +3,8 @@ package ai.bench.app.ui.session
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -81,12 +83,34 @@ fun TranscriptRow(row: Row, cwd: String, thinking: Map<String, String>, onOpenTh
     }
 }
 
+/** What a message's long-press menu and Quote can do; the session screen provides them. */
+class MessageActions(val quote: (String) -> Unit = {}, val retry: (String) -> Unit = {})
+val LocalMessageActions = androidx.compose.runtime.staticCompositionLocalOf { MessageActions() }
+
+/** "> " before each line, then a blank line to write under. */
+fun quoted(text: String) = text.trim().lines().joinToString("\n") { "> $it" } + "\n\n"
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun UserBubble(row: Row.User) {
+    val clip = LocalClipboardManager.current
+    val actions = LocalMessageActions.current
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var menu by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Box {
+        androidx.compose.material3.DropdownMenu(menu, onDismissRequest = { menu = false }) {
+            androidx.compose.material3.DropdownMenuItem({ Text("Copy") }, onClick = { menu = false; clip.setText(AnnotatedString(row.text)) })
+            androidx.compose.material3.DropdownMenuItem({ Text("Quote") }, onClick = { menu = false; actions.quote(row.text) })
+            androidx.compose.material3.DropdownMenuItem({ Text("Retry") }, onClick = { menu = false; actions.retry(row.text) })
+        }
         Column(
             Modifier
                 .widthIn(max = 300.dp)
+                .clip(RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp))
+                .combinedClickable(onClick = {}, onLongClick = {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); menu = true
+                })
                 .background(Bench.colors.surface3, RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp))
                 .padding(horizontal = 16.dp, vertical = 11.dp),
             verticalArrangement = Arrangement.spacedBy(Space.xs),
@@ -95,6 +119,7 @@ private fun UserBubble(row: Row.User) {
                 row.attachments.forEach { Pill(it, Bench.colors.info) }
             }
             if (row.text.isNotEmpty()) Text(row.text, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 22.sp))
+        }
         }
     }
 }
@@ -154,6 +179,7 @@ fun TurnBlock(turn: Block.Turn, live: Boolean, cwd: String, thinking: Map<String
         }
         turn.prose.forEach { MarkdownText(it) }
         if (turn.reply.isNotEmpty()) { MarkdownText(turn.reply); ArtifactCards(turn.reply) }
+        if (turn.done) ChangedFiles(remember(turn.key, turn.steps.size) { changes(turn, cwd) })
         if (turn.done && (turn.cost != null || turn.reply.isNotEmpty())) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             turn.cost?.let { Text(it, fontSize = 12.5.sp, color = c.muted) }
             if (turn.reply.isNotEmpty()) {
@@ -161,6 +187,8 @@ fun TurnBlock(turn: Block.Turn, live: Boolean, cwd: String, thinking: Map<String
                 LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(1500); copied = false } }
                 Text(if (copied) "Copied" else "Copy reply", fontSize = 12.5.sp, color = c.muted,
                     modifier = Modifier.clickable { clip.setText(AnnotatedString(turn.reply)); copied = true }.padding(vertical = 6.dp))
+                val actions = LocalMessageActions.current
+                Text("Quote", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.clickable { actions.quote(turn.reply) }.padding(vertical = 6.dp))
             }
         }
     }
@@ -306,4 +334,83 @@ fun MiniDiff(edits: List<Pair<String, String>>) {
     Box(Modifier.fillMaxWidth().background(c.wellBg, RoundedCornerShape(Bench.spec.radiusSm.dp)).padding(Space.sm)) {
         Text(s, style = TextStyle(fontFamily = Mono, fontSize = Type.sm, color = c.wellText))
     }
+}
+
+/** One file a turn changed: its edits as old/new pairs, and the lines added and removed. */
+data class FileChange(val path: String, val edits: List<Pair<String, String>>, val added: Int, val removed: Int)
+
+/** Every file a turn's Edit, MultiEdit and Write calls touched, in the order first touched. */
+fun changes(turn: Block.Turn, cwd: String): List<FileChange> {
+    val byPath = linkedMapOf<String, MutableList<Pair<String, String>>>()
+    turn.steps.forEach { r ->
+        (r as? Row.Tools)?.calls?.filter { !it.failed }?.forEach { c ->
+            val path = c.input["file_path"].str() ?: return@forEach
+            val list = byPath.getOrPut(Transcript.rel(path, cwd)) { mutableListOf() }
+            when (c.name) {
+                "Edit" -> list += c.input["old_string"].str().orEmpty() to c.input["new_string"].str().orEmpty()
+                "MultiEdit" -> c.input["edits"].arr().orEmpty().forEach { list += it["old_string"].str().orEmpty() to it["new_string"].str().orEmpty() }
+                "Write" -> list += "" to c.input["content"].str().orEmpty()
+            }
+        }
+    }
+    fun count(s: String) = if (s.isEmpty()) 0 else s.lines().size
+    return byPath.filterValues { it.isNotEmpty() }.map { (p, e) -> FileChange(p, e, e.sumOf { count(it.second) }, e.sumOf { count(it.first) }) }
+}
+
+/** "3 files changed" under a finished turn; each file opens to its diff. */
+@Composable
+fun ChangedFiles(files: List<FileChange>) {
+    if (files.isEmpty()) return
+    val c = Bench.colors
+    Column(
+        Modifier.fillMaxWidth()
+            .background(c.surface1, RoundedCornerShape(Bench.spec.radiusSm.dp))
+            .animateContentSize(),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+            Text("${files.size} file${if (files.size == 1) "" else "s"} changed", style = MaterialTheme.typography.labelMedium, color = c.muted, modifier = Modifier.weight(1f))
+            PlusMinus(files.sumOf { it.added }, files.sumOf { it.removed })
+        }
+        files.forEach { f ->
+            var open by rememberSaveable(f.path) { mutableStateOf(false) }
+            Row(
+                Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = Space.md, vertical = Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.muted, modifier = Modifier.size(16.dp))
+                Text(f.path, fontFamily = Mono, fontSize = Type.sm, maxLines = 1, overflow = TextOverflow.StartEllipsis, modifier = Modifier.weight(1f))
+                PlusMinus(f.added, f.removed)
+            }
+            if (open) Box(Modifier.padding(start = Space.md, end = Space.md, bottom = Space.sm)) { MiniDiff(f.edits) }
+        }
+    }
+}
+
+@Composable
+private fun PlusMinus(added: Int, removed: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        if (added > 0) Text("+$added", fontFamily = Mono, fontSize = Type.xs, color = Bench.colors.good)
+        if (removed > 0) Text("−$removed", fontFamily = Mono, fontSize = Type.xs, color = Bench.colors.bad)
+    }
+}
+
+/**
+ * Streaming text revealed at a steady pace rather than in network-sized lumps: each frame
+ * shows a little more, catching up faster the further behind it is, never lagging past ~0.3s.
+ */
+@Composable
+fun rememberSmoothText(target: String): String {
+    var shown by remember { mutableStateOf(0) }
+    if (shown > target.length) shown = target.length
+    LaunchedEffect(target) {
+        while (shown < target.length) {
+            kotlinx.coroutines.delay(32)
+            val behind = target.length - shown
+            shown = (shown + maxOf(2, behind / 10)).coerceAtMost(target.length)
+        }
+    }
+    // Cut at a word boundary so half-words don't flicker in.
+    val cut = target.lastIndexOf(' ', shown).takeIf { it > 0 && shown < target.length } ?: shown
+    return target.substring(0, cut)
 }

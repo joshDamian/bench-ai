@@ -30,9 +30,17 @@ class MainActivity : ComponentActivity() {
     private fun handle(intent: Intent?) {
         intent ?: return
         intent.getStringExtra(Notifier.EXTRA_SESSION)?.let { openSession.value = it }
-        if (intent.action == Intent.ACTION_SEND) {
-            val uri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-            if (uri != null) BenchApp.instance.pendingShare.value = listOf(uri)
+        if (intent.getBooleanExtra(SystemReach.EXTRA_NEW, false)) BenchApp.instance.requestNew.value = true
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                val uri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                if (uri != null) BenchApp.instance.pendingShare.value = listOf(uri)
+                else intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let { BenchApp.instance.pendingText.value = it }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val uris = IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+                if (uris.isNotEmpty()) BenchApp.instance.pendingShare.value = uris
+            }
         }
     }
 
