@@ -63,7 +63,6 @@ struct Sidebar: View {
                 inbox
             }
         }
-          }
           .padding(.horizontal, 8)
           .padding(.vertical, 6)
         }
