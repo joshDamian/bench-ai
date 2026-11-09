@@ -10,6 +10,7 @@ struct BenchMarkdown: View {
     var body: some View {
         let c = theme.colors
         Markdown(text)
+            .markdownCodeSyntaxHighlighter(BenchHighlighter(dark: theme.dark, base: c.wellText))
             .markdownTextStyle { ForegroundColor(c.text); FontSize(14.5) }
             .markdownTextStyle(\.code) {
                 FontFamilyVariant(.monospaced); FontSize(.em(0.88))
@@ -55,7 +56,7 @@ struct BenchMarkdown: View {
                     Rectangle().fill(c.fill(0.06)).frame(height: 1)
                     ScrollView(.horizontal, showsIndicators: false) {
                         b.label
-                            .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(12.5); ForegroundColor(c.wellText) }
+                            .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(12.5) }
                             .relativeLineSpacing(.em(0.3))
                             .padding(12)
                     }
