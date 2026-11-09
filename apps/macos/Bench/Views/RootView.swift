@@ -42,7 +42,8 @@ struct MainView: View {
             }
             VStack(spacing: 0) {
                 if !model.showSidebar { Color.clear.frame(height: 0) }
-                if model.tabs.count > 1 { TabStrip(store: store) }
+                // With the sidebar hidden the strip always shows: the traffic lights live in it.
+                if model.tabs.count > 1 || !model.showSidebar { TabStrip(store: store, lights: !model.showSidebar) }
                 if let side = model.split, store.session(side) != nil, side != model.selection {
                     HSplitView {
                         detail.frame(minWidth: 380)
@@ -53,22 +54,6 @@ struct MainView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.leading, model.showSidebar ? 0 : 112)
-        }
-        .overlay(alignment: .topLeading) {
-            if !model.showSidebar {
-                Button { withAnimation(.snappy) { model.showSidebar = true } } label: {
-                    Image(systemName: "sidebar.left").font(.system(size: 13)).foregroundStyle(theme.colors.muted)
-                        .frame(width: 28, height: 26).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).help("Show Sidebar (⌃⌘S)")
-                .padding(.leading, 78).padding(.top, 14)
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            if !model.showSidebar {
-                TrafficLights().padding(.leading, 18).padding(.top, 21)
-            }
         }
         .background(theme.colors.bg)
         .ignoresSafeArea()

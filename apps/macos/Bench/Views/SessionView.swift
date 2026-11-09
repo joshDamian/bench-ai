@@ -100,7 +100,7 @@ struct SessionView: View {
             if !embedded {
                 // 8pt past the left edge, over the sidebar card's margin, so it meets the card.
                 Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
-                    .padding(.leading, -8)
+                    .padding(.leading, app.showSidebar ? -8 : 0)
                     .padding(.top, 54)
                     .opacity(scrolled ? 1 : 0)
                     .animation(.easeOut(duration: 0.15), value: scrolled)

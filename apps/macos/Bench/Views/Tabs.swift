@@ -50,9 +50,21 @@ struct TabStrip: View {
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
     let store: BenchStore
+    /// The sidebar is hidden: the traffic lights and the show-sidebar button lead the strip.
+    var lights = false
 
     var body: some View {
         HStack(spacing: 4) {
+            if lights {
+                TrafficLights().padding(.leading, 6)
+                Button { withAnimation(.snappy) { model.showSidebar = true } } label: {
+                    Image(systemName: "sidebar.left").font(.system(size: 13)).frame(width: 28, height: 26).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.colors.muted)
+                .help("Show Sidebar (⌃⌘S)")
+                .padding(.leading, 8).padding(.trailing, 6)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(model.tabs, id: \.self) { id in TabChip(store: store, id: id) }
@@ -66,13 +78,15 @@ struct TabStrip: View {
             .foregroundStyle(theme.colors.muted)
             .help("New Tab (⌘T)")
         }
-        .padding(.leading, 12).padding(.trailing, 10)
+        .padding(.leading, lights ? 10 : 12).padding(.trailing, 10)
         // The sidebar card is inset 8pt and its top row is 46pt tall: the same here puts the
         // tabs on the traffic lights' line.
         .frame(height: 46)
         .padding(.top, 8)
+        // Without the sidebar, the strip is the window's top edge: drag it to move the window.
         .background(WindowDragArea())
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1).padding(.leading, -8) }
+        .background(WindowDragArea())
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1).padding(.leading, lights ? 0 : -8) }
     }
 }
 
