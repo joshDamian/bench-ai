@@ -1,3 +1,4 @@
+import Darwin
 import SwiftUI
 import WidgetKit
 
@@ -12,8 +13,10 @@ struct GlanceSnapshot: Codable {
     static let empty = GlanceSnapshot(needs: 0, needsTitles: [], working: [], updated: .distantPast)
 
     static func read() -> GlanceSnapshot {
-        guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.ai.bench.app")?.appendingPathComponent("glance.json"),
-              let d = try? Data(contentsOf: url), let s = try? JSONDecoder().decode(GlanceSnapshot.self, from: d) else { return .empty }
+        // The real home, not the sandbox's container: the entitlement allows reading there.
+        guard let pw = getpwuid(getuid()), let home = String(validatingUTF8: pw.pointee.pw_dir) else { return .empty }
+        let url = URL(fileURLWithPath: home).appendingPathComponent("Library/Application Support/Bench/glance.json")
+        guard let d = try? Data(contentsOf: url), let s = try? JSONDecoder().decode(GlanceSnapshot.self, from: d) else { return .empty }
         return s
     }
 }

@@ -18,11 +18,12 @@ struct GlanceSnapshot: Codable {
 }
 
 enum SystemReach {
-    static let appGroup = "group.ai.bench.app"
     private static var pending: DispatchWorkItem?
 
+    /// ~/Library/Application Support/Bench/glance.json, which the widget may read.
     static var snapshotURL: URL? {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)?.appendingPathComponent("glance.json")
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Bench", isDirectory: true).appendingPathComponent("glance.json")
     }
 
     /// Debounced: a burst of socket updates is one write, one widget reload, one index pass.

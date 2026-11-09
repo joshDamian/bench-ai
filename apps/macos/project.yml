@@ -42,8 +42,6 @@ targets:
       properties:
         com.apple.security.network.client: true
         com.apple.security.automation.apple-events: true
-        # Shared with the widget: the app writes what it shows here.
-        com.apple.security.application-groups: [group.ai.bench.app]
     info:
       path: Bench/Info.plist
       properties:
@@ -84,7 +82,9 @@ targets:
       path: BenchWidget/BenchWidget.entitlements
       properties:
         com.apple.security.app-sandbox: true
-        com.apple.security.application-groups: [group.ai.bench.app]
+        # Reads the snapshot the app writes to ~/Library/Application Support/Bench. An app
+        # group would be tidier but needs a provisioning profile, and these builds are ad-hoc.
+        com.apple.security.temporary-exception.files.home-relative-path.read-only: [/Library/Application Support/Bench/]
     info:
       path: BenchWidget/Info.plist
       properties:
