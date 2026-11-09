@@ -42,7 +42,15 @@ struct MainView: View {
             }
             VStack(spacing: 0) {
                 if !model.showSidebar { Color.clear.frame(height: 0) }
-                detail
+                if model.tabs.count > 1 { TabStrip(store: store) }
+                if let side = model.split, store.session(side) != nil, side != model.selection {
+                    HSplitView {
+                        detail.frame(minWidth: 380)
+                        SplitPane(store: store, id: side).frame(minWidth: 380)
+                    }
+                } else {
+                    detail
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.leading, model.showSidebar ? 0 : 112)
@@ -90,8 +98,12 @@ struct MainView: View {
             model.panel.hide()
             // Open where you left off.
             if model.selection == nil, let last = UserDefaults.standard.string(forKey: "lastSelection") { model.selection = last }
+            if let sel = model.selection, !model.tabs.contains(sel) { model.tabs.append(sel) }
         }
-        .onChange(of: model.selection) { _, v in if let v { UserDefaults.standard.set(v, forKey: "lastSelection") } }
+        .onChange(of: model.selection) { old, v in
+            if let v { UserDefaults.standard.set(v, forKey: "lastSelection") }
+            model.follow(old, v)
+        }
         // A session picked in Spotlight.
         .onContinueUserActivity(CSSearchableItemActionType) { a in
             if let id = a.userInfo?[CSSearchableItemActivityIdentifier] as? String { model.selection = id }

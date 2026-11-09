@@ -12,6 +12,12 @@ struct SessionView: View {
     let store: BenchStore
     let sessionId: String
     var embedded = false
+    /// The split's second pane has no inspector of its own; one is enough.
+    var showsInspector = true
+    /// Shown as × in the header: closes the split pane.
+    var onClose: (() -> Void)?
+    /// In a window of its own, the window and its tab already name the session.
+    var showsTitle = true
     @State private var model: SessionModel
     @State private var files: SessionFiles
     @State private var draft = ""
@@ -28,8 +34,11 @@ struct SessionView: View {
     @State private var turnIndex: Int?
     @State private var seen = 0
 
-    init(store: BenchStore, sessionId: String, embedded: Bool = false) {
+    init(store: BenchStore, sessionId: String, embedded: Bool = false, showsInspector: Bool = true, onClose: (() -> Void)? = nil, showsTitle: Bool = true) {
         self.embedded = embedded
+        self.showsInspector = showsInspector
+        self.onClose = onClose
+        self.showsTitle = showsTitle
         self.store = store
         self.sessionId = sessionId
         _model = State(initialValue: SessionModel(sessionId: sessionId, store: store))
@@ -43,7 +52,7 @@ struct SessionView: View {
             VStack(spacing: 0) {
                 if !embedded {
                     PaneHeader {
-                        HeaderTitle(title: session?.title ?? "Session", sub: subtitle(session))
+                        if showsTitle { HeaderTitle(title: session?.title ?? "Session", sub: subtitle(session)) }
                     } trailing: {
                         if let session {
                             ModelMenu(store: store, session: session, capsule: true)
@@ -51,7 +60,19 @@ struct SessionView: View {
                         }
                         Spacer().frame(width: Space.sm)
                         HeaderToggle(icon: "terminal", help: "Terminal (⇧⌘T)", on: $app.showTerminal)
-                        HeaderToggle(icon: "sidebar.right", help: "Inspector (⌘J)", on: $app.showInspector)
+                        if showsInspector && hasInspector(session) {
+                            HeaderToggle(icon: "sidebar.right", help: "Inspector (⌘J)", on: $app.showInspector)
+                        }
+                        if let onClose {
+                            Button(action: onClose) {
+                                Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).frame(width: 26, height: 26)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(theme.colors.muted)
+                            .help("Close This Side")
+                            .accessibilityLabel("Close this side")
+                        }
                     }
                 }
                 if !embedded && app.showTerminal {
@@ -64,7 +85,7 @@ struct SessionView: View {
                     conversation
                 }
             }
-            if !embedded && app.showInspector {
+            if !embedded && showsInspector && app.showInspector && hasInspector(session) {
                 Rectangle().fill(theme.colors.fill(0.06)).frame(width: 1)
                 SessionInspector(store: store, sessionId: sessionId, files: files)
                     .frame(width: 340)
@@ -229,6 +250,9 @@ struct SessionView: View {
             }
         }
     }
+
+    /// Ask Bench sessions have no checkout: nothing for the inspector to show.
+    private func hasInspector(_ s: Session?) -> Bool { s?.project_id != nil || !files.known.isEmpty }
 
     private func takePending() {
         guard let urls = app.pendingAttachments[sessionId], !urls.isEmpty else { return }

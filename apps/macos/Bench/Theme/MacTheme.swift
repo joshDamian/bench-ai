@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // The Mac app's own palette, from the Mac v2 boards: neutral greys that sit with macOS's
@@ -78,13 +79,20 @@ extension BenchColors {
 
 
 extension BenchThemeSpec {
-    /// The same palette with macOS's accent colour (System Settings › Appearance) in place of the blue.
+    /// The palette with the Mac's accent colour. Everything macOS draws itself (the sidebar's
+    /// selection, the text cursor, focus rings, switches) already uses it, so Bench's own
+    /// buttons and marks follow too: one accent on screen. With macOS set to Multicolor this
+    /// is the app's AccentColor asset, the board's blue.
     func systemAccent() -> BenchThemeSpec {
-        let a = Color(nsColor: .controlAccentColor)
+        let ns = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+        let a = Color(nsColor: ns)
+        // Text on the accent: whichever of black and white reads better.
+        let l = 0.2126 * ns.redComponent + 0.7152 * ns.greenComponent + 0.0722 * ns.blueComponent
+        let on: Color = l > 0.55 ? Color(.sRGB, red: 0.04, green: 0.07, blue: 0.13, opacity: 1) : .white
         let c = colors
         return BenchThemeSpec(id: id, name: name, dark: dark, radius: radius, radiusSm: radiusSm, colors: BenchColors(
             bg: c.bg, surfaceSunken: c.surfaceSunken, surface1: c.surface1, surface2: c.surface2, surface3: c.surface3,
-            surfaceRail: c.surfaceRail, text: c.text, muted: c.muted, accent: a, onAccent: .white,
+            surfaceRail: c.surfaceRail, text: c.text, muted: c.muted, accent: a, onAccent: on,
             line: c.line, lineStrong: c.lineStrong, good: c.good, warn: c.warn, bad: c.bad, info: a,
             dotIdle: c.dotIdle, wellBg: c.wellBg, wellText: c.wellText))
     }

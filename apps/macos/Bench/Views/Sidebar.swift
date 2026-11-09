@@ -190,10 +190,13 @@ struct Sidebar: View {
 /// Rename, archive and open-in-terminal, for context menus.
 struct SessionMenu: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(AppModel.self) private var app
     let store: BenchStore
     let session: Session
 
     var body: some View {
+        Button("Open in New Tab") { app.openTab(session.id) }
+        Button("Open to the Side") { app.openToSide(session.id) }.disabled(app.selection == session.id)
         Button("Open in New Window") { openWindow(id: "session", value: session.id) }
         Divider()
         Button("Open in Claude Code") { TerminalLauncher.open(session, store: store) }

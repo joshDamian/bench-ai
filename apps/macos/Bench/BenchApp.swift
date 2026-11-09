@@ -25,6 +25,14 @@ final class AppModel {
     /// The one model, for App Intents, Services and the quick prompt.
     static weak var shared: AppModel?
 
+    /// The main window's tabs: what each shows (a session, task, project or place), in order.
+    /// The selected one is `selection`; picking something in the sidebar changes that tab.
+    var tabs: [String] = UserDefaults.standard.stringArray(forKey: "tabs") ?? [] {
+        didSet { UserDefaults.standard.set(tabs, forKey: "tabs") }
+    }
+    /// A second session beside the first, in the same window.
+    var split: String?
+
     /// Files dropped on a sidebar row, waiting for that session's composer to take them.
     var pendingAttachments: [String: [URL]] = [:]
     /// ⌘F in a session, ⌥⌘↑ / ⌥⌘↓ between turns, ⇧⌘A approve: counters the session on screen watches.
@@ -157,6 +165,7 @@ struct BenchMacApp: App {
                 .themed()
         }
         .defaultSize(width: 860, height: 780)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: true))
 
         Window("Dashboard", id: "dashboard") {
             DashboardView()
@@ -216,6 +225,31 @@ struct BenchCommands: Commands {
             Button("Add Project…") { model.showAddProject = true }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model.store == nil)
+            Button("New Tab") { model.openTab() }
+                .keyboardShortcut("t", modifiers: [.command])
+                .disabled(model.store == nil)
+            // ⌘W closes a tab while the main window has more than one; otherwise the window.
+            Button(model.tabs.count > 1 ? "Close Tab" : "Close Window") {
+                if model.mainIsKey && model.tabs.count > 1 { model.closeTab() } else { NSApp.keyWindow?.performClose(nil) }
+            }
+            .keyboardShortcut("w", modifiers: [.command])
+            Divider()
+            Button("Show Next Tab") { model.cycleTab(1) }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .disabled(model.tabs.count < 2)
+            Button("Show Previous Tab") { model.cycleTab(-1) }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .disabled(model.tabs.count < 2)
+            Button("Next Tab") { model.cycleTab(1) }
+                .keyboardShortcut(.tab, modifiers: [.control])
+                .disabled(model.tabs.count < 2)
+            // ⌘\ puts the last session tab you used beside this one, or closes the split.
+            Button(model.split == nil ? "Split with Previous Tab" : "Close Split") {
+                if model.split != nil { model.split = nil }
+                else if let other = model.tabs.last(where: { $0 != model.selection && model.store?.session($0) != nil }) { model.split = other }
+            }
+            .keyboardShortcut("\\", modifiers: [.command])
+            .disabled(model.split == nil && !model.tabs.contains { $0 != model.selection && model.store?.session($0) != nil })
         }
         CommandMenu("Go") {
             Button("Go Anywhere…") { model.showQuickOpen = true }
@@ -283,8 +317,9 @@ struct SessionWindow: View {
     var body: some View {
         Group {
             if let store = model.store, let id = sessionId, store.session(id) != nil {
-                SessionView(store: store, sessionId: id).id(id)
+                SessionView(store: store, sessionId: id, showsTitle: false).id(id)
                     .navigationTitle(store.session(id)?.title ?? "Session")
+                    .navigationSubtitle(store.project(store.session(id)?.project_id)?.name ?? "Ask Bench")
             } else if model.store?.ready == false {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

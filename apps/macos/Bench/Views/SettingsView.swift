@@ -509,7 +509,6 @@ private struct AppearancePage: View {
     @AppStorage("appearance") private var appearance = Appearance.system.rawValue
     @AppStorage("menuBar") private var menuBar = true
     @AppStorage("keepRunning") private var keepRunning = true
-    @AppStorage("systemAccent") private var systemAccent = false
     @AppStorage("quickPrompt") private var quickPrompt = true
     @AppStorage("editor") private var editor = Editors.preferred?.id ?? ""
     @Environment(\.theme) private var theme
@@ -530,8 +529,7 @@ private struct AppearancePage: View {
             }
         }
         Group2 {
-            GroupRow(title: "Use the macOS accent colour", first: true) { Toggle("", isOn: $systemAccent).labelsHidden().toggleStyle(.switch) }
-            GroupRow(title: "Show Bench in the menu bar") { Toggle("", isOn: $menuBar).labelsHidden().toggleStyle(.switch) }
+            GroupRow(title: "Show Bench in the menu bar", first: true) { Toggle("", isOn: $menuBar).labelsHidden().toggleStyle(.switch) }
             GroupRow(title: "Keep running when the window is closed") { Toggle("", isOn: $keepRunning).labelsHidden().toggleStyle(.switch) }
             GroupRow(title: "Quick prompt with ⌥Space from any app") {
                 Toggle("", isOn: Binding(get: { quickPrompt }, set: { on in
@@ -585,6 +583,7 @@ private struct ShortcutsPage: View {
         ("Show or hide the terminal", "⇧⌘T"), ("Send", "⌘↩"), ("Allow", "⌘↩"), ("Deny", "⌘⌫"),
         ("Stop Claude", "⌘."), ("Approve the request on screen", "⇧⌘A"), ("Find in the conversation", "⌘F"),
         ("Previous · next turn", "⌥⌘↑ ⌥⌘↓"), ("Your nine latest sessions", "⌥⌘1 – ⌥⌘9"),
+        ("New tab · close tab", "⌘T ⌘W"), ("Next · previous tab", "⇧⌘] ⇧⌘["), ("Split with the previous tab", "⌘\\"),
         ("Open the session in a new window", "⌥⌘O"), ("Quick prompt, from any app", "⌥Space"),
         ("Merge or ship the task", "⇧⌘M"), ("Dashboard", "⇧⌘D"), ("Settings", "⌘,"),
     ]
