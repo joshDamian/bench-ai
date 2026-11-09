@@ -218,7 +218,7 @@ struct ProjectRail: View {
         VStack(spacing: 8) {
             let needs = store.sessions.filter { Mark.of($0, store: store) == .needs && $0.archived_at == nil }.count
             tile(id: "inbox", label: "Inbox", sub: needs == 0 ? "Nothing needs you" : "\(needs) need\(needs == 1 ? "s" : "") you", keys: "⌃0",
-                 fill: theme.colors.fill(0.08), mark: nil, badge: needs) {
+                 fill: nil, mark: nil, badge: needs) {
                 Image(systemName: "tray").font(.system(size: 14, weight: .medium)).foregroundStyle(theme.colors.text)
             }
             Rectangle().fill(theme.colors.fill(0.1)).frame(width: 22, height: 1)
@@ -228,7 +228,7 @@ struct ProjectRail: View {
                         let mark = projectMark(p)
                         // Neutral tiles: on the rail, colour is kept for what a project is doing.
                         tile(id: p.id, label: p.name, sub: summary(p), keys: i < 9 ? "⌃\(i + 1)" : nil,
-                             fill: theme.colors.fill(model.rail == p.id ? 0.16 : 0.08), mark: mark, badge: 0) {
+                             fill: nil, mark: mark, badge: 0) {
                             Text(Self.initials(p.name)).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.colors.text)
                         }
                     }
@@ -245,7 +245,7 @@ struct ProjectRail: View {
             }
             Spacer(minLength: 0)
             tile(id: "ask", label: "Ask Bench", sub: "Questions about Bench itself", keys: nil,
-                 fill: theme.colors.fill(0.08), mark: nil, badge: 0) {
+                 fill: nil, mark: nil, badge: 0) {
                 Image(systemName: "bubble.left").font(.system(size: 13, weight: .medium)).foregroundStyle(theme.colors.text)
             }
             .padding(.bottom, 10)
@@ -302,13 +302,31 @@ struct ProjectRail: View {
         return Color(.sRGB, red: c.0, green: c.1, blue: c.2, opacity: 1)
     }
 
-    private func tile<Icon: View>(id: String, label: String, sub: String, keys: String?, fill: Color, mark: Mark?, badge: Int,
+    /// A tile's face: a solid colour, or (nil) the raised grey of a project tile: a soft
+    /// top-to-bottom gradient, a highlight on the top edge, a hairline and a small shadow.
+    @ViewBuilder private func face(_ fill: Color?, on: Bool, hovered: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 10)
+        if let fill {
+            shape.fill(fill)
+        } else {
+            let lift = on ? 0.08 : (hovered ? 0.04 : 0)
+            shape.fill(LinearGradient(colors: [theme.colors.text.opacity(0.17 + lift), theme.colors.text.opacity(0.09 + lift)], startPoint: .top, endPoint: .bottom))
+                .overlay(shape.strokeBorder(theme.colors.text.opacity(0.07)))
+                .overlay(alignment: .top) {
+                    shape.trim(from: 0.0, to: 1.0).stroke(Color.white.opacity(theme.dark ? 0.14 : 0.6), lineWidth: 1)
+                        .mask(VStack(spacing: 0) { Color.black.frame(height: 2); Spacer(minLength: 0) })
+                }
+                .shadow(color: .black.opacity(theme.dark ? 0.35 : 0.12), radius: 2, y: 1.5)
+        }
+    }
+
+    private func tile<Icon: View>(id: String, label: String, sub: String, keys: String?, fill: Color?, mark: Mark?, badge: Int,
                                    @ViewBuilder icon: () -> Icon) -> some View {
         let on = model.rail == id
         return Button { model.rail = id } label: {
             ZStack { icon() }
                 .frame(width: 34, height: 34)
-                .background(fill, in: RoundedRectangle(cornerRadius: 10))
+                .background(face(fill, on: on, hovered: hover == id))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? theme.colors.text : (hover == id ? theme.colors.fill(0.35) : .clear), lineWidth: 2).padding(-4))
                 .overlay(alignment: .bottomTrailing) {
                     if let mark {
