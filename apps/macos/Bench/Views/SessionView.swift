@@ -168,19 +168,8 @@ struct SessionView: View {
             .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: approvals.first?.id) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: model.loading) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
-            .onChange(of: follow) { _, f in if f { seen = model.blocks.count } }
-            .onChange(of: model.blocks.count) { _, n in if follow { seen = n } }
-            .onChange(of: app.findRequest) { _, _ in
-                guard active == .key else { return }
-                finding = true; findFocused = true
-            }
-            .onChange(of: app.turnUp) { _, _ in if active == .key { jumpTurn(-1, proxy) } }
-            .onChange(of: app.turnDown) { _, _ in if active == .key { jumpTurn(1, proxy) } }
-            .onChange(of: app.approveRequest) { _, _ in
-                guard active == .key, let a = approvals.first, PanelText.answerable(a) || a.tool == "ExitPlanMode" else { return }
-                model.answer(a, a.tool == "ExitPlanMode" ? ["allow": true, "mode": "acceptEdits"] : ["allow": true])
-            }
-            .onChange(of: app.stopRequest) { _, _ in if active == .key && running { model.interrupt() } }
+            .modifier(SessionKeys(proxy: proxy, follow: follow, seen: $seen, finding: $finding, findFocused: $findFocused,
+                                  model: model, jump: { jumpTurn($0, proxy) }))
             .overlay(alignment: .bottom) {
                 if approvals.isEmpty {
                     Composer(model: model, draft: $draft, running: running, embedded: embedded, focused: $composerFocused)
@@ -609,4 +598,45 @@ extension View {
 
 extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
+
+
+/// The window-key-only responses to the Session menu and ⌘F, kept apart so the
+/// conversation's modifier chain stays small enough for the compiler.
+private struct SessionKeys: ViewModifier {
+    @Environment(AppModel.self) private var app
+    @Environment(\.controlActiveState) private var active
+    let proxy: ScrollViewProxy
+    let follow: Bool
+    @Binding var seen: Int
+    @Binding var finding: Bool
+    var findFocused: FocusState<Bool>.Binding
+    let model: SessionModel
+    let jump: (Int) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: follow) { _, f in if f { seen = model.blocks.count } }
+            .onChange(of: model.blocks.count) { _, n in if follow { seen = n } }
+            .onChange(of: app.findRequest) { _, _ in
+                guard active == .key else { return }
+                finding = true
+                findFocused.wrappedValue = true
+            }
+            .onChange(of: app.turnUp) { _, _ in if active == .key { jump(-1) } }
+            .onChange(of: app.turnDown) { _, _ in if active == .key { jump(1) } }
+            .onChange(of: app.approveRequest) { _, _ in approve() }
+            .onChange(of: app.stopRequest) { _, _ in
+                if active == .key && model.session?.status == "running" { model.interrupt() }
+            }
+    }
+
+    private func approve() {
+        guard active == .key, let a = model.approvals.first else { return }
+        if a.tool == "ExitPlanMode" {
+            model.answer(a, ["allow": true, "mode": "acceptEdits"])
+        } else if PanelText.answerable(a) {
+            model.answer(a, ["allow": true])
+        }
+    }
 }
