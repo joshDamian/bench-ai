@@ -104,8 +104,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.servicesProvider = ServicesProvider()
         NSUpdateDynamicServices()
         Task { @MainActor in QuickPrompt.shared.registerHotKey() }
-        // Session windows join the main one as tabs when the system asks for tabs.
-        NSWindow.allowsAutomaticWindowTabbing = true
+        // Tabs are Bench's own (in the main window); the system's window tabs would add a
+        // second tab bar and "Show Tab Bar" / "Show All Tabs" to the View menu.
+        NSWindow.allowsAutomaticWindowTabbing = false
     }
 
     /// Closing the window keeps Bench in the menu bar, if Settings say so.
