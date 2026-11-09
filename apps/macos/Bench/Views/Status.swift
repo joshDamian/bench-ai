@@ -217,6 +217,8 @@ struct Segments<T: Hashable>: View {
     let options: [(T, String)]
     @Binding var selection: T
     var fill = false
+    /// Tighter padding, for many options in a narrow space.
+    var compact = false
 
     var body: some View {
         HStack(spacing: 2) {
@@ -227,7 +229,8 @@ struct Segments<T: Hashable>: View {
                         .font(.system(size: 12, weight: on ? .medium : .regular))
                         .foregroundStyle(on ? theme.colors.text : theme.colors.muted)
                         .lineLimit(1)
-                        .padding(.horizontal, 12)
+                        .fixedSize()
+                        .padding(.horizontal, compact ? 6 : 12)
                         .frame(maxWidth: fill ? .infinity : nil)
                         .frame(height: 24)
                         .background(on ? theme.colors.fill(0.14) : .clear, in: RoundedRectangle(cornerRadius: 7))

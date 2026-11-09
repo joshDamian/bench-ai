@@ -560,6 +560,7 @@ private struct ModelPopover: View {
     var body: some View {
         let providers = store.providers.filter { $0.enabled && $0.ready != false && !$0.models.filter(\.enabled).isEmpty }
         VStack(alignment: .leading, spacing: 0) {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(providers) { p in
@@ -579,22 +580,34 @@ private struct ModelPopover: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .id(m.id)
                         }
                     }
                 }
                 .padding(6)
             }
             .frame(maxHeight: 360)
+            // Rows scrolled past the edges fade out rather than being sliced.
+            .mask(VStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 14)
+                Color.black
+                LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 14)
+            })
+            .onAppear { if let id = session.model_id { proxy.scrollTo(id, anchor: .center) } }
+            }
             Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1).padding(.horizontal, 10)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Effort").font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.colors.muted)
                 Segments(options: [("", "Default")] + Effort.allCases.map { ($0.rawValue, $0 == .xhigh ? "XHigh" : $0.label) },
-                         selection: Binding(get: { effort }, set: { v in effort = v; set(["effort": v.isEmpty ? NSNull() : v]) }), fill: true)
+                         selection: Binding(get: { effort }, set: { v in effort = v; set(["effort": v.isEmpty ? NSNull() : v]) }), fill: true, compact: true)
                 Text("Applies from your next message.").font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
             }
             .padding(14)
         }
-        .frame(width: 340)
+        .frame(width: 420)
+        // Solid, not the system's see-through material: the transcript behind made the names hard to read.
+        .background(theme.colors.surface2)
+        .presentationBackground(theme.colors.surface2)
         .onAppear { effort = session.effort ?? "" }
     }
 
