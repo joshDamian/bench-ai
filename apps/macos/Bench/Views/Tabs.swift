@@ -72,7 +72,7 @@ struct TabStrip: View {
         .frame(height: 46)
         .padding(.top, 8)
         .background(WindowDragArea())
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.fill(0.06)).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1).padding(.leading, -8) }
     }
 }
 
