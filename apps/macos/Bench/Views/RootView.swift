@@ -1,3 +1,4 @@
+import CoreSpotlight
 import SwiftUI
 
 struct RootView: View {
@@ -85,7 +86,16 @@ struct MainView: View {
             CommandPalette(store: store)
                 .environment(\.theme, theme)
         }
-        .onAppear { model.panel.hide() }
+        .onAppear {
+            model.panel.hide()
+            // Open where you left off.
+            if model.selection == nil, let last = UserDefaults.standard.string(forKey: "lastSelection") { model.selection = last }
+        }
+        .onChange(of: model.selection) { _, v in if let v { UserDefaults.standard.set(v, forKey: "lastSelection") } }
+        // A session picked in Spotlight.
+        .onContinueUserActivity(CSSearchableItemActionType) { a in
+            if let id = a.userInfo?[CSSearchableItemActivityIdentifier] as? String { model.selection = id }
+        }
     }
 
     @ViewBuilder private var detail: some View {

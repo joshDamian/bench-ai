@@ -33,6 +33,7 @@ struct Sidebar: View {
     var body: some View {
         VStack(spacing: 0) {
         top
+        if !store.ready { ListSkeleton(rows: 6) }
         List(selection: $selection) {
             Section {
                 placeRow(.needs, glyph: "circle.fill", tint: theme.colors.warn, count: store.approvals.count, loud: true)
@@ -58,6 +59,7 @@ struct Sidebar: View {
                         row(title: s.title, mark: Mark.of(s, store: store), meta: Describe.session(s, store: store))
                             .tag(s.id)
                             .contextMenu { SessionMenu(store: store, session: s) }
+                            .dropDestination(for: URL.self) { urls, _ in drop(urls, on: s.id) }
                     }
                 } header: {
                     Button { selection = "project:\(p.id)" } label: {
@@ -94,6 +96,7 @@ struct Sidebar: View {
                         row(title: s.title, mark: Mark.of(s, store: store), meta: Describe.session(s, store: store))
                             .tag(s.id)
                             .contextMenu { SessionMenu(store: store, session: s) }
+                            .dropDestination(for: URL.self) { urls, _ in drop(urls, on: s.id) }
                     }
                 } header: { Text("Ask Bench").textCase(nil).font(.system(size: 11, weight: .semibold)) }
                 .collapsible(false)
@@ -125,6 +128,14 @@ struct Sidebar: View {
         .tag(p.rawValue)
     }
 
+    /// Files dropped on a session row open that session with them attached.
+    private func drop(_ urls: [URL], on id: String) -> Bool {
+        guard !urls.isEmpty else { return false }
+        model.pendingAttachments[id, default: []] += urls
+        selection = id
+        return true
+    }
+
     private func row(title: String, mark: Mark, meta: String) -> some View {
         HStack(spacing: Space.sm) {
             MarkView(mark: mark)
@@ -137,6 +148,8 @@ struct Sidebar: View {
                 .fixedSize()
         }
         .font(.system(size: 13))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(meta)")
     }
 
     /// The pane's top: room for the traffic lights, then hide-sidebar and new-session.
@@ -176,10 +189,13 @@ struct Sidebar: View {
 
 /// Rename, archive and open-in-terminal, for context menus.
 struct SessionMenu: View {
+    @Environment(\.openWindow) private var openWindow
     let store: BenchStore
     let session: Session
 
     var body: some View {
+        Button("Open in New Window") { openWindow(id: "session", value: session.id) }
+        Divider()
         Button("Open in Claude Code") { TerminalLauncher.open(session, store: store) }
             .disabled(session.claude_session_id == nil)
         Button("Copy Resume Command") { TerminalLauncher.copy(session) }

@@ -231,7 +231,10 @@ private struct ChangesTab: View {
                         .font(.system(size: 12, design: .monospaced))
                         VStack(spacing: 1) {
                             ForEach(diff) { f in
+                                let abs = absolute(f.path, s?.cwd)
                                 Button { selected = f.path } label: { fileRow(f) }.buttonStyle(.plain)
+                                    .contextMenu { FileActions(path: abs, line: nil) }
+                                    .onDrag { dragItem(abs) }
                             }
                         }
                         if let f = diff.first(where: { $0.path == selected }) ?? diff.first {
@@ -244,6 +247,8 @@ private struct ChangesTab: View {
                     Text("\(dirty.count) uncommitted in the checkout").font(.system(size: 12.5, weight: .semibold))
                     ForEach(dirty, id: \.self) { p in
                         Text(p).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.text.opacity(0.85)).lineLimit(1).truncationMode(.head)
+                            .contextMenu { FileActions(path: absolute(p, s?.cwd), line: nil) }
+                            .onDrag { dragItem(absolute(p, s?.cwd)) }
                     }
                 }
                 if let s, let t = store.task(s.task_id), let c = t.check_command, !c.isEmpty {
@@ -484,4 +489,16 @@ struct MarkdownViewer: View {
         .frame(minWidth: 720, idealWidth: 820, minHeight: 560, idealHeight: 720)
         .background(theme.colors.bg)
     }
+}
+
+
+/// A path as this Mac sees it: relative paths are under the session's folder.
+func absolute(_ path: String, _ cwd: String?) -> String {
+    path.hasPrefix("/") ? path : ((cwd ?? "") as NSString).appendingPathComponent(path)
+}
+
+/// A file dragged out of Bench: the file itself when it's on this Mac, else its path as text.
+func dragItem(_ path: String) -> NSItemProvider {
+    if FileManager.default.fileExists(atPath: path), let p = NSItemProvider(contentsOf: URL(fileURLWithPath: path)) { return p }
+    return NSItemProvider(object: path as NSString)
 }

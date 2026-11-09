@@ -223,6 +223,10 @@ struct TurnView: View {
             }
             ForEach(Array(prose.enumerated()), id: \.offset) { _, t in BenchMarkdown(text: t) }
             if !reply.isEmpty { BenchMarkdown(text: reply) }
+            if done {
+                let changed = TurnChanges.of(steps, cwd: cwd)
+                if !changed.isEmpty { ChangedFilesCard(files: changed) }
+            }
             if done && (cost != nil || !reply.isEmpty) {
                 HStack(spacing: Space.md) {
                     if let cost { Text(cost) }

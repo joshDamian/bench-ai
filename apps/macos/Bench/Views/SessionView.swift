@@ -18,6 +18,15 @@ struct SessionView: View {
     @State private var follow = true
     @State private var dropTargeted = false
     @FocusState private var composerFocused: Bool
+    @Environment(\.controlActiveState) private var active
+    /// ⌘F: the find bar's query, and which match is showing.
+    @State private var finding = false
+    @State private var query = ""
+    @State private var hit = 0
+    @FocusState private var findFocused: Bool
+    /// The turn ⌥⌘↑ / ⌥⌘↓ last moved to, and how many blocks there were when you last saw the end.
+    @State private var turnIndex: Int?
+    @State private var seen = 0
 
     init(store: BenchStore, sessionId: String, embedded: Bool = false) {
         self.embedded = embedded
@@ -89,6 +98,8 @@ struct SessionView: View {
         let approvals = model.approvals
         let running = session?.status == "running"
         return ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+            if finding { findBar(proxy) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     if model.hasOlder {
@@ -97,7 +108,7 @@ struct SessionView: View {
                             .frame(maxWidth: .infinity)
                     }
                     if model.loading && model.rows.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity).padding(Space.xl)
+                        TranscriptSkeleton()
                     } else if model.rows.isEmpty {
                         Text("Nothing here yet. Tell Claude what to work on.")
                             .foregroundStyle(theme.colors.muted)
@@ -157,6 +168,19 @@ struct SessionView: View {
             .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: approvals.first?.id) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: model.loading) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: follow) { _, f in if f { seen = model.blocks.count } }
+            .onChange(of: model.blocks.count) { _, n in if follow { seen = n } }
+            .onChange(of: app.findRequest) { _, _ in
+                guard active == .key else { return }
+                finding = true; findFocused = true
+            }
+            .onChange(of: app.turnUp) { _, _ in if active == .key { jumpTurn(-1, proxy) } }
+            .onChange(of: app.turnDown) { _, _ in if active == .key { jumpTurn(1, proxy) } }
+            .onChange(of: app.approveRequest) { _, _ in
+                guard active == .key, let a = approvals.first, PanelText.answerable(a) || a.tool == "ExitPlanMode" else { return }
+                model.answer(a, a.tool == "ExitPlanMode" ? ["allow": true, "mode": "acceptEdits"] : ["allow": true])
+            }
+            .onChange(of: app.stopRequest) { _, _ in if active == .key && running { model.interrupt() } }
             .overlay(alignment: .bottom) {
                 if approvals.isEmpty {
                     Composer(model: model, draft: $draft, running: running, embedded: embedded, focused: $composerFocused)
@@ -172,18 +196,34 @@ struct SessionView: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 if !follow {
+                    let unseen = max(0, model.blocks.count - seen)
                     Button { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
-                        Image(systemName: "arrow.down").font(.system(size: 12, weight: .semibold)).frame(width: 30, height: 30)
-                            .background(theme.colors.surface3, in: Circle())
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.down").font(.system(size: 12, weight: .semibold))
+                            if unseen > 0 { Text("\(unseen) new").font(.system(size: 12, weight: .medium)) }
+                        }
+                        .padding(.horizontal, unseen > 0 ? 12 : 0)
+                        .frame(minWidth: 30, minHeight: 30)
+                        .foregroundStyle(unseen > 0 ? theme.colors.onAccent : theme.colors.text)
+                        .background(unseen > 0 ? theme.colors.accent : theme.colors.surface3, in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(unseen > 0 ? "Jump to \(unseen) new messages" : "Jump to latest")
                     .padding(.trailing, Space.lg)
                     .padding(.bottom, approvals.isEmpty ? 150 : Space.lg)
                     .help("Jump to latest")
                 }
             }
         }
-        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+            }
+        .onAppear { takePending() }
+        .onChange(of: app.pendingAttachments[sessionId]?.count ?? 0) { _, _ in takePending() }
+        .onDrop(of: [.fileURL, .image], isTargeted: $dropTargeted) { providers in
+            for p in providers where p.hasItemConformingToTypeIdentifier(UTType.image.identifier) && !p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                _ = p.loadDataRepresentation(forTypeIdentifier: UTType.png.identifier) { d, _ in
+                    if let d, let url = PastedImage.write(d) { Task { @MainActor in model.attach([url]) } }
+                }
+            }
             for p in providers {
                 _ = p.loadObject(ofClass: URL.self) { url, _ in
                     if let url { Task { @MainActor in model.attach([url]) } }
@@ -199,6 +239,74 @@ struct SessionView: View {
                     .allowsHitTesting(false)
             }
         }
+    }
+
+    private func takePending() {
+        guard let urls = app.pendingAttachments[sessionId], !urls.isEmpty else { return }
+        app.pendingAttachments[sessionId] = nil
+        model.attach(urls)
+    }
+
+    /// The text a block can be found by.
+    private func text(_ b: Block) -> String {
+        switch b {
+        case .user(let r), .note(let r):
+            if case .user(_, let t, _) = r { return t }
+            if case .system(_, let t, _) = r { return t }
+            return ""
+        case .turn(_, let steps, let reply, _, _, _):
+            let prose = steps.compactMap { r -> String? in if case .text(_, let t, _) = r { t } else { nil } }
+            return ([reply] + prose).joined(separator: "\n")
+        }
+    }
+
+    private var matches: [String] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        return model.blocks.filter { text($0).localizedCaseInsensitiveContains(q) }.map(\.id)
+    }
+
+    @ViewBuilder private func findBar(_ proxy: ScrollViewProxy) -> some View {
+        let m = matches
+        HStack(spacing: Space.sm) {
+            Image(systemName: "magnifyingglass").foregroundStyle(theme.colors.muted)
+            TextField("", text: $query, prompt: Text("Find in conversation"))
+                .textFieldStyle(.plain)
+                .focused($findFocused)
+                .onSubmit { step(1, m, proxy) }
+                .onChange(of: query) { _, _ in hit = 0; if let first = matches.last { withAnimation { proxy.scrollTo(first, anchor: .center) } } }
+                .onKeyPress(.escape) { finding = false; query = ""; composerFocused = true; return .handled }
+            Text(m.isEmpty ? (query.isEmpty ? "" : "No matches") : "\(m.count - hit) of \(m.count)")
+                .font(.system(size: TypeScale.xs).monospacedDigit()).foregroundStyle(theme.colors.muted).fixedSize()
+            Button { step(-1, m, proxy) } label: { Image(systemName: "chevron.up") }.buttonStyle(.plain).disabled(m.isEmpty)
+                .help("Previous (⇧Return)").keyboardShortcut(.return, modifiers: .shift)
+            Button { step(1, m, proxy) } label: { Image(systemName: "chevron.down") }.buttonStyle(.plain).disabled(m.isEmpty)
+                .help("Next (Return)")
+            Button("Done") { finding = false; query = ""; composerFocused = true }.buttonStyle(.plain).foregroundStyle(theme.colors.accent)
+        }
+        .font(.system(size: TypeScale.sm))
+        .padding(.horizontal, Space.lg).frame(height: 36)
+        .background(theme.colors.surface1)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1) }
+    }
+
+    /// Return walks from the newest match back; ⇧Return walks forward again.
+    private func step(_ dir: Int, _ m: [String], _ proxy: ScrollViewProxy) {
+        guard !m.isEmpty else { return }
+        hit = (hit + (dir > 0 ? 1 : -1) + m.count) % m.count
+        let id = m[m.count - 1 - hit]
+        withAnimation { proxy.scrollTo(id, anchor: .center) }
+    }
+
+    /// ⌥⌘↑ / ⌥⌘↓: from turn to turn, starting from the end.
+    private func jumpTurn(_ dir: Int, _ proxy: ScrollViewProxy) {
+        let turns = model.blocks.enumerated().filter { if case .turn = $0.element { true } else { false } }.map(\.offset)
+        guard !turns.isEmpty else { return }
+        let current = turnIndex ?? (dir < 0 ? turns.count : -1)
+        let next = max(0, min(turns.count - 1, current + dir))
+        turnIndex = next
+        withAnimation(.snappy) { proxy.scrollTo(model.blocks[turns[next]].id, anchor: .top) }
+        if next == turns.count - 1 && dir > 0 { turnIndex = nil; proxy.scrollTo("bottom", anchor: .bottom) }
     }
 
     private func subtitle(_ s: Session?) -> String {
@@ -217,6 +325,7 @@ struct Composer: View {
     var embedded = false
     var focused: FocusState<Bool>.Binding
     @State private var importing = false
+    @State private var pasteMonitor: Any?
 
     @State private var pick = 0
 
@@ -347,6 +456,19 @@ struct Composer: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { model.attach(urls) }
         }
+        // ⌘V with an image or copied files on the clipboard attaches them; text pastes as usual.
+        .onAppear {
+            guard pasteMonitor == nil else { return }
+            pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+                guard focused.wrappedValue, e.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                      e.charactersIgnoringModifiers == "v" else { return e }
+                let urls = PastedImage.take(from: .general)
+                if urls.isEmpty { return e }
+                model.attach(urls)
+                return nil
+            }
+        }
+        .onDisappear { if let m = pasteMonitor { NSEvent.removeMonitor(m) }; pasteMonitor = nil }
     }
 
     private func send() {

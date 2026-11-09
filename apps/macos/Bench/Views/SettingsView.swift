@@ -509,6 +509,9 @@ private struct AppearancePage: View {
     @AppStorage("appearance") private var appearance = Appearance.system.rawValue
     @AppStorage("menuBar") private var menuBar = true
     @AppStorage("keepRunning") private var keepRunning = true
+    @AppStorage("systemAccent") private var systemAccent = false
+    @AppStorage("quickPrompt") private var quickPrompt = true
+    @AppStorage("editor") private var editor = Editors.preferred?.id ?? ""
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -527,8 +530,23 @@ private struct AppearancePage: View {
             }
         }
         Group2 {
-            GroupRow(title: "Show Bench in the menu bar", first: true) { Toggle("", isOn: $menuBar).labelsHidden().toggleStyle(.switch) }
+            GroupRow(title: "Use the macOS accent colour", first: true) { Toggle("", isOn: $systemAccent).labelsHidden().toggleStyle(.switch) }
+            GroupRow(title: "Show Bench in the menu bar") { Toggle("", isOn: $menuBar).labelsHidden().toggleStyle(.switch) }
             GroupRow(title: "Keep running when the window is closed") { Toggle("", isOn: $keepRunning).labelsHidden().toggleStyle(.switch) }
+            GroupRow(title: "Quick prompt with ⌥Space from any app") {
+                Toggle("", isOn: Binding(get: { quickPrompt }, set: { on in
+                    quickPrompt = on
+                    if on { QuickPrompt.shared.registerHotKey() } else { QuickPrompt.shared.unregisterHotKey() }
+                })).labelsHidden().toggleStyle(.switch)
+            }
+            if !Editors.installed.isEmpty {
+                GroupRow(title: "Open files in") {
+                    Picker("", selection: $editor) {
+                        ForEach(Editors.installed) { e in Text(e.name).tag(e.id) }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+            }
         }
     }
 
@@ -565,7 +583,10 @@ private struct ShortcutsPage: View {
         ("New session", "⌘N"), ("Add project", "⇧⌘N"), ("Go anywhere or run a command", "⌘K"),
         ("Needs you · Running · All sessions", "⌘1 ⌘2 ⌘3"), ("Show or hide the inspector", "⌘J"),
         ("Show or hide the terminal", "⇧⌘T"), ("Send", "⌘↩"), ("Allow", "⌘↩"), ("Deny", "⌘⌫"),
-        ("Stop Claude", "⌘."), ("Merge or ship the task", "⇧⌘M"), ("Dashboard", "⇧⌘D"), ("Settings", "⌘,"),
+        ("Stop Claude", "⌘."), ("Approve the request on screen", "⇧⌘A"), ("Find in the conversation", "⌘F"),
+        ("Previous · next turn", "⌥⌘↑ ⌥⌘↓"), ("Your nine latest sessions", "⌥⌘1 – ⌥⌘9"),
+        ("Open the session in a new window", "⌥⌘O"), ("Quick prompt, from any app", "⌥Space"),
+        ("Merge or ship the task", "⇧⌘M"), ("Dashboard", "⇧⌘D"), ("Settings", "⌘,"),
     ]
     @Environment(\.theme) private var theme
 

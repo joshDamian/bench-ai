@@ -37,11 +37,13 @@ enum TypeScale {
 struct Themed: ViewModifier {
     @AppStorage("appearance") private var appearance = Appearance.system.rawValue
     @Environment(\.colorScheme) private var scheme
+    @AppStorage("systemAccent") private var systemAccent = false
 
     func body(content: Content) -> some View {
         let a = Appearance(rawValue: appearance) ?? .system
         let dark = a == .system ? scheme == .dark : a == .dark
-        let t = dark ? macDark : macLight
+        let base = dark ? macDark : macLight
+        let t = systemAccent ? base.systemAccent() : base
         content
             .environment(\.theme, t)
             .preferredColorScheme(a == .system ? nil : (a == .dark ? .dark : .light))

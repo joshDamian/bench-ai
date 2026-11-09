@@ -75,3 +75,17 @@ extension BenchColors {
     /// A fill on any surface: text at low opacity, so it works in light and dark.
     func fill(_ strength: Double = 0.06) -> Color { text.opacity(strength) }
 }
+
+
+extension BenchThemeSpec {
+    /// The same palette with macOS's accent colour (System Settings › Appearance) in place of the blue.
+    func systemAccent() -> BenchThemeSpec {
+        let a = Color(nsColor: .controlAccentColor)
+        let c = colors
+        return BenchThemeSpec(id: id, name: name, dark: dark, radius: radius, radiusSm: radiusSm, colors: BenchColors(
+            bg: c.bg, surfaceSunken: c.surfaceSunken, surface1: c.surface1, surface2: c.surface2, surface3: c.surface3,
+            surfaceRail: c.surfaceRail, text: c.text, muted: c.muted, accent: a, onAccent: .white,
+            line: c.line, lineStrong: c.lineStrong, good: c.good, warn: c.warn, bad: c.bad, info: a,
+            dotIdle: c.dotIdle, wellBg: c.wellBg, wellText: c.wellText))
+    }
+}

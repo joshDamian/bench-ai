@@ -22,8 +22,21 @@ final class AppModel {
     var shipRequest = 0
     @ObservationIgnored let panel = ApprovalPanel()
 
+    /// The one model, for App Intents, Services and the quick prompt.
+    static weak var shared: AppModel?
+
+    /// Files dropped on a sidebar row, waiting for that session's composer to take them.
+    var pendingAttachments: [String: [URL]] = [:]
+    /// ⌘F in a session, ⌥⌘↑ / ⌥⌘↓ between turns, ⇧⌘A approve: counters the session on screen watches.
+    var findRequest = 0
+    var turnUp = 0
+    var turnDown = 0
+    var approveRequest = 0
+    var stopRequest = 0
+
     init() {
         if let c = SavedServer.load() { use(c) }
+        AppModel.shared = self
     }
 
     func use(_ c: ServerConfig?) {
@@ -38,9 +51,19 @@ final class AppModel {
             if UserDefaults.standard.object(forKey: "alert.panel") as? Bool ?? true {
                 self.panel.show(a, store: s, model: self)
             } else if UserDefaults.standard.object(forKey: "alert.needs") as? Bool ?? true {
-                Notifications.approval(a, sessionTitle: s.session(a.session_id)?.title ?? "Session")
+                Notifications.approval(a, sessionTitle: s.session(a.session_id)?.title ?? "Session",
+                                       project: s.project(s.session(a.session_id)?.project_id)?.name)
             }
         }
+        s.onTurnEnded = { [weak s] ses in
+            guard let s, !NSApp.isActive else { return }
+            let errors = UserDefaults.standard.object(forKey: "alert.errors") as? Bool ?? true
+            let done = UserDefaults.standard.object(forKey: "alert.finished") as? Bool ?? true
+            if (ses.status == "error" && errors) || (ses.status != "error" && done) {
+                Notifications.finished(ses, project: s.project(ses.project_id)?.name)
+            }
+        }
+        s.onGlanceChange = { [weak s] in if let s { SystemReach.publish(s) } }
         store = s
         s.start()
     }
@@ -66,6 +89,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifications.setUp(delegate: self)
+        NSApp.servicesProvider = ServicesProvider()
+        NSUpdateDynamicServices()
+        Task { @MainActor in QuickPrompt.shared.registerHotKey() }
+        // Session windows join the main one as tabs when the system asks for tabs.
+        NSWindow.allowsAutomaticWindowTabbing = true
     }
 
     /// Closing the window keeps Bench in the menu bar, if Settings say so.
@@ -76,13 +104,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Allow and Deny on the banner answer the approval without opening the window.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
-        guard let approvalId = info["approval"] as? String, let sessionId = info["session"] as? String else { return }
+        guard let sessionId = info["session"] as? String else { return }
+        let approvalId = info["approval"] as? String ?? ""
+        let question = info["question"] as? String ?? ""
+        let typed = (response as? UNTextInputNotificationResponse)?.userText
         await MainActor.run {
             guard let model, let store = model.store else { return }
             switch response.actionIdentifier {
             case Notifications.allow, Notifications.deny:
                 let allow = response.actionIdentifier == Notifications.allow
                 Task { try? await store.api.answer(approvalId, allow ? ["allow": true] : ["allow": false, "message": ""]) }
+            case Notifications.reply:
+                Task { try? await store.api.answer(approvalId, ["allow": true, "answers": [question: typed ?? ""]]) }
+            case Notifications.approvePlan:
+                Task { try? await store.api.answer(approvalId, ["allow": true, "mode": "acceptEdits"]) }
             default:
                 model.selection = sessionId
                 NSApp.activate(ignoringOtherApps: true)
@@ -107,10 +142,21 @@ struct BenchMacApp: App {
                 .environment(model)
                 .themed()
                 .onAppear { delegate.model = model }
+                // bench:// links (the widget) bring this window forward instead of opening another.
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1320, height: 840)
         .commands { BenchCommands(model: model) }
+
+        // A session in its own window (or tab, with Window › Merge All Windows). Windows come
+        // back on relaunch showing the same session.
+        WindowGroup("Session", id: "session", for: String.self) { $id in
+            SessionWindow(sessionId: id)
+                .environment(model)
+                .themed()
+        }
+        .defaultSize(width: 860, height: 780)
 
         Window("Dashboard", id: "dashboard") {
             DashboardView()
@@ -144,6 +190,7 @@ struct MenuBarLabel: View {
         let running = model.store?.sessions.contains { $0.status == "running" && $0.archived_at == nil } ?? false
         HStack(spacing: 2) {
             Image(systemName: n > 0 ? "exclamationmark.bubble.fill" : running ? "bolt.horizontal.circle.fill" : "rectangle.split.3x1")
+                .symbolEffect(.pulse, options: .repeating, isActive: running && n == 0)
             if n > 0 { Text("\(n)") }
         }
         .onChange(of: n) { _, v in Notifications.setBadge(v) }
@@ -153,6 +200,14 @@ struct MenuBarLabel: View {
 struct BenchCommands: Commands {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
+
+    private var selectedSession: String? {
+        guard let id = model.selection, model.store?.session(id) != nil else { return nil }
+        return id
+    }
+    private var recent: [Session] {
+        (model.store?.sessions ?? []).filter { $0.archived_at == nil }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+    }
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -182,10 +237,62 @@ struct BenchCommands: Commands {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
             Divider()
         }
+        CommandGroup(after: .pasteboard) {
+            Divider()
+            Button("Find in Conversation…") { model.findRequest += 1 }
+                .keyboardShortcut("f", modifiers: [.command])
+        }
+        CommandMenu("Session") {
+            Button("Approve Request") { model.approveRequest += 1 }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled((model.store?.approvals.isEmpty ?? true))
+            Button("Stop Claude") { model.stopRequest += 1 }
+                .keyboardShortcut(".", modifiers: [.command])
+            Divider()
+            Button("Previous Turn") { model.turnUp += 1 }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+            Button("Next Turn") { model.turnDown += 1 }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            Divider()
+            Button("Open in New Window") { if let id = selectedSession { openWindow(id: "session", value: id) } }
+                .keyboardShortcut("o", modifiers: [.command, .option])
+                .disabled(selectedSession == nil)
+            Button("Quick Prompt (⌥Space)") { QuickPrompt.shared.show() }
+            Divider()
+            // ⌥⌘1–9: the nine most recent sessions, as the sidebar orders them.
+            ForEach(Array(recent.prefix(9).enumerated()), id: \.element.id) { i, s in
+                Button(s.title) { model.selection = s.id }
+                    .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: [.command, .option])
+            }
+        }
         CommandMenu("Task") {
             Button("Merge or Ship…") { model.shipRequest += 1 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
                 .disabled(!(model.selection?.hasPrefix("task:") ?? false))
         }
+    }
+}
+
+
+/// One session on its own: the same view as in the main window, without the sidebar.
+struct SessionWindow: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
+    let sessionId: String?
+
+    var body: some View {
+        Group {
+            if let store = model.store, let id = sessionId, store.session(id) != nil {
+                SessionView(store: store, sessionId: id).id(id)
+                    .navigationTitle(store.session(id)?.title ?? "Session")
+            } else if model.store?.ready == false {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text("This session isn't available.").foregroundStyle(theme.colors.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(minWidth: 560, minHeight: 480)
+        .background(theme.colors.bg)
     }
 }

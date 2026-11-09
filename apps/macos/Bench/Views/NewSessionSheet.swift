@@ -200,6 +200,27 @@ struct CommandPalette: View {
         for g in general where hit(g.2) && !q.isEmpty {
             out.append(Item(id: g.0, group: "Actions", icon: g.1, title: g.2, sub: "", keys: g.3, run: g.4))
         }
+        // The session on screen: stop it, approve what it asks, change how it runs.
+        if let sid = app.selection, let s = store.session(sid) {
+            var mine: [(String, String, String, String, () -> Void)] = [
+                ("s.find", "magnifyingglass", "Find in conversation", "⌘F", { app.findRequest += 1 }),
+                ("s.window", "macwindow.badge.plus", "Open in new window", "⌥⌘O", { openWindow(id: "session", value: sid) }),
+                ("s.quick", "text.bubble", "Quick prompt", "⌥Space", { QuickPrompt.shared.show() }),
+            ]
+            if s.status == "running" { mine.insert(("s.stop", "stop.circle", "Stop Claude", "⌘.", { app.stopRequest += 1 }), at: 0) }
+            if store.approvals.contains(where: { $0.session_id == sid }) { mine.insert(("s.approve", "checkmark.circle", "Approve request", "⇧⌘A", { app.approveRequest += 1 }), at: 0) }
+            for m in Mode.allCases where m != s.mode {
+                mine.append(("s.mode.\(m.rawValue)", "lock.shield", "Permissions: \(m.label)", "", { Task { try? await store.api.setMode(sid, m) } }))
+            }
+            for p in store.providers where p.enabled {
+                for md in p.models where md.enabled && md.id != s.model_id {
+                    mine.append(("s.model.\(md.id)", "cpu", "Model: \(md.label)", "", { Task { try? await store.api.patchSession(sid, ["providerId": p.id, "modelId": md.id]) } }))
+                }
+            }
+            for g in mine where (q.isEmpty && ["s.stop", "s.approve"].contains(g.0)) || (!q.isEmpty && hit(g.2)) {
+                out.append(Item(id: g.0, group: "This session", icon: g.1, title: g.2, sub: s.title, keys: g.3, run: g.4))
+            }
+        }
         let live = store.sessions.filter { $0.archived_at == nil && $0.task_id == nil }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
         for s in live where hit(s.title) || hit(store.project(s.project_id)?.name ?? "") {
             out.append(Item(id: s.id, group: "Sessions", icon: "bubble.left", title: s.title, sub: store.project(s.project_id)?.name ?? "Ask Bench", keys: "") { app.selection = s.id })

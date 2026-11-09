@@ -36,11 +36,14 @@ targets:
     dependencies:
       - package: MarkdownUI
       - package: SwiftTerm
+      - target: BenchWidget
     entitlements:
       path: Bench/Bench.entitlements
       properties:
         com.apple.security.network.client: true
         com.apple.security.automation.apple-events: true
+        # Shared with the widget: the app writes what it shows here.
+        com.apple.security.application-groups: [group.ai.bench.app]
     info:
       path: Bench/Info.plist
       properties:
@@ -58,12 +61,43 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: ai.bench.app
             CFBundleURLSchemes: [bench]
+        # Services › Send to Bench, from any app's selected text.
+        NSServices:
+          - NSMessage: sendToBench
+            NSPortName: Bench
+            NSMenuItem: { default: Send to Bench }
+            NSSendTypes: [NSStringPboardType, public.utf8-plain-text]
+            NSRequiredContext: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.bench.app
         PRODUCT_NAME: Bench
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         COMBINE_HIDPI_IMAGES: YES
+
+  # The desktop and Notification Centre widget.
+  BenchWidget:
+    type: app-extension
+    platform: macOS
+    sources: [BenchWidget]
+    entitlements:
+      path: BenchWidget/BenchWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups: [group.ai.bench.app]
+    info:
+      path: BenchWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Bench
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.bench.app.widget
+        PRODUCT_NAME: BenchWidget
+        SKIP_INSTALL: YES
 
   BenchTests:
     type: bundle.unit-test
