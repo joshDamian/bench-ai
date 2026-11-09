@@ -206,6 +206,13 @@ enum Format {
         return now.timeIntervalSince(t)
     }
 
+    /// "4m", "1h 12m": how long something has been going.
+    static func since(_ d: Date, now: Date = Date()) -> String {
+        let m = max(0, Int(now.timeIntervalSince(d) / 60))
+        if m < 1 { return "just now" }
+        return m < 60 ? "\(m)m" : "\(m / 60)h \(m % 60)m"
+    }
+
     static func ago(_ s: String?, now: Date = Date()) -> String {
         guard let s, let t = iso.date(from: s) ?? ISO8601DateFormatter().date(from: s) else { return "" }
         let m = Int(now.timeIntervalSince(t) / 60)

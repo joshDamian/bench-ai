@@ -28,6 +28,13 @@ extension AppModel {
         if split == id { split = nil }
     }
 
+    /// ⌃↑ / ⌃↓: the rail's next or previous entry, Inbox first and Ask Bench last.
+    func stepRail(_ step: Int) {
+        let order = ["inbox"] + (store?.projects.map(\.id) ?? []) + ["ask"]
+        let i = order.firstIndex(of: rail) ?? 0
+        rail = order[max(0, min(order.count - 1, i + step))]
+    }
+
     func cycleTab(_ step: Int) {
         guard tabs.count > 1, let sel = selection, let i = tabs.firstIndex(of: sel) else { return }
         selection = tabs[(i + step + tabs.count) % tabs.count]

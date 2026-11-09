@@ -17,7 +17,7 @@ struct BenchMarkdown: View {
                 ForegroundColor(c.text); BackgroundColor(c.fill(0.08))
             }
             .markdownTextStyle(\.strong) { FontWeight(.semibold) }
-            .markdownTextStyle(\.link) { ForegroundColor(c.accent) }
+            .markdownTextStyle(\.link) { ForegroundColor(Color(nsColor: .linkColor)) }  // macOS's link blue, whatever the accent
             .markdownBlockStyle(\.paragraph) { b in
                 b.label.relativeLineSpacing(.em(0.38)).markdownMargin(top: 0, bottom: 12)
             }

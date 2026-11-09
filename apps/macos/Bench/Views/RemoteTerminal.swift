@@ -157,6 +157,13 @@ struct RemoteTerminalView: View {
         .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: theme.radiusSm))
         .overlay(RoundedRectangle(cornerRadius: theme.radiusSm).strokeBorder(theme.colors.line))
         .padding(Space.lg)
+        // The split's divider stops at the sidebar card's 8pt margin; this carries it on to
+        // the card, as the header and tab lines do.
+        .overlay(alignment: .topLeading) {
+            Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 8, height: 1)
+                .offset(x: -8, y: -1)
+                .allowsHitTesting(false)
+        }
         .onAppear {
             let saved = UserDefaults.standard.stringArray(forKey: memoryKey) ?? []
             tabs = saved.isEmpty ? ["1"] : saved

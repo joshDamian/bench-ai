@@ -33,7 +33,7 @@ struct MainView: View {
         HStack(spacing: 0) {
             if model.showSidebar {
                 Sidebar(store: store, selection: $model.selection)
-                    .frame(width: 256)
+                    .frame(width: 300)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
                     .background(theme.colors.surface3.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
                     .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(theme.colors.fill(0.07)))

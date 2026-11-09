@@ -32,6 +32,10 @@ final class AppModel {
     }
     /// A second session beside the first, in the same window.
     var split: String?
+    /// What the sidebar's list shows: "inbox", "ask", or a project's id (the rail's selection).
+    var rail: String = UserDefaults.standard.string(forKey: "rail") ?? "inbox" {
+        didSet { UserDefaults.standard.set(rail, forKey: "rail") }
+    }
 
     /// Files dropped on a sidebar row, waiting for that session's composer to take them.
     var pendingAttachments: [String: [URL]] = [:]
@@ -298,6 +302,17 @@ struct BenchCommands: Commands {
                 Button(s.title) { model.selection = s.id }
                     .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: [.command, .option])
             }
+        }
+        CommandMenu("Projects") {
+            Button("Inbox") { model.rail = "inbox" }.keyboardShortcut("0", modifiers: [.control])
+            ForEach(Array((model.store?.projects ?? []).prefix(9).enumerated()), id: \.element.id) { i, p in
+                Button(p.name) { model.rail = p.id }
+                    .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: [.control])
+            }
+            Button("Ask Bench") { model.rail = "ask" }
+            Divider()
+            Button("Previous in Rail") { model.stepRail(-1) }.keyboardShortcut(.upArrow, modifiers: [.control])
+            Button("Next in Rail") { model.stepRail(1) }.keyboardShortcut(.downArrow, modifiers: [.control])
         }
         CommandMenu("Task") {
             Button("Merge or Ship…") { model.shipRequest += 1 }
