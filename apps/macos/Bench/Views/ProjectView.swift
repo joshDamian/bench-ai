@@ -26,7 +26,7 @@ struct ProjectView: View {
             if app.showTerminal {
                 VSplitView {
                     content.frame(minHeight: 260)
-                    RemoteTerminalView(store: store, query: "project=\(BenchAPI.enc(projectId))", place: project?.path ?? "Checkout")
+                    RemoteTerminalView(store: store, query: "project=\(BenchAPI.enc(projectId))", place: project?.path ?? "Checkout", onClose: { app.showTerminal = false })
                         .frame(minHeight: 140, idealHeight: 250)
                 }
             } else {

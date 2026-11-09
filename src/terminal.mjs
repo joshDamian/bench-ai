@@ -30,7 +30,8 @@ const DEFAULT_REAP_MS = 10 * 60 * 1000;
 const SCROLLBACK_CHARS = 256 * 1024;
 
 // Shells alive at once. A cap, so a client bug cannot fork-bomb the machine.
-const MAX_SESSIONS = 12;
+// Tabs keep their shells until closed, so the cap leaves room for a few per project.
+const MAX_SESSIONS = 24;
 
 // The environment the shell starts with. The ambient Anthropic routing is stripped for
 // the same reason childEnv strips it from an agent run: this shell is where a person
@@ -128,11 +129,11 @@ export class TerminalSessions {
   }
 
   /** The live shells, for a caller that wants to know what the machine is holding
-   * rather than to talk to one. @returns {{key:string, pid:number|null, cwd:string, cols:number, rows:number}[]} */
+   * rather than to talk to one. @returns {{key:string, pid:number|null, cwd:string, cols:number, rows:number, keep:boolean}[]} */
   list() {
     return [...this.sessions.values()]
       .filter((s) => s.alive)
-      .map((s) => ({ key: s.key, pid: s.pid, cwd: s.cwd, cols: s.cols, rows: s.rows }));
+      .map((s) => ({ key: s.key, pid: s.pid, cwd: s.cwd, cols: s.cols, rows: s.rows, keep: Boolean(s.keep) }));
   }
 
   // The session for (task, target), started if there is not one already. A session
@@ -140,8 +141,10 @@ export class TerminalSessions {
   // client a terminal that accepts keystrokes and answers none of them.
   // `command` is a shell line run by a login shell in place of an interactive one, so it
   // finds what the person's PATH finds; `env` is laid over the clean environment.
-  /** @param {{key:string, cwd:string, command?:string|null, env?:Record<string,string>, cols?:number, rows?:number}} spec */
-  open({ key, cwd, command = null, env = {}, cols = 80, rows = 24 }) {
+  // `keep`: a terminal tab. It lives until it is closed (or the server stops), not until
+  // ten minutes after the last reader leaves, so a dev server in a background tab survives.
+  /** @param {{key:string, cwd:string, command?:string|null, env?:Record<string,string>, cols?:number, rows?:number, keep?:boolean}} spec */
+  open({ key, cwd, command = null, env = {}, cols = 80, rows = 24, keep = false }) {
     const existing = this.sessions.get(key);
     if (existing && existing.alive) return existing;
     if (existing) this.#dispose(existing);
@@ -166,6 +169,7 @@ export class TerminalSessions {
       scrollback: new Scrollback(SCROLLBACK_CHARS),
       sockets: new Set(),
       reap: null,
+      keep,
       alive: true,
       exited: null,
     };
@@ -209,6 +213,11 @@ export class TerminalSessions {
         if (session.alive) session.pty.write(msg.data);
       } else if (msg.type === 'resize') {
         this.resize(session, Number(msg.cols), Number(msg.rows));
+      } else if (msg.type === 'close') {
+        // Closing a tab ends its shell now. Marked as exited so every reader is told not
+        // to reconnect, the same as a shell that ended on its own.
+        session.exited = { code: 0, signal: null };
+        this.#dispose(session, 'terminal closed');
       }
     });
     // A socket error always ends in a close, and detach belongs to the close alone:
@@ -221,7 +230,7 @@ export class TerminalSessions {
   // session - it starts the clock on how long it waits for one to come back.
   detach(session, ws) {
     session.sockets.delete(ws);
-    if (session.sockets.size || !session.alive || session.reap) return;
+    if (session.sockets.size || !session.alive || session.reap || session.keep) return;
     session.reap = setTimeout(() => this.#dispose(session, 'terminal timed out'), this.reapMs);
     // Unref'd so a shell waiting out its ten minutes never holds up a process exit.
     // The timer still fires; it just is not a reason for the event loop to stay up.
@@ -242,6 +251,16 @@ export class TerminalSessions {
     } catch {
       // A pty that died between the check and the call: its exit handler is already
       // closing this session out.
+    }
+  }
+
+  /** Ends every shell whose key starts with `prefix`: a session archived, a task closed. */
+  closeMatching(prefix) {
+    for (const session of [...this.sessions.values()]) {
+      if (session.key.startsWith(prefix)) {
+        session.exited = { code: 0, signal: null };
+        this.#dispose(session, 'terminal closed');
+      }
     }
   }
 

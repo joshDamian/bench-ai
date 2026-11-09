@@ -80,7 +80,7 @@ struct SessionView: View {
                 if !embedded && app.showTerminal {
                     VSplitView {
                         conversation.frame(minHeight: 260)
-                        RemoteTerminalView(store: store, query: "session=\(BenchAPI.enc(sessionId))&shell=1", place: session?.cwd ?? "Shell")
+                        RemoteTerminalView(store: store, query: "session=\(BenchAPI.enc(sessionId))&shell=1", place: session?.cwd ?? "Shell", onClose: { app.showTerminal = false })
                             .frame(minHeight: 140, idealHeight: 250)
                     }
                 } else {

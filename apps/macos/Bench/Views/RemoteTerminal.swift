@@ -10,6 +10,8 @@ final class RemoteShell: NSObject, TerminalViewDelegate {
     private let query: String
     private var socket: URLSessionWebSocketTask?
     var onState: ((String?) -> Void)?
+    /// The title the shell sets (usually user@host: folder), for the tab's label.
+    var onTitle: ((String) -> Void)?
 
     init(api: BenchAPI, query: String) {
         self.api = api
@@ -29,6 +31,12 @@ final class RemoteShell: NSObject, TerminalViewDelegate {
     }
 
     func close() { socket?.cancel(with: .goingAway, reason: nil); socket = nil }
+
+    /// Ends the shell on the server, not just this connection to it: closing a tab.
+    func end() {
+        sendFrame(["type": "close"])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.close() }
+    }
 
     private func receive(_ ws: URLSessionWebSocketTask) {
         ws.receive { [weak self] result in
@@ -62,7 +70,9 @@ final class RemoteShell: NSObject, TerminalViewDelegate {
     nonisolated func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
         Task { @MainActor in self.sendFrame(["type": "resize", "cols": newCols, "rows": newRows]) }
     }
-    nonisolated func setTerminalTitle(source: TerminalView, title: String) {}
+    nonisolated func setTerminalTitle(source: TerminalView, title: String) {
+        Task { @MainActor in self.onTitle?(title) }
+    }
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     nonisolated func scrolled(source: TerminalView, position: Double) {}
     nonisolated func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
@@ -85,46 +95,134 @@ private struct TerminalHost: NSViewRepresentable {
     func updateNSView(_ v: TerminalView, context: Context) {}
 }
 
-/// The Terminal tab: one shell per task (or project), kept on the server between visits.
+/// The terminal panel: tabs of shells in one place (a session's folder, a task's worktree,
+/// a project's checkout). Each tab is its own shell on the server and keeps running until
+/// its tab is closed; the panel's × only hides it.
 struct RemoteTerminalView: View {
     @Environment(\.theme) private var theme
     let store: BenchStore
     let query: String
     let place: String
-    @State private var shell: RemoteShell?
-    @State private var problem: String?
+    /// Hides the panel (the shells keep running).
+    var onClose: (() -> Void)?
+    @State private var tabs: [String] = []
+    @State private var current = ""
+    @State private var shells: [String: RemoteShell] = [:]
+    @State private var titles: [String: String] = [:]
+    @State private var problems: [String: String] = [:]
+
+    private var memoryKey: String { "terminalTabs.\(query)" }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: Space.sm) {
-                Circle().fill(problem == nil ? theme.colors.good : theme.colors.warn).frame(width: 6, height: 6)
-                Text(problem ?? place).lineLimit(1)
-                    .font(.system(size: TypeScale.xs, design: problem == nil ? .monospaced : .default))
-                Spacer()
-                if problem != nil { Button("Reconnect") { shell?.connect() }.controlSize(.small) }
+            HStack(spacing: 4) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 2) {
+                        ForEach(Array(tabs.enumerated()), id: \.element) { i, id in tab(id, index: i) }
+                    }
+                }
+                Button(action: addTab) {
+                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).help("New Terminal Tab (⌃⇧T)")
+                .keyboardShortcut("t", modifiers: [.control, .shift])
+                if let p = problems[current] {
+                    Text(p).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.warn).lineLimit(1)
+                    Button("Reconnect") { shells[current]?.connect() }.controlSize(.small)
+                }
+                if let onClose {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).help("Hide Terminal (⇧⌘T)")
+                    .accessibilityLabel("Hide terminal")
+                }
             }
             .foregroundStyle(theme.colors.muted)
-            .padding(.horizontal, Space.md)
-            .frame(height: 28)
+            .padding(.horizontal, Space.sm)
+            .frame(height: 32)
             Divider().overlay(theme.colors.line)
-            if let shell {
-                TerminalHost(shell: shell)
-                    .padding(Space.sm)
-            } else {
-                Spacer()
+            ZStack {
+                ForEach(tabs, id: \.self) { id in
+                    if let shell = shells[id] {
+                        TerminalHost(shell: shell)
+                            .padding(Space.sm)
+                            .opacity(id == current ? 1 : 0)
+                            .allowsHitTesting(id == current)
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: theme.radiusSm))
         .overlay(RoundedRectangle(cornerRadius: theme.radiusSm).strokeBorder(theme.colors.line))
         .padding(Space.lg)
         .onAppear {
-            let s = RemoteShell(api: store.api, query: query)
-            s.onState = { problem = $0 }
-            s.view.nativeBackgroundColor = NSColor(theme.colors.wellBg)
-            s.view.nativeForegroundColor = NSColor(theme.colors.wellText)
-            shell = s
-            s.connect()
+            let saved = UserDefaults.standard.stringArray(forKey: memoryKey) ?? []
+            tabs = saved.isEmpty ? ["1"] : saved
+            current = UserDefaults.standard.string(forKey: memoryKey + ".current").flatMap { tabs.contains($0) ? $0 : nil } ?? tabs[0]
+            for id in tabs { connect(id) }
         }
-        .onDisappear { shell?.close() }
+        .onDisappear { shells.values.forEach { $0.close() } }
+        .onChange(of: tabs) { _, t in UserDefaults.standard.set(t, forKey: memoryKey) }
+        .onChange(of: current) { _, c in
+            UserDefaults.standard.set(c, forKey: memoryKey + ".current")
+            if let v = shells[c]?.view { DispatchQueue.main.async { v.window?.makeFirstResponder(v) } }
+        }
+    }
+
+    private func tab(_ id: String, index: Int) -> some View {
+        let on = id == current
+        return HStack(spacing: 6) {
+            Circle().fill(problems[id] == nil ? theme.colors.good : theme.colors.warn).frame(width: 5, height: 5)
+            Text(label(id, index: index)).lineLimit(1).truncationMode(.head)
+                .font(.system(size: TypeScale.xs, design: .monospaced))
+            if tabs.count > 1 {
+                Button { closeTab(id) } label: { Image(systemName: "xmark").font(.system(size: 7, weight: .bold)).frame(width: 14, height: 14) }
+                    .buttonStyle(.plain).opacity(on ? 1 : 0.5)
+                    .help("Close Tab (ends its shell)")
+                    .accessibilityLabel("Close terminal tab")
+            }
+        }
+        .foregroundStyle(on ? theme.colors.text : theme.colors.muted)
+        .padding(.horizontal, 8).frame(maxWidth: 220, minHeight: 22)
+        .background(on ? theme.colors.fill(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onTapGesture { current = id }
+        .contextMenu { Button("Close Tab") { closeTab(id) }.disabled(tabs.count < 2) }
+    }
+
+    /// What the shell calls itself, without the "user@host:" part; the place for a new one.
+    private func label(_ id: String, index: Int) -> String {
+        guard let t = titles[id], !t.isEmpty else { return index == 0 ? place : "\(place) · \(index + 1)" }
+        if let colon = t.firstIndex(of: ":"), t[..<colon].contains("@") { return String(t[t.index(after: colon)...]).trimmingCharacters(in: .whitespaces) }
+        return t
+    }
+
+    private func connect(_ id: String) {
+        let s = RemoteShell(api: store.api, query: "\(query)&tab=\(id)")
+        s.onState = { problems[id] = $0 }
+        s.onTitle = { titles[id] = $0 }
+        s.view.nativeBackgroundColor = NSColor(theme.colors.wellBg)
+        s.view.nativeForegroundColor = NSColor(theme.colors.wellText)
+        shells[id] = s
+        s.connect()
+    }
+
+    private func addTab() {
+        let next = String((tabs.compactMap(Int.init).max() ?? 0) + 1)
+        tabs.append(next)
+        connect(next)
+        current = next
+    }
+
+    private func closeTab(_ id: String) {
+        guard tabs.count > 1, let i = tabs.firstIndex(of: id) else { return }
+        shells[id]?.end()
+        shells[id] = nil
+        titles[id] = nil
+        problems[id] = nil
+        tabs.remove(at: i)
+        if current == id { current = tabs[min(i, tabs.count - 1)] }
     }
 }

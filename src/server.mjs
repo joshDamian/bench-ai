@@ -661,7 +661,11 @@ route('POST', '/api/tasks/:id/abort-merge', ({ params }) => svc.abortTaskMerge(p
 route('POST', '/api/tasks/:id/merge', ({ params, body }) => svc.mergeTask(params[0], body));
 route('POST', '/api/tasks/:id/push', ({ params }) => svc.pushTask(params[0]));
 route('POST', '/api/tasks/:id/pr', ({ params, body }) => svc.pullRequest(params[0], body));
-route('POST', '/api/tasks/:id/close', ({ params, body }) => svc.closeTask(params[0], body));
+route('POST', '/api/tasks/:id/close', async ({ params, body }) => {
+  const r = await svc.closeTask(params[0], body);
+  terminals.closeMatching(`task:${params[0]}`);
+  return r;
+});
 route('POST', '/api/tasks/:id/reopen', ({ params }) => svc.reopenTask(params[0]));
 route('POST', '/api/tasks/:id/check', ({ params }) => svc.checkTask(params[0]));
 route('GET', '/api/tasks/:id/log', ({ params }) => svc.taskLog(params[0]));
@@ -726,8 +730,17 @@ route('GET', '/api/sessions/:id/routing', ({ params }) => svc.sessionRouting(par
 route('POST', '/api/sessions/:id/limit', ({ params, body }) => svc.sessionLimit(params[0], body));
 route('POST', '/api/sessions/:id/interrupt', async ({ params }) => ({ ok: await svc.interrupt(params[0]) }));
 route('PATCH', '/api/sessions/:id', ({ params, body }) => svc.updateSession(params[0], body));
-route('POST', '/api/sessions/:id/archive', ({ params, body }) => svc.archiveSession(params[0], body.archived !== false));
-route('DELETE', '/api/sessions/:id', ({ params }) => svc.deleteSession(params[0]));
+// Archiving or deleting a session ends the shells opened beside it; closing a task, its own.
+route('POST', '/api/sessions/:id/archive', async ({ params, body }) => {
+  const r = await svc.archiveSession(params[0], body.archived !== false);
+  if (body.archived !== false) terminals.closeMatching(`shell:${params[0]}`);
+  return r;
+});
+route('DELETE', '/api/sessions/:id', async ({ params }) => {
+  const r = await svc.deleteSession(params[0]);
+  terminals.closeMatching(`shell:${params[0]}`);
+  return r;
+});
 route('POST', '/api/approvals/:id', ({ params, body }) => ({ ok: svc.runtime.answer(params[0], body) }));
 
 route('GET', '/api/providers', () => svc.providers());
@@ -977,16 +990,21 @@ server.on('upgrade', (req, socket, head) => {
  * Which shell a terminal socket opens: in a task's worktree, in a project's checkout, or
  * a `claude --resume` on a session's own conversation - the escape hatch to the real TUI.
  * @param {URL} u
- * @returns {{error:string} | {key:string, cwd:string, command?:string, env?:Record<string,string>}}
+ * @returns {{error:string} | {key:string, cwd:string, command?:string, env?:Record<string,string>, keep?:boolean}}
  */
 function terminalSpec(u) {
   const q = u.searchParams;
+  // `tab`: one of several shells in the same place. Each tab is its own shell and keeps
+  // running until it is closed; without one, the place's single shell times out as before.
+  const tab = q.get('tab');
+  if (tab !== null && !/^[A-Za-z0-9_-]{1,32}$/.test(tab)) return { error: '400 Bad Request' };
+  const tabbed = (/** @type {{key:string, cwd:string}} */ spec) => (tab ? { ...spec, key: `${spec.key}#${tab}`, keep: true } : spec);
   try {
     if (q.get('session') && q.get('shell')) {
       // A plain shell where the session works, for running commands beside the chat.
       const s = svc.session(/** @type {string} */ (q.get('session')));
       if (!fs.existsSync(s.cwd)) return { error: '409 Conflict' };
-      return { key: `shell:${s.id}`, cwd: s.cwd };
+      return tabbed({ key: `shell:${s.id}`, cwd: s.cwd });
     }
     if (q.get('session')) {
       const s = svc.session(/** @type {string} */ (q.get('session')));
@@ -1004,11 +1022,11 @@ function terminalSpec(u) {
     if (q.get('task')) {
       const t = svc.task(/** @type {string} */ (q.get('task')));
       if (!fs.existsSync(t.worktree)) return { error: '409 Conflict' };
-      return { key: `task:${t.id}`, cwd: t.worktree };
+      return tabbed({ key: `task:${t.id}`, cwd: t.worktree });
     }
     if (q.get('project')) {
       const p = svc.project(/** @type {string} */ (q.get('project')));
-      return { key: `project:${p.id}`, cwd: p.path };
+      return tabbed({ key: `project:${p.id}`, cwd: p.path });
     }
   } catch {
     return { error: '404 Not Found' };

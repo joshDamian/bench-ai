@@ -79,7 +79,7 @@ struct TaskView: View {
             if app.showTerminal {
                 VSplitView {
                     content.frame(minHeight: 260)
-                    RemoteTerminalView(store: store, query: "task=\(BenchAPI.enc(taskId))", place: model.task?.branch ?? "Worktree")
+                    RemoteTerminalView(store: store, query: "task=\(BenchAPI.enc(taskId))", place: model.task?.branch ?? "Worktree", onClose: { app.showTerminal = false })
                         .frame(minHeight: 140, idealHeight: 250)
                 }
             } else {
