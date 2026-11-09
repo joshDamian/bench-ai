@@ -120,15 +120,17 @@ struct Sidebar: View {
     private func sessionRow(_ s: Session, showProject: Bool = false) -> some View {
         let mark = Mark.of(s, store: store)
         let project = showProject ? (store.project(s.project_id)?.name ?? "Ask Bench") : nil
-        let status: String = {
+        // Idle rows say nothing more than their age; the second line is for news.
+        let status: String? = {
             switch mark {
             case .needs: return "Needs you"
             case .running: return "Running" + (store.runningSince[s.id].map { " · " + Format.since($0) } ?? "")
             case .failed: return "Stopped with an error"
-            default: return Describe.session(s, store: store)
+            default: return nil
             }
         }()
-        return twoLine(title: s.title, status: [project, status].compactMap { $0 }.joined(separator: " · "), mark: mark, age: mark == .idle ? Format.ago(s.updated_at) : nil)
+        let line = [project, status].compactMap { $0 }.joined(separator: " · ")
+        return twoLine(title: s.title, status: line.isEmpty ? nil : line, mark: mark, age: mark == .idle ? Format.ago(s.updated_at) : nil)
             .tag(s.id)
             .contextMenu { SessionMenu(store: store, session: s) }
             .dropDestination(for: URL.self) { urls, _ in drop(urls, on: s.id) }
@@ -136,7 +138,7 @@ struct Sidebar: View {
 
     /// A row: the title over up to two lines, then where it stands. Idle rows carry no mark,
     /// so a mark always means something.
-    private func twoLine(title: String, status: String, mark: Mark, age: String?) -> some View {
+    private func twoLine(title: String, status: String?, mark: Mark, age: String?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Group {
                 if mark == .idle { Color.clear.frame(width: 8, height: 8) } else { MarkView(mark: mark).frame(width: 10) }
@@ -144,9 +146,11 @@ struct Sidebar: View {
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 13)).lineLimit(2)
-                Text(status).font(.system(size: 11.5))
-                    .foregroundStyle(mark == .idle ? theme.colors.muted : mark.tint(theme.colors))
-                    .lineLimit(1)
+                if let status {
+                    Text(status).font(.system(size: 11.5))
+                        .foregroundStyle(mark == .idle ? theme.colors.muted : mark.tint(theme.colors))
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 4)
             if let age { Text(age).font(.system(size: 11)).foregroundStyle(theme.colors.muted).fixedSize() }
@@ -222,9 +226,10 @@ struct ProjectRail: View {
                 VStack(spacing: 8) {
                     ForEach(Array(store.projects.enumerated()), id: \.element.id) { i, p in
                         let mark = projectMark(p)
+                        // Neutral tiles: on the rail, colour is kept for what a project is doing.
                         tile(id: p.id, label: p.name, sub: summary(p), keys: i < 9 ? "⌃\(i + 1)" : nil,
-                             fill: Self.tint(p.name), mark: mark, badge: 0) {
-                            Text(String(p.name.prefix(1)).uppercased()).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+                             fill: theme.colors.fill(model.rail == p.id ? 0.16 : 0.08), mark: mark, badge: 0) {
+                            Text(Self.initials(p.name)).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.colors.text)
                         }
                     }
                     Button { model.showAddProject = true } label: {
@@ -277,6 +282,15 @@ struct ProjectRail: View {
         let running = ss.filter { $0.status == "running" }.count
         return [needs > 0 ? "\(needs) need\(needs == 1 ? "s" : "") you" : nil, running > 0 ? "\(running) running" : nil,
                 "\(ss.count) session\(ss.count == 1 ? "" : "s")"].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// Two letters that tell projects apart: the first of each of the first two words
+    /// (josh-portfolio → JP, js-runner → JR), or a one-word name's first two (kron → Kr).
+    static func initials(_ name: String) -> String {
+        let words = name.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).filter { !$0.isEmpty }
+        if words.count >= 2 { return (String(words[0].prefix(1)) + String(words[1].prefix(1))).uppercased() }
+        let w = String(words.first ?? Substring(name))
+        return w.prefix(1).uppercased() + w.dropFirst().prefix(1).lowercased()
     }
 
     /// A steady colour per project, from its name, so a tile is recognisable at a glance.
