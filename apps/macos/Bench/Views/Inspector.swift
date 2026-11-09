@@ -195,11 +195,15 @@ struct SessionInspector: View {
             .padding(.horizontal, 14)
             .frame(height: 54)
             .background(WindowDragArea())
-            switch tab {
-            case "files": FilesTab(files: files)
-            case "session": SessionTab(store: store, sessionId: sessionId)
-            default: ChangesTab(store: store, sessionId: sessionId)
+            Group {
+                switch tab {
+                case "files": FilesTab(files: files)
+                case "session": SessionTab(store: store, sessionId: sessionId)
+                default: ChangesTab(store: store, sessionId: sessionId)
+                }
             }
+            // Room under the header's line before the tab's content starts.
+            .padding(.top, Space.md)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(theme.colors.surfaceRail)
