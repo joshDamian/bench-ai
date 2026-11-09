@@ -105,17 +105,21 @@ struct RailPalette {
     let top: Color, bottom: Color, selTop: Color, selBottom: Color
     let hairline: Color, highlight: Color, shadow: Color, selShadow: Color
     let letters: Color, bar: Color, barHover: Color
+    /// The project you're in: solid violet, Bench's colour, with white letters.
+    let vivid: [Color], vividGlow: Color
 
     static func of(dark: Bool) -> RailPalette {
         dark ? RailPalette(
             top: hex(0x46474f), bottom: hex(0x33304a), selTop: hex(0x57586a), selBottom: hex(0x43386e),
             hairline: Color.white.opacity(0.06), highlight: Color.white.opacity(0.14),
             shadow: Color.black.opacity(0.35), selShadow: Color.black.opacity(0.45),
-            letters: hex(0xf1f2f4), bar: hex(0xb9a3ff), barHover: hex(0xb9a3ff).opacity(0.5))
+            letters: hex(0xf1f2f4), bar: hex(0xb9a3ff), barHover: hex(0xb9a3ff).opacity(0.5),
+            vivid: [hex(0xa58bff), hex(0x6a4ce0), hex(0x4b32b8)], vividGlow: hex(0x6b4ce0).opacity(0.55))
         : RailPalette(
             top: hex(0xfdfdfe), bottom: hex(0xf2f0f7), selTop: hex(0xf8f6fd), selBottom: hex(0xe8e2f7),
             hairline: hex(0x281e50).opacity(0.07), highlight: Color.white.opacity(0.9),
             shadow: hex(0x281e50).opacity(0.07), selShadow: hex(0x463296).opacity(0.13),
-            letters: hex(0x44465a), bar: hex(0x6b55d6), barHover: hex(0x6b55d6).opacity(0.35))
+            letters: hex(0x44465a), bar: hex(0x6b55d6), barHover: hex(0x6b55d6).opacity(0.35),
+            vivid: [hex(0x8f78f0), hex(0x6b52dc), hex(0x5640c4)], vividGlow: hex(0x5b40c4).opacity(0.35))
     }
 }

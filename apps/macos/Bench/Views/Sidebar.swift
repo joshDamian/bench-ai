@@ -46,7 +46,10 @@ struct Sidebar: View {
 
     @ViewBuilder private var list: some View {
         let rail = model.rail
-        List(selection: $selection) {
+        // Our own list and selection, not List's: its highlight switches between the accent and
+        // grey as focus moves, and flashes the accent on every click.
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 1) {
             if rail == "inbox" {
                 inbox
             } else if rail == "ask" {
@@ -60,9 +63,11 @@ struct Sidebar: View {
                 inbox
             }
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        .environment(\.defaultMinListRowHeight, 28)
+          }
+          .padding(.horizontal, 8)
+          .padding(.vertical, 6)
+        }
+        .scrollIndicators(.never)
     }
 
     @ViewBuilder private var inbox: some View {
@@ -83,7 +88,7 @@ struct Sidebar: View {
             Section {
                 ForEach(tasks) { t in
                     twoLine(title: t.title, status: Describe.task(t, store: store), mark: Mark.of(task: t, store: store), age: nil)
-                        .tag("task:\(t.id)")
+                        .selectable("task:\(t.id)", $selection, theme)
                 }
             } header: { label("Tasks") }
         }
@@ -109,12 +114,12 @@ struct Sidebar: View {
         .disabled(project == nil)
         .help(project.map { "Open \($0.name)" } ?? "")
         .padding(.bottom, 4)
-        .listRowSeparator(.hidden)
-        .selectionDisabled()
+        .padding(.horizontal, 6).padding(.top, 4)
     }
 
     private func label(_ s: String) -> some View {
-        Text(s).textCase(nil).font(.system(size: 11, weight: .semibold))
+        Text(s).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.colors.muted)
+            .padding(.horizontal, 6).padding(.top, 12).padding(.bottom, 4)
     }
 
     private func sessionRow(_ s: Session, showProject: Bool = false) -> some View {
@@ -131,7 +136,7 @@ struct Sidebar: View {
         }()
         let line = [project, status].compactMap { $0 }.joined(separator: " · ")
         return twoLine(title: s.title, status: line.isEmpty ? nil : line, mark: mark, age: mark == .idle ? Format.ago(s.updated_at) : nil)
-            .tag(s.id)
+            .selectable(s.id, $selection, theme)
             .contextMenu { SessionMenu(store: store, session: s) }
             .dropDestination(for: URL.self) { urls, _ in drop(urls, on: s.id) }
     }
@@ -229,7 +234,8 @@ struct ProjectRail: View {
                         // Neutral tiles: on the rail, colour is kept for what a project is doing.
                         tile(id: p.id, label: p.name, sub: summary(p), keys: i < 9 ? "⌃\(i + 1)" : nil,
                              fill: nil, mark: mark, badge: 0) {
-                            Text(Self.initials(p.name)).font(.system(size: 13, weight: .semibold)).foregroundStyle(RailPalette.of(dark: theme.dark).letters)
+                            Text(Self.initials(p.name)).font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(model.rail == p.id ? Color.white : RailPalette.of(dark: theme.dark).letters)
                         }
                     }
                     Button { model.showAddProject = true } label: {
@@ -312,14 +318,15 @@ struct ProjectRail: View {
         if let fill {
             shape.fill(fill)
         } else {
-            shape.fill(LinearGradient(colors: on ? [r.selTop, r.selBottom] : [r.top, r.bottom], startPoint: .top, endPoint: .bottom))
+            shape.fill(on ? LinearGradient(colors: r.vivid, startPoint: .topLeading, endPoint: .bottomTrailing)
+                          : LinearGradient(colors: [r.top, r.bottom], startPoint: .top, endPoint: .bottom))
                 .brightness(hovered && !on ? (theme.dark ? 0.03 : -0.01) : 0)
                 .overlay(shape.strokeBorder(r.hairline))
                 .overlay(alignment: .top) {
-                    shape.stroke(r.highlight, lineWidth: 1)
+                    shape.stroke(on ? Color.white.opacity(0.35) : r.highlight, lineWidth: 1)
                         .mask(VStack(spacing: 0) { Color.black.frame(height: 1.5); Spacer(minLength: 0) })
                 }
-                .shadow(color: on ? r.selShadow : r.shadow, radius: on ? 4 : (theme.dark ? 2 : 1), y: on ? 2.5 : 1)
+                .shadow(color: on ? r.vividGlow : r.shadow, radius: on ? 6 : (theme.dark ? 2 : 1), y: on ? 3 : 1)
         }
     }
 
@@ -340,7 +347,7 @@ struct ProjectRail: View {
                             }
                         }
                         .frame(width: 11, height: 11)
-                        .overlay(Circle().strokeBorder(theme.colors.surface2, lineWidth: 2).padding(-2))
+                        .background(Circle().fill(theme.colors.surface2).padding(-2.5))
                         .offset(x: 3, y: 3)
                     }
                 }
@@ -359,8 +366,8 @@ struct ProjectRail: View {
         .overlay(alignment: .leading) {
             let r = RailPalette.of(dark: theme.dark)
             UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0, bottomTrailingRadius: 2, topTrailingRadius: 2)
-                .fill(on ? r.bar : r.barHover)
-                .frame(width: 4, height: on ? 24 : (hover == id ? 12 : 0))
+                .fill(r.barHover)
+                .frame(width: 4, height: hover == id && !on ? 12 : 0)
                 .offset(x: -11)
                 .animation(.snappy(duration: 0.18), value: on)
                 .animation(.snappy(duration: 0.18), value: hover)
@@ -474,5 +481,32 @@ struct SessionRowView: View {
             Text(Format.ago(session.updated_at)).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted).fixedSize()
         }
         .font(.system(size: 13))
+    }
+}
+
+
+extension View {
+    /// A sidebar row you can pick: one steady soft fill when selected, a fainter one on hover.
+    func selectable(_ id: String, _ selection: Binding<String?>, _ theme: BenchThemeSpec) -> some View {
+        modifier(SelectableRow(id: id, selection: selection, theme: theme))
+    }
+}
+
+private struct SelectableRow: ViewModifier {
+    let id: String
+    @Binding var selection: String?
+    let theme: BenchThemeSpec
+    @State private var hover = false
+
+    func body(content: Content) -> some View {
+        let on = selection == id
+        content
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(on ? theme.colors.fill(0.1) : (hover ? theme.colors.fill(0.05) : .clear), in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+            .onTapGesture { selection = id }
+            .onHover { hover = $0 }
+            .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
     }
 }
