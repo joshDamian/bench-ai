@@ -207,12 +207,14 @@ final class QuickPrompt {
         guard let model = AppModel.shared else { return }
         let p = panel ?? makePanel()
         panel = p
-        p.contentView = NSHostingView(rootView: QuickPromptView(prefill: prefill, close: { [weak self] in self?.close() })
+        let host = NSHostingView(rootView: QuickPromptView(prefill: prefill, close: { [weak self] in self?.close() })
             .environment(model).themed())
-        p.setContentSize(NSSize(width: 560, height: 132))
+        host.wantsLayer = true
+        p.contentView = host
+        p.setContentSize(host.fittingSize.width > 0 ? NSSize(width: 600, height: host.fittingSize.height) : NSSize(width: 600, height: 120))
         if let screen = NSScreen.main {
             let f = screen.visibleFrame
-            p.setFrameOrigin(NSPoint(x: f.midX - 280, y: f.maxY - f.height * 0.28))
+            p.setFrameOrigin(NSPoint(x: f.midX - 300, y: f.maxY - f.height * 0.3))
         }
         NSApp.activate(ignoringOtherApps: true)
         p.makeKeyAndOrderFront(nil)
@@ -220,17 +222,21 @@ final class QuickPrompt {
 
     func close() { panel?.orderOut(nil) }
 
+    /// Borderless and see-through: the SwiftUI view draws the rounded material card itself.
+    private final class KeyPanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { false }
+    }
+
     private func makePanel() -> NSPanel {
-        let p = NSPanel(contentRect: .zero, styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
-        p.titleVisibility = .hidden
-        p.titlebarAppearsTransparent = true
+        let p = KeyPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
         p.isMovableByWindowBackground = true
         p.level = .floating
         p.hidesOnDeactivate = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        p.standardWindowButton(.closeButton)?.isHidden = true
-        p.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        p.standardWindowButton(.zoomButton)?.isHidden = true
         return p
     }
 }
@@ -248,29 +254,57 @@ struct QuickPromptView: View {
 
     var body: some View {
         let projects = app.store?.projects ?? []
-        VStack(alignment: .leading, spacing: 10) {
-            TextField("", text: $text, prompt: Text("Ask Claude to…"), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 17))
-                .lineLimit(1...4)
-                .focused($focused)
-                .onSubmit(send)
-                .onKeyPress(.escape) { close(); return .handled }
-            HStack(spacing: Space.sm) {
-                Picker("", selection: $project) {
-                    Text("Ask Bench").tag("")
-                    ForEach(projects) { p in Text(p.name).tag(p.id) }
+        let projectName = projects.first { $0.id == project }?.name
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "sparkle").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.colors.accent)
+                    .padding(.top, 3)
+                TextField("", text: $text, prompt: Text("Ask Claude to…").foregroundStyle(theme.colors.muted), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 18))
+                    .foregroundStyle(theme.colors.text)
+                    .lineLimit(1...5)
+                    .focused($focused)
+                    .onSubmit(send)
+                    .onKeyPress(.escape) { close(); return .handled }
+                if sending { ProgressView().controlSize(.small).padding(.top, 3) }
+            }
+            Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
+            HStack(spacing: 8) {
+                Menu {
+                    Button { project = "" } label: { Label("Ask Bench", systemImage: "bubble.left") }
+                    if !projects.isEmpty { Divider() }
+                    ForEach(projects) { p in
+                        Button { project = p.id } label: { Label(p.name, systemImage: "folder") }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: project.isEmpty ? "bubble.left" : "folder").font(.system(size: 11))
+                        Text(projectName ?? "Ask Bench").font(.system(size: 12.5, weight: .medium))
+                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
+                    }
+                    .foregroundStyle(theme.colors.text)
+                    .padding(.horizontal, 10).frame(height: 26)
+                    .background(theme.colors.fill(0.08), in: Capsule())
                 }
-                .labelsHidden()
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .fixedSize()
-                Spacer()
-                Text("Return to start · Esc to close").font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
-                if sending { ProgressView().controlSize(.small) }
+                .accessibilityLabel("Where: \(projectName ?? "Ask Bench")")
+                Text(projectName.map { "New session in \($0)" } ?? "New Ask Bench session")
+                    .font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                Spacer(minLength: 8)
+                Keycap(label: "↩")
+                Text("start").font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+                Keycap(label: "esc")
+                Text("close").font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
             }
         }
-        .padding(18)
-        .frame(width: 560)
-        .background(theme.colors.surface2)
+        .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 12)
+        .frame(width: 600, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(theme.colors.surface2.opacity(0.75), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.colors.fill(0.14)))
         .onAppear {
             text = prefill
             project = projects.contains { $0.id == lastProject } ? lastProject : ""
@@ -294,5 +328,17 @@ struct QuickPromptView: View {
                 NSSound.beep()
             }
         }
+    }
+}
+
+/// A key drawn as a small cap, for the quick prompt's hints.
+private struct Keycap: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    var body: some View {
+        Text(label).font(.system(size: 10.5, weight: .medium)).foregroundStyle(theme.colors.muted)
+            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 17)
+            .background(theme.colors.fill(0.08), in: RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(theme.colors.fill(0.12)))
     }
 }
