@@ -33,6 +33,8 @@ struct SessionView: View {
     /// The turn ⌥⌘↑ / ⌥⌘↓ last moved to, and how many blocks there were when you last saw the end.
     @State private var turnIndex: Int?
     @State private var seen = 0
+    /// Whether the thread has scrolled under the header: then the header shows its edge.
+    @State private var scrolled = false
 
     init(store: BenchStore, sessionId: String, embedded: Bool = false, showsInspector: Bool = true, onClose: (() -> Void)? = nil, showsTitle: Bool = true) {
         self.embedded = embedded
@@ -74,6 +76,12 @@ struct SessionView: View {
                             .accessibilityLabel("Close this side")
                         }
                     }
+                }
+                if !embedded {
+                    // A hairline under the header, once the thread is underneath it.
+                    Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
+                        .opacity(scrolled ? 1 : 0)
+                        .animation(.easeOut(duration: 0.15), value: scrolled)
                 }
                 if !embedded && app.showTerminal {
                     VSplitView {
@@ -123,6 +131,10 @@ struct SessionView: View {
             if finding { findBar(proxy) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
+                    // At the very top of the thread: visible means nothing is under the header.
+                    Color.clear.frame(height: 1).padding(.bottom, -22)
+                        .onAppear { scrolled = false }
+                        .onDisappear { scrolled = true }
                     if model.hasOlder {
                         Button("Show earlier messages") { Task { await model.loadOlder() } }
                             .buttonStyle(.link)

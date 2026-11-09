@@ -67,7 +67,10 @@ struct TabStrip: View {
             .help("New Tab (⌘T)")
         }
         .padding(.leading, 12).padding(.trailing, 10)
-        .frame(height: 38)
+        // The sidebar card is inset 8pt and its top row is 46pt tall: the same here puts the
+        // tabs on the traffic lights' line.
+        .frame(height: 46)
+        .padding(.top, 8)
         .background(WindowDragArea())
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.fill(0.06)).frame(height: 1) }
     }
