@@ -110,7 +110,10 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 920, height: 640)
+        // Fill the whole window: a fixed height left the hidden title bar's height as a bare
+        // strip at the bottom once the content moved up into it.
+        .frame(width: 920)
+        .frame(minHeight: 640, maxHeight: .infinity)
         .background(theme.colors.bg)
         .ignoresSafeArea()
         .hideToolbarTitle()
