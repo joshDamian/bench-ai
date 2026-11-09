@@ -97,3 +97,25 @@ extension BenchThemeSpec {
             dotIdle: c.dotIdle, wellBg: c.wellBg, wellText: c.wellText))
     }
 }
+
+
+/// The project rail's tiles: grey with a hint of Bench's violet (the icon ring's cool end),
+/// raised in dark, barely off the paper in light. Colour on the rail otherwise means status.
+struct RailPalette {
+    let top: Color, bottom: Color, selTop: Color, selBottom: Color
+    let hairline: Color, highlight: Color, shadow: Color, selShadow: Color
+    let letters: Color, bar: Color, barHover: Color
+
+    static func of(dark: Bool) -> RailPalette {
+        dark ? RailPalette(
+            top: hex(0x46474f), bottom: hex(0x33304a), selTop: hex(0x57586a), selBottom: hex(0x43386e),
+            hairline: Color.white.opacity(0.06), highlight: Color.white.opacity(0.14),
+            shadow: Color.black.opacity(0.35), selShadow: Color.black.opacity(0.45),
+            letters: hex(0xf1f2f4), bar: hex(0xb9a3ff), barHover: hex(0xb9a3ff).opacity(0.5))
+        : RailPalette(
+            top: hex(0xfdfdfe), bottom: hex(0xf2f0f7), selTop: hex(0xf8f6fd), selBottom: hex(0xe8e2f7),
+            hairline: hex(0x281e50).opacity(0.07), highlight: Color.white.opacity(0.9),
+            shadow: hex(0x281e50).opacity(0.07), selShadow: hex(0x463296).opacity(0.13),
+            letters: hex(0x44465a), bar: hex(0x6b55d6), barHover: hex(0x6b55d6).opacity(0.35))
+    }
+}

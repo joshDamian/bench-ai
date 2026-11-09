@@ -215,7 +215,7 @@ struct ProjectRail: View {
     @State private var frames: [String: CGRect] = [:]
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             let needs = store.sessions.filter { Mark.of($0, store: store) == .needs && $0.archived_at == nil }.count
             tile(id: "inbox", label: "Inbox", sub: needs == 0 ? "Nothing needs you" : "\(needs) need\(needs == 1 ? "s" : "") you", keys: "⌃0",
                  fill: nil, mark: nil, badge: needs) {
@@ -223,13 +223,13 @@ struct ProjectRail: View {
             }
             Rectangle().fill(theme.colors.fill(0.1)).frame(width: 22, height: 1)
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 8) {
+                VStack(spacing: 12) {
                     ForEach(Array(store.projects.enumerated()), id: \.element.id) { i, p in
                         let mark = projectMark(p)
                         // Neutral tiles: on the rail, colour is kept for what a project is doing.
                         tile(id: p.id, label: p.name, sub: summary(p), keys: i < 9 ? "⌃\(i + 1)" : nil,
                              fill: nil, mark: mark, badge: 0) {
-                            Text(Self.initials(p.name)).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.colors.text)
+                            Text(Self.initials(p.name)).font(.system(size: 13, weight: .semibold)).foregroundStyle(RailPalette.of(dark: theme.dark).letters)
                         }
                     }
                     Button { model.showAddProject = true } label: {
@@ -304,19 +304,22 @@ struct ProjectRail: View {
 
     /// A tile's face: a solid colour, or (nil) the raised grey of a project tile: a soft
     /// top-to-bottom gradient, a highlight on the top edge, a hairline and a small shadow.
+    /// A tile's face: a solid colour, or (nil) the rail's raised grey with its violet hint:
+    /// a top-to-bottom gradient, a highlight on the top edge, a hairline and a small shadow.
     @ViewBuilder private func face(_ fill: Color?, on: Bool, hovered: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: 10)
+        let r = RailPalette.of(dark: theme.dark)
         if let fill {
             shape.fill(fill)
         } else {
-            let lift = on ? 0.08 : (hovered ? 0.04 : 0)
-            shape.fill(LinearGradient(colors: [theme.colors.text.opacity(0.17 + lift), theme.colors.text.opacity(0.09 + lift)], startPoint: .top, endPoint: .bottom))
-                .overlay(shape.strokeBorder(theme.colors.text.opacity(0.07)))
+            shape.fill(LinearGradient(colors: on ? [r.selTop, r.selBottom] : [r.top, r.bottom], startPoint: .top, endPoint: .bottom))
+                .brightness(hovered && !on ? (theme.dark ? 0.03 : -0.01) : 0)
+                .overlay(shape.strokeBorder(r.hairline))
                 .overlay(alignment: .top) {
-                    shape.trim(from: 0.0, to: 1.0).stroke(Color.white.opacity(theme.dark ? 0.14 : 0.6), lineWidth: 1)
-                        .mask(VStack(spacing: 0) { Color.black.frame(height: 2); Spacer(minLength: 0) })
+                    shape.stroke(r.highlight, lineWidth: 1)
+                        .mask(VStack(spacing: 0) { Color.black.frame(height: 1.5); Spacer(minLength: 0) })
                 }
-                .shadow(color: .black.opacity(theme.dark ? 0.35 : 0.12), radius: 2, y: 1.5)
+                .shadow(color: on ? r.selShadow : r.shadow, radius: on ? 4 : (theme.dark ? 2 : 1), y: on ? 2.5 : 1)
         }
     }
 
@@ -327,7 +330,6 @@ struct ProjectRail: View {
             ZStack { icon() }
                 .frame(width: 34, height: 34)
                 .background(face(fill, on: on, hovered: hover == id))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? theme.colors.text : (hover == id ? theme.colors.fill(0.35) : .clear), lineWidth: 2).padding(-4))
                 .overlay(alignment: .bottomTrailing) {
                     if let mark {
                         Group {
@@ -353,6 +355,17 @@ struct ProjectRail: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Selected: a pill on the rail's left edge, Discord's way; hovered: a shorter, fainter one.
+        .overlay(alignment: .leading) {
+            let r = RailPalette.of(dark: theme.dark)
+            UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0, bottomTrailingRadius: 2, topTrailingRadius: 2)
+                .fill(on ? r.bar : r.barHover)
+                .frame(width: 4, height: on ? 24 : (hover == id ? 12 : 0))
+                .offset(x: -11)
+                .animation(.snappy(duration: 0.18), value: on)
+                .animation(.snappy(duration: 0.18), value: hover)
+                .allowsHitTesting(false)
+        }
         // Named at once on hover, to the right, over the list: Discord's way, not a slow tooltip.
         .onHover { inside in
             if inside { hover = id; hoverInfo = (label, sub, keys) } else if hover == id { hover = nil }
