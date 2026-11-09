@@ -77,12 +77,6 @@ struct SessionView: View {
                         }
                     }
                 }
-                if !embedded {
-                    // A hairline under the header, once the thread is underneath it.
-                    Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
-                        .opacity(scrolled ? 1 : 0)
-                        .animation(.easeOut(duration: 0.15), value: scrolled)
-                }
                 if !embedded && app.showTerminal {
                     VSplitView {
                         conversation.frame(minHeight: 260)
@@ -94,10 +88,21 @@ struct SessionView: View {
                 }
             }
             if !embedded && showsInspector && app.showInspector && hasInspector(session) {
-                Rectangle().fill(theme.colors.fill(0.06)).frame(width: 1)
+                Rectangle().fill(theme.colors.fill(0.08)).frame(width: 1)
                 SessionInspector(store: store, sessionId: sessionId, files: files)
                     .frame(width: 340)
                     .transition(.move(edge: .trailing))
+            }
+        }
+        // A hairline under the header once the thread is underneath it, carried on under the
+        // inspector's tabs so the header reads as one framed band.
+        .overlay(alignment: .top) {
+            if !embedded {
+                Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
+                    .padding(.top, 54)
+                    .opacity(scrolled ? 1 : 0)
+                    .animation(.easeOut(duration: 0.15), value: scrolled)
+                    .allowsHitTesting(false)
             }
         }
         .animation(.snappy, value: app.showInspector)
