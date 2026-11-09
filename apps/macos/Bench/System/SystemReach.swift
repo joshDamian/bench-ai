@@ -237,6 +237,10 @@ final class QuickPrompt {
         p.level = .floating
         p.hidesOnDeactivate = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // A click anywhere else, in Bench's own windows too, takes focus away: close then.
+        NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: p, queue: .main) { _ in
+            Task { @MainActor in QuickPrompt.shared.close() }
+        }
         return p
     }
 }
