@@ -206,6 +206,9 @@ struct ProjectRail: View {
     @Environment(\.theme) private var theme
     let store: BenchStore
     @State private var hover: String?
+    /// What the hovered tile's label says, and where each tile sits in the rail.
+    @State private var hoverInfo: (title: String, sub: String, keys: String?)?
+    @State private var frames: [String: CGRect] = [:]
 
     var body: some View {
         VStack(spacing: 8) {
@@ -244,6 +247,19 @@ struct ProjectRail: View {
         }
         .padding(.top, 4)
         .frame(width: 56)
+        .coordinateSpace(name: "rail")
+        .onPreferenceChange(TileFrames.self) { frames = $0 }
+        // Drawn over the whole rail, not inside a tile: the project tiles scroll, and a
+        // scroll view clips whatever a tile draws past its edge.
+        .overlay(alignment: .topLeading) {
+            if let id = hover, let f = frames[id], let info = hoverInfo {
+                HoverLabel(title: info.title, sub: info.sub, keys: info.keys, warn: info.sub.contains("need"))
+                    .fixedSize()
+                    .alignmentGuide(.top) { $0[VerticalAlignment.center] }
+                    .offset(x: f.maxX + 6, y: f.midY)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private func projectMark(_ p: Project) -> Mark? {
@@ -305,20 +321,19 @@ struct ProjectRail: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hover = $0 ? id : (hover == id ? nil : hover) }
         // Named at once on hover, to the right, over the list: Discord's way, not a slow tooltip.
-        .overlay(alignment: .leading) {
-            if hover == id {
-                HoverLabel(title: label, sub: sub, keys: keys, warn: sub.contains("need"))
-                    .fixedSize()
-                    .offset(x: 46)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
+        .onHover { inside in
+            if inside { hover = id; hoverInfo = (label, sub, keys) } else if hover == id { hover = nil }
         }
+        .background(GeometryReader { g in Color.clear.preference(key: TileFrames.self, value: [id: g.frame(in: .named("rail"))]) })
         .accessibilityLabel("\(label), \(sub)")
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
     }
+}
+
+private struct TileFrames: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) { value.merge(nextValue()) { $1 } }
 }
 
 private struct HoverLabel: View {
