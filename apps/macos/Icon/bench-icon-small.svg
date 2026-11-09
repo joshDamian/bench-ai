@@ -1,0 +1,11 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" role="img" aria-label="Workbench orb icon, small">
+<defs>
+<linearGradient id="hsRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffb35c"></stop><stop offset=".5" stop-color="#ff5f8f"></stop><stop offset="1" stop-color="#8b5cff"></stop></linearGradient>
+<linearGradient id="hsBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2d36"></stop><stop offset="1" stop-color="#0d0e12"></stop></linearGradient>
+</defs>
+<rect x="6" y="6" width="88" height="88" rx="21" fill="url(#hsBg)"></rect>
+<circle cx="50" cy="50" r="28" fill="none" stroke="url(#hsRing)" stroke-width="9" stroke-linecap="round" stroke-dasharray="130 46" transform="rotate(-70 50 50)"></circle>
+<path d="M33 52 L50 43 L67 51 L50 60 Z" fill="#f1ede5"></path>
+<path d="M33 52 L50 60 L50 65 L33 57 Z" fill="#8d867a"></path>
+<path d="M50 60 L67 51 L67 56 L50 65 Z" fill="#5f5a52"></path>
+</svg>
