@@ -911,6 +911,8 @@ async function handle(req, res) {
   if (!u.pathname.startsWith('/api/')) return serveStatic(req, res, u);
   if (u.pathname === '/api/pair' && req.method === 'POST') return pair(req, res, u);
   if (u.pathname === '/api/ping') return json(req, res, { ok: true, paired: !!who(req) });
+  // This machine's own names and addresses, so the app knows which links point back here.
+  if (u.pathname === '/api/hosts' && who(req)) return json(req, res, { hosts: ownHosts() });
   const auth = who(req);
   if (!auth) return json(req, res, { error: 'unauthorized' }, 401);
   // A file upload is the raw bytes. application/octet-stream, like JSON, cannot be sent
@@ -1160,7 +1162,9 @@ function proxyPreview(req, res, u, sessionId, target, rest) {
     headers[k] = v;
   }
   headers.host = `localhost:${target}`;
-  const out = http.request({ host: '127.0.0.1', port: target, method: req.method, path: rest + u.search, headers }, (up) => {
+  reachable(target).then((addr) => {
+  if (!addr) return json(req, res, { error: `Nothing is listening on :${target}`, code: 'down' }, 502);
+  const out = http.request({ host: addr, port: target, method: req.method, path: rest + u.search, headers }, (up) => {
     /** @type {Record<string, string | string[]>} */
     const back = {};
     for (const [k, v] of Object.entries(up.headers)) if (v !== undefined && !/^(connection|transfer-encoding|keep-alive)$/i.test(k)) back[k] = v;
@@ -1174,6 +1178,34 @@ function proxyPreview(req, res, u, sessionId, target, rest) {
     json(req, res, { error: refused ? `Nothing is listening on :${target}` : `The server on :${target} didn't answer`, code: refused ? 'down' : 'error' }, 502);
   });
   req.pipe(out);
+  });
+}
+
+/** Every name and address this machine answers to, loopback included. */
+function ownHosts() {
+  const out = new Set(['localhost', '127.0.0.1', '::1', os.hostname()]);
+  for (const list of Object.values(os.networkInterfaces())) for (const a of list || []) out.add(a.address);
+  return [...out];
+}
+
+/** @type {Map<number, {at:number, addr:string|null}>} */
+const reachCache = new Map();
+/**
+ * The address a port on this machine answers on: loopback first, then this machine's own
+ * other addresses, for a server bound to one of them only (a Tailscale address, say).
+ * @param {number} target @returns {Promise<string|null>}
+ */
+async function reachable(target) {
+  const hit = reachCache.get(target);
+  if (hit && hit.addr && Date.now() - hit.at < 30000) return hit.addr;
+  const tryAddr = (/** @type {string} */ addr) => new Promise((done) => {
+    const s = net.connect({ host: addr, port: target, timeout: 800 }, () => { s.destroy(); done(true); });
+    s.on('error', () => done(false));
+    s.on('timeout', () => { s.destroy(); done(false); });
+  });
+  const addrs = ['127.0.0.1', ...ownHosts().filter((a) => !/^(localhost|127\.0\.0\.1|::1)$/.test(a) && /^[\d.]+$|:/.test(a) && !a.startsWith('fe80'))];
+  for (const a of addrs) if (await tryAddr(a)) { reachCache.set(target, { at: Date.now(), addr: a }); return a; }
+  return null;
 }
 
 /**
@@ -1191,7 +1223,9 @@ function tunnelPreview(req, socket, head, u, sessionId, target, rest) {
     if (/^(host|origin|authorization|cookie)$/i.test(k)) continue;
     lines.push(`${k}: ${req.rawHeaders[i + 1]}`);
   }
-  const up = net.connect(target, '127.0.0.1', () => {
+  reachable(target).then((addr) => {
+  if (!addr) return refuse(socket, '502 Bad Gateway');
+  const up = net.connect(target, addr, () => {
     up.write(lines.join('\r\n') + '\r\n\r\n');
     if (head?.length) up.write(head);
     up.pipe(socket);
@@ -1201,4 +1235,5 @@ function tunnelPreview(req, socket, head, u, sessionId, target, rest) {
   socket.on('error', () => up.destroy());
   socket.on('close', () => up.destroy());
   up.on('close', () => socket.destroy());
+  });
 }

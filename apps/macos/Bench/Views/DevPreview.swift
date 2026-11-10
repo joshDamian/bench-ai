@@ -13,10 +13,10 @@ struct PreviewTarget: Equatable, Hashable {
 
     /// A link Claude wrote to one of the server's own ports: localhost, the loopback
     /// address, or the server's own host name. Anything else is the open web.
-    static func from(_ url: URL, serverHost: String?) -> PreviewTarget? {
+    static func from(_ url: URL, hosts: Set<String>) -> PreviewTarget? {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let host = url.host?.lowercased(), let port = url.port else { return nil }
         let local = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].contains(host) || host.hasSuffix(".localhost")
-            || (serverHost.map { $0.lowercased() == host } ?? false)
+            || hosts.contains(host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")))
         guard local else { return nil }
         var path = url.path.isEmpty ? "/" : url.path
         if let q = url.query { path += "?\(q)" }
@@ -24,12 +24,12 @@ struct PreviewTarget: Equatable, Hashable {
     }
 
     /// The localhost links in a reply, one per port.
-    static func links(in text: String, serverHost: String?) -> [PreviewTarget] {
+    static func links(in text: String, hosts: Set<String>) -> [PreviewTarget] {
         guard let re = try? NSRegularExpression(pattern: #"https?://[A-Za-z0-9.\-\[\]:]+:\d{2,5}[^\s)\]`"'<>]*"#) else { return [] }
         var seen = Set<Int>(), out: [PreviewTarget] = []
         for m in re.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
             guard let r = Range(m.range, in: text), let u = URL(string: String(text[r]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:"))),
-                  let t = from(u, serverHost: serverHost), seen.insert(t.port).inserted else { continue }
+                  let t = from(u, hosts: hosts), seen.insert(t.port).inserted else { continue }
             out.append(t)
         }
         return out
@@ -294,8 +294,7 @@ struct PreviewChips: View {
     let reply: String
 
     var body: some View {
-        let host = URL(string: files.api.config.baseURL)?.host
-        let found = PreviewTarget.links(in: reply, serverHost: host)
+        let found = PreviewTarget.links(in: reply, hosts: files.serverHosts)
         if !found.isEmpty {
             FlowLayout(spacing: Space.sm) {
                 ForEach(found, id: \.port) { t in

@@ -145,7 +145,7 @@ struct SessionView: View {
         .overlay(alignment: .bottom) { ToastView(files: files) }
         // Links to the server's own dev servers open in the preview; the rest of the web in the browser.
         .environment(\.openURL, OpenURLAction { url in
-            guard !embedded, let t = PreviewTarget.from(url, serverHost: URL(string: store.api.config.baseURL)?.host) else { return .systemAction }
+            guard !embedded, let t = PreviewTarget.from(url, hosts: files.serverHosts) else { return .systemAction }
             files.open(t)
             return .handled
         })
