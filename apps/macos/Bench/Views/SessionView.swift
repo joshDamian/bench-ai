@@ -49,6 +49,27 @@ struct SessionView: View {
         _files = State(initialValue: SessionFiles(api: store.api, sessionId: sessionId))
     }
 
+    /// The artifact viewer: beside the conversation, or filling the session with the composer under it.
+    @ViewBuilder private func artifactSide(_ f: FileInfo) -> some View {
+        if files.full {
+            VStack(spacing: 0) {
+                ArtifactPanel(files: files, file: f)
+                Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: false, focused: $composerFocused)
+                    .frame(maxWidth: 760)
+                    .padding(.horizontal, 24).padding(.bottom, 14).padding(.top, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(theme.colors.bg)
+                    .overlay(alignment: .top) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1) }
+            }
+            .transition(.opacity)
+        } else {
+            PanelDivider(width: $panelWidth)
+            ArtifactPanel(files: files, file: f)
+                .frame(width: panelWidth)
+                .transition(.move(edge: .trailing))
+        }
+    }
+
     var body: some View {
         @Bindable var app = app
         let session = model.session
@@ -87,26 +108,7 @@ struct SessionView: View {
                 }
             }
             }
-            if !embedded, let f = files.viewing {
-                if files.full {
-                    VStack(spacing: 0) {
-                        ArtifactPanel(files: files, file: f)
-                        // Full view keeps the composer, so a reply is one keystroke away.
-                        Composer(model: model, draft: $draft, running: running, embedded: false, focused: $composerFocused)
-                            .frame(maxWidth: 760)
-                            .padding(.horizontal, 24).padding(.bottom, 14).padding(.top, 8)
-                            .frame(maxWidth: .infinity)
-                            .background(theme.colors.bg)
-                            .overlay(alignment: .top) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1) }
-                    }
-                    .transition(.opacity)
-                } else {
-                    PanelDivider(width: $panelWidth)
-                    ArtifactPanel(files: files, file: f)
-                        .frame(width: panelWidth)
-                        .transition(.move(edge: .trailing))
-                }
-            }
+            if !embedded, let f = files.viewing { artifactSide(f) }
             if !embedded && showsInspector && app.showInspector && hasInspector(session) && files.viewing == nil {
                 Rectangle().fill(theme.colors.fill(0.08)).frame(width: 1)
                 SessionInspector(store: store, sessionId: sessionId, files: files)
