@@ -697,6 +697,13 @@ route('GET', '/api/sessions/:id/events', ({ params, u }) =>
 route('GET', '/api/sessions/:id/events/:event/thinking', ({ params }) => svc.eventThinking(params[0], Number(params[1])));
 route('POST', '/api/sessions/:id/messages', ({ params, body }) => svc.send(params[0], body.text, { images: body.images, files: body.files, uploads: body.uploads }));
 route('GET', '/api/sessions/:id/files', ({ req, res, params, u }) => sendSessionFile(req, res, params[0], u));
+// Paths for the composer's @ suggestions: the session's files, git's list where there is
+// one, else a shallow walk. Ranked by how well the name matches; at most 30.
+route('GET', '/api/sessions/:id/paths', async ({ params, u }) => {
+  const s = svc.session(params[0]);
+  return { paths: rankPaths(await listPaths(s.cwd), String(u.searchParams.get('q') || '')).slice(0, 30) };
+});
+
 // Which of the paths a transcript mentions are files, and what each is. The client
 // cannot stat and must not guess a type from a name, so it asks here, for all of a
 // transcript's paths at once. Anything missing, a directory, or out of reach is left out.
@@ -1055,3 +1062,42 @@ server.listen(port, host, () => {
   console.log(`Bench: http://localhost:${bound}`);
   if (loopbackBind) console.log('Other devices: run `bench share`, then pair from Settings or `bench pair`.');
 });
+
+/** @type {Map<string, {at:number, list:string[]}>} */
+const pathCache = new Map();
+/** @param {string} cwd @returns {Promise<string[]>} */
+async function listPaths(cwd) {
+  const hit = pathCache.get(cwd);
+  if (hit && Date.now() - hit.at < 15000) return hit.list;
+  const { execFile } = await import('node:child_process');
+  let list = await new Promise((done) => execFile('git', ['ls-files', '-co', '--exclude-standard'], { cwd, maxBuffer: 32 << 20 }, (e, out) => done(e ? null : out.split('\n').filter(Boolean))));
+  if (!list) {
+    list = [];
+    const skip = new Set(['node_modules', '.git', 'build', 'dist', '.build', 'DerivedData']);
+    const walk = (/** @type {string} */ dir, /** @type {number} */ depth) => {
+      if (depth > 6 || list.length > 20000) return;
+      let ents; try { ents = fs.readdirSync(path.join(cwd, dir), { withFileTypes: true }); } catch { return; }
+      for (const e of ents) {
+        if (e.name.startsWith('.') || skip.has(e.name)) continue;
+        const rel = dir ? `${dir}/${e.name}` : e.name;
+        if (e.isDirectory()) walk(rel, depth + 1); else list.push(rel);
+      }
+    };
+    walk('', 0);
+  }
+  pathCache.set(cwd, { at: Date.now(), list });
+  return list;
+}
+/** Best first: a name starting with the query, then the name containing it, then the path; subsequence last. @param {string[]} list @param {string} q */
+function rankPaths(list, q) {
+  q = q.toLowerCase();
+  if (!q) return [...list].sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b));
+  const scored = [];
+  for (const p of list) {
+    const lp = p.toLowerCase(), name = lp.slice(lp.lastIndexOf('/') + 1);
+    let score = name.startsWith(q) ? 0 : name.includes(q) ? 1 : lp.includes(q) ? 2 : -1;
+    if (score < 0) { let i = 0; for (const c of lp) if (c === q[i]) i++; if (i < q.length) continue; score = 3; }
+    scored.push([score, p.length, p]);
+  }
+  return scored.sort((a, b) => /** @type {number} */(a[0]) - /** @type {number} */(b[0]) || /** @type {number} */(a[1]) - /** @type {number} */(b[1])).map((x) => /** @type {string} */(x[2]));
+}

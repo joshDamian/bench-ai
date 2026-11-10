@@ -413,6 +413,31 @@ struct Composer: View {
         pick = 0
     }
 
+    /// The "@word" being typed at the end of the draft, without the "@".
+    private var atQuery: String? {
+        guard let at = draft.lastIndex(of: "@") else { return nil }
+        if at != draft.startIndex, let b = draft[..<at].last, !b.isWhitespace { return nil }
+        let q = draft[draft.index(after: at)...]
+        return q.contains(where: \.isWhitespace) ? nil : String(q)
+    }
+
+    private var fileMatches: [String] { atQuery == nil ? [] : model.paths }
+
+    private func choose(path: String) {
+        guard let at = draft.lastIndex(of: "@") else { return }
+        draft = String(draft[..<at]) + "@" + path + " "
+        pick = 0
+    }
+
+    private var count: Int { matches.isEmpty ? fileMatches.count : matches.count }
+
+    /// Return or Tab: the highlighted command or file, if a list is showing.
+    private func accept() -> Bool {
+        if let c = matches[safe: pick] { choose(c); return true }
+        if let p = fileMatches[safe: pick] { choose(path: p); return true }
+        return false
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             let list = matches
@@ -427,6 +452,28 @@ struct Composer: View {
                             }
                             .padding(.horizontal, 10).frame(height: 30)
                             .background(i == min(pick, list.count - 1) ? theme.colors.fill(0.1) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(6)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .background(theme.colors.surface3.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(theme.colors.fill(0.1)))
+            } else if !fileMatches.isEmpty {
+                let files = fileMatches
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(files.enumerated()), id: \.element) { i, p in
+                        Button { choose(path: p) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(theme.colors.muted)
+                                Text((p as NSString).lastPathComponent).font(BenchFont.mono(13)).fixedSize()
+                                Text((p as NSString).deletingLastPathComponent).font(BenchFont.mono(12)).foregroundStyle(theme.colors.muted).lineLimit(1).truncationMode(.head)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10).frame(height: 30)
+                            .background(i == min(pick, files.count - 1) ? theme.colors.fill(0.1) : .clear, in: RoundedRectangle(cornerRadius: 8))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -466,14 +513,18 @@ struct Composer: View {
                 }
                 GrowingEditor(text: $draft, placeholder: running ? "Queue a message, @ for files, / for commands" : "Reply to Claude, @ for files, / for commands",
                               size: TypeScale.md, minLines: 2, maxLines: 10) {
-                    if let c = matches[safe: pick] { choose(c) } else { send() }
+                    if !accept() { send() }
                 }
                     .focused(focused)
-                    .onChange(of: draft) { _, _ in pick = 0 }
-                    .onKeyPress(.downArrow) { guard !matches.isEmpty else { return .ignored }; pick = min(pick + 1, matches.count - 1); return .handled }
-                    .onKeyPress(.upArrow) { guard !matches.isEmpty else { return .ignored }; pick = max(pick - 1, 0); return .handled }
-                    .onKeyPress(.tab) { guard let c = matches[safe: pick] else { return .ignored }; choose(c); return .handled }
-                    .onKeyPress(.escape) { guard !matches.isEmpty else { return .ignored }; draft = ""; return .handled }
+                    .onChange(of: draft) { _, _ in pick = 0; model.lookUpPaths(atQuery) }
+                    .onKeyPress(.downArrow) { guard count > 0 else { return .ignored }; pick = min(pick + 1, count - 1); return .handled }
+                    .onKeyPress(.upArrow) { guard count > 0 else { return .ignored }; pick = max(pick - 1, 0); return .handled }
+                    .onKeyPress(.tab) { accept() ? .handled : .ignored }
+                    .onKeyPress(.escape) {
+                        if !matches.isEmpty { draft = ""; return .handled }
+                        if !fileMatches.isEmpty { draft += " "; return .handled }
+                        return .ignored
+                    }
                 HStack(spacing: Space.sm) {
                     Button { importing = true } label: { Image(systemName: "plus").font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26) }
                         .buttonStyle(.plain)

@@ -518,7 +518,7 @@ export class Runtime extends EventEmitter {
     const note = saved.length ? `\n\nAttached file${saved.length === 1 ? '' : 's'} (read ${saved.length === 1 ? 'it' : 'them'} as needed):\n${saved.map((f) => `- ${f.path}`).join('\n')}` : '';
     const archive = saved.some((f) => /\.(apk|aab|apks|xapk|ipa|jar|aar|zip)$/i.test(f.name));
     const hint = archive ? '\n(An .apk, .aab, .ipa, .jar or .zip is a zip archive: inspect it with Bash - unzip -l, unzip -p, aapt or apkanalyzer where installed - rather than Read.)' : '';
-    const body = `${text}${note}${hint}`.trim();
+    const body = `${text}${note}${hint}${mentionedFiles(s.cwd, text)}`.trim();
     const live = this.live.get(id) || this.#start(s);
     live.checkTries = 0;
     live.writeUp = !!o.writeUp;
@@ -1068,4 +1068,36 @@ export class Runtime extends EventEmitter {
     clearInterval(this.reaper);
     for (const id of [...this.live.keys()]) this.close(id);
   }
+}
+
+/**
+ * The files a message names as `@path`, inside the session's folder, with their text, so
+ * Claude need not spend a turn reading them. Each up to 1,500 lines or 100 KB, 300 KB in all;
+ * anything bigger, binary or outside the folder stays a path for Claude to read as needed.
+ * @param {string} cwd @param {string} text
+ */
+export function mentionedFiles(cwd, text) {
+  const root = path.resolve(cwd);
+  const seen = new Set();
+  let total = 0, out = '';
+  /** @type {string[]} */
+  const big = [];
+  for (const m of text.matchAll(/(?:^|\s)@([\w./~+-][^\s]*)/g)) {
+    const rel = m[1].replace(/[.,;:!?)]+$/, '');
+    const full = path.resolve(root, rel);
+    if (seen.has(full) || (full !== root && !full.startsWith(root + path.sep))) continue;
+    seen.add(full);
+    let st; try { st = fs.statSync(full); } catch { continue; }
+    if (!st.isFile()) continue;
+    if (st.size > 100 * 1024 || total + st.size > 300 * 1024) { big.push(`${rel} (${Math.round(st.size / 1024)} KB)`); continue; }
+    const data = fs.readFileSync(full);
+    if (data.includes(0)) continue;
+    const t = data.toString('utf8');
+    const lines = t.split('\n').length;
+    if (lines > 1500) { big.push(`${rel} (${lines} lines)`); continue; }
+    total += st.size;
+    out += `\n\n<file path="${rel}">\n${t}${t.endsWith('\n') ? '' : '\n'}</file>`;
+  }
+  if (big.length) out += `\n\nToo large to attach, so read only the parts you need (grep, or Read with an offset):\n${big.map((b) => `- ${b}`).join('\n')}`;
+  return out;
 }

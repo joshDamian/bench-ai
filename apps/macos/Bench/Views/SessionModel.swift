@@ -30,6 +30,23 @@ final class SessionModel {
     var suggestion = ""
     /// The session's slash commands, for the composer's "/" list.
     var commands: [SlashCommand] = []
+    /// Files for the composer's "@" list, for the query in `pathQuery`.
+    var paths: [String] = []
+    private var pathQuery: String?
+    private var pathTask: Task<Void, Never>?
+
+    func lookUpPaths(_ q: String?) {
+        guard q != pathQuery else { return }
+        pathQuery = q
+        pathTask?.cancel()
+        guard let q else { paths = []; return }
+        pathTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(90))
+            guard let self, !Task.isCancelled else { return }
+            let found = (try? await self.store.api.paths(self.sessionId, query: q)) ?? []
+            if !Task.isCancelled && self.pathQuery == q { self.paths = Array(found.prefix(8)) }
+        }
+    }
     var attachments: [Attachment] = []
     var busyApprovals: Set<String> = []
     /// When each event happened, by event id: for time dividers and hover times.
