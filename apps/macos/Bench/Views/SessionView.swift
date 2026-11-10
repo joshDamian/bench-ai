@@ -167,7 +167,12 @@ struct SessionView: View {
         } message: { Text(model.error ?? "") }
         .onAppear { model.open(); composerFocused = true }
         // Kept following while the session has a tab; closing the tab lets it go.
-        .onDisappear { if !app.tabs.contains(sessionId) && app.split != sessionId { SessionModel.release(sessionId) } }
+        .onDisappear {
+            let task = model.session?.task_id.map { "task:\($0)" }
+            if !app.tabs.contains(sessionId) && app.split != sessionId && !(task.map(app.tabs.contains) ?? false) {
+                SessionModel.release(sessionId)
+            }
+        }
         .task(id: model.rows.count) {
             let replies: [String] = model.blocks.compactMap { (b: Block) -> String? in
                 if case .turn(_, _, let reply, _, _, _) = b { return reply }

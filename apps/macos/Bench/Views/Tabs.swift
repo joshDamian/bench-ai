@@ -57,7 +57,11 @@ extension AppModel {
         if selection == id { selection = tabs[min(i, tabs.count - 1)] }
         if split == id { split = nil }
         // What was kept for the tab - its transcript, its terminal connections - goes with it.
-        if let session = id.hasPrefix("task:") ? nil : Optional(id) { SessionModel.release(session) }
+        if id.hasPrefix("task:"), let store {
+            for sess in store.sessions where "task:\(sess.task_id ?? "")" == id { SessionModel.release(sess.id) }
+        } else {
+            SessionModel.release(id)
+        }
         RemoteShell.release(matching: id.replacingOccurrences(of: #"^(task|project|files):"#, with: "", options: .regularExpression))
     }
 
