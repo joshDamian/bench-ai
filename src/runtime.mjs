@@ -158,6 +158,15 @@ function personSkillsPlugin(root) {
  * rest: a path typed out as /tmp/... by the model itself.
  * @param {string} dir
  */
+/**
+ * How a session hands the person a file. Without this, sessions believe they cannot
+ * attach anything and serve files over HTTP or paste them instead.
+ * @param {string} dir the session's attachments folder
+ */
+export function attachNote(dir) {
+  return `# Sending files to the person\n\nYou can send the person files: Bench shows a file as an attachment card under your reply - an image or PDF preview, the start of a document, a table's first rows - which opens in a viewer and can be saved or shared. To send one, put it in this session's attachments folder, ${dir}, or anywhere outside the project's tracked files, and write its full path in your reply. That is all it takes: there is no upload step, no tool to call, and no need to serve it over HTTP or paste its contents. Use a clear file name, since that is what the card shows. Files the project's git tracks are treated as source, not attachments, so copy one into the attachments folder to send it.`;
+}
+
 function scratchNote(dir) {
   return `# Scratch files\n\nThis session's scratch folder is ${dir}, and TMPDIR points at it. Put anything temporary there - logs, screenshots, downloads and throwaway scripts - rather than in /tmp or in the project. Bench deletes the folder when the session is archived, so nothing in it outlives the session; anything worth keeping belongs in the project.`;
 }
@@ -588,7 +597,8 @@ export class Runtime extends EventEmitter {
       TEMP: scratch,
       CLAUDE_AGENT_SDK_CLIENT_APP: 'bench',
     };
-    const instructions = (ask ? [userInstructions(), ASK_BRIEF] : [userInstructions(), scratchNote(scratch), routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
+    const attach = attachNote(this.attachmentsDir(s.id));
+    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
     const memory = project && path.resolve(project.path) !== path.resolve(s.cwd) ? memoryDir(project.path) : null;
     fs.mkdirSync(this.attachmentsDir(s.id), { recursive: true });
     const live = new Live(s.id);
