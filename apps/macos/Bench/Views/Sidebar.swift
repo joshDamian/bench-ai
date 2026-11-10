@@ -20,6 +20,8 @@ struct Sidebar: View {
     @Environment(\.theme) private var theme
     let store: BenchStore
     @Binding var selection: String?
+    /// The open session's highlight moves between rows rather than jumping.
+    @Namespace private var rows
 
     var body: some View {
         VStack(spacing: 0) {
@@ -87,7 +89,7 @@ struct Sidebar: View {
             Section {
                 ForEach(tasks) { t in
                     twoLine(title: t.title, status: Describe.task(t, store: store), mark: Mark.of(task: t, store: store), age: nil)
-                        .selectable("task:\(t.id)", $selection, theme)
+                        .selectable("task:\(t.id)", $selection, theme, rows)
                 }
             } header: { label("Tasks") }
         }
@@ -134,22 +136,22 @@ struct Sidebar: View {
             }
         }()
         let line = [project, status].compactMap { $0 }.joined(separator: " · ")
-        return twoLine(title: s.title, status: line.isEmpty ? nil : line, mark: mark, age: mark == .idle ? Format.ago(s.updated_at) : nil)
-            .selectable(s.id, $selection, theme)
+        return twoLine(title: s.title, status: line.isEmpty ? nil : line, mark: mark, age: mark == .idle ? Format.ago(s.updated_at) : nil, open: selection == s.id)
+            .selectable(s.id, $selection, theme, rows)
             .contextMenu { SessionMenu(store: store, session: s) }
             .dropDestination(for: URL.self) { urls, _ in drop(urls, on: s.id) }
     }
 
     /// A row: the title over up to two lines, then where it stands. Idle rows carry no mark,
     /// so a mark always means something.
-    private func twoLine(title: String, status: String?, mark: Mark, age: String?) -> some View {
+    private func twoLine(title: String, status: String?, mark: Mark, age: String?, open: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Group {
                 if mark == .idle { Color.clear.frame(width: 8, height: 8) } else { MarkView(mark: mark).frame(width: 10) }
             }
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13)).lineLimit(2)
+                Text(title).font(.system(size: 13, weight: open ? .medium : .regular)).lineLimit(2)
                 if let status {
                     Text(status).font(.system(size: 11.5))
                         .foregroundStyle(mark == .idle ? theme.colors.muted : mark.tint(theme.colors))
@@ -317,9 +319,15 @@ struct ProjectRail: View {
         if let fill {
             shape.fill(fill)
         } else {
-            shape.fill(on ? LinearGradient(colors: r.vivid, startPoint: .topLeading, endPoint: .bottomTrailing)
-                          : LinearGradient(colors: [r.top, r.bottom], startPoint: .top, endPoint: .bottom))
+            // Selecting: the hover bar grows to the tile's height while the violet sweeps in
+            // from the left over the grey, so hover and select read as one movement.
+            shape.fill(LinearGradient(colors: [r.top, r.bottom], startPoint: .top, endPoint: .bottom))
                 .brightness(hovered && !on ? (theme.dark ? 0.03 : -0.01) : 0)
+                .overlay {
+                    shape.fill(LinearGradient(colors: r.vivid, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .mask(alignment: .leading) { Rectangle().frame(width: on ? 34 : 0) }
+                        .animation(.easeOut(duration: 0.26).delay(on ? 0.06 : 0), value: on)
+                }
                 .overlay(shape.strokeBorder(r.hairline))
                 .overlay(alignment: .top) {
                     shape.stroke(on ? Color.white.opacity(0.35) : r.highlight, lineWidth: 1)
@@ -332,7 +340,7 @@ struct ProjectRail: View {
     private func tile<Icon: View>(id: String, label: String, sub: String, keys: String?, fill: Color?, mark: Mark?, badge: Int,
                                    @ViewBuilder icon: () -> Icon) -> some View {
         let on = model.rail == id
-        return Button { model.rail = id } label: {
+        return Button { withAnimation(.easeOut(duration: 0.26)) { model.rail = id } } label: {
             ZStack { icon() }
                 .frame(width: 34, height: 34)
                 .background(face(fill, on: on, hovered: hover == id))
@@ -365,11 +373,13 @@ struct ProjectRail: View {
         .overlay(alignment: .leading) {
             let r = RailPalette.of(dark: theme.dark)
             UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0, bottomTrailingRadius: 2, topTrailingRadius: 2)
-                .fill(r.barHover)
-                .frame(width: 4, height: hover == id && !on ? 12 : 0)
-                .offset(x: -11)
-                .animation(.snappy(duration: 0.18), value: on)
+                .fill(on ? r.bar : r.barHover)
+                .frame(width: 4, height: on ? 34 : (hover == id ? 12 : 0))
+                .animation(.snappy(duration: 0.14), value: on)
                 .animation(.snappy(duration: 0.18), value: hover)
+                .opacity(on ? 0 : 1)
+                .animation(.easeOut(duration: 0.2).delay(on ? 0.16 : 0), value: on)
+                .offset(x: -11)
                 .allowsHitTesting(false)
         }
         // Named at once on hover, to the right, over the list: Discord's way, not a slow tooltip.
@@ -485,9 +495,10 @@ struct SessionRowView: View {
 
 
 extension View {
-    /// A sidebar row you can pick: one steady soft fill when selected, a fainter one on hover.
-    func selectable(_ id: String, _ selection: Binding<String?>, _ theme: BenchThemeSpec) -> some View {
-        modifier(SelectableRow(id: id, selection: selection, theme: theme))
+    /// A sidebar row you can pick. The open one wears the violet highlight, which glides to
+    /// the next row you pick; hover is a plain soft grey.
+    func selectable(_ id: String, _ selection: Binding<String?>, _ theme: BenchThemeSpec, _ ns: Namespace.ID) -> some View {
+        modifier(SelectableRow(id: id, selection: selection, theme: theme, ns: ns))
     }
 }
 
@@ -495,17 +506,31 @@ private struct SelectableRow: ViewModifier {
     let id: String
     @Binding var selection: String?
     let theme: BenchThemeSpec
+    let ns: Namespace.ID
     @State private var hover = false
 
     func body(content: Content) -> some View {
         let on = selection == id
+        let r = RailPalette.of(dark: theme.dark)
+        let shape = RoundedRectangle(cornerRadius: 9)
         content
-            .padding(.horizontal, 8).padding(.vertical, 2)
+            .padding(.horizontal, 8).padding(.vertical, 3)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // The open session echoes the violet project tile; hover stays neutral.
-            .background(on ? RailPalette.of(dark: theme.dark).rowWash : (hover ? theme.colors.fill(0.05) : .clear), in: RoundedRectangle(cornerRadius: 8))
+            .background {
+                if on {
+                    shape.fill(LinearGradient(colors: [r.rowWash, r.rowWashEnd], startPoint: .leading, endPoint: .trailing))
+                        .overlay(shape.strokeBorder(r.rowEdge))
+                        .overlay(alignment: .top) {
+                            shape.stroke(r.highlight.opacity(theme.dark ? 0.6 : 0.8), lineWidth: 1)
+                                .mask(VStack(spacing: 0) { Color.black.frame(height: 1.5); Spacer(minLength: 0) })
+                        }
+                        .matchedGeometryEffect(id: "open-row", in: ns)
+                } else if hover {
+                    shape.fill(theme.colors.fill(0.05))
+                }
+            }
             .contentShape(Rectangle())
-            .onTapGesture { selection = id }
+            .onTapGesture { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { selection = id } }
             .onHover { hover = $0 }
             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
     }
