@@ -12,6 +12,36 @@ extension AppModel {
         if let old, let i = tabs.firstIndex(of: old) { tabs[i] = new } else { tabs.append(new) }
     }
 
+    /// The project a tab's item belongs to, if any.
+    func projectOf(_ id: String?) -> String? {
+        guard let id, let store else { return nil }
+        if id.hasPrefix("project:") { return String(id.dropFirst(8)) }
+        if id.hasPrefix("files:") { return String(id.dropFirst(6)) }
+        if id.hasPrefix("task:") { return store.task(String(id.dropFirst(5)))?.project_id }
+        return store.session(id)?.project_id
+    }
+
+    /// Whether the current tab shows something worth keeping: anything but nothing or a place list.
+    private var tabInUse: Bool {
+        guard let s = selection else { return false }
+        return Place(rawValue: s) == nil && !["inbox", "ask"].contains(s)
+    }
+
+    /// An existing session, task or project page, from a list. Within the project the current
+    /// tab already shows, it takes that tab's place, so stepping through a project's sessions
+    /// stays in one tab; from another project it gets a tab of its own; one already open in a
+    /// tab is switched to.
+    func go(_ id: String) {
+        if tabs.contains(id) || !tabInUse { selection = id; return }
+        let here = projectOf(selection), there = projectOf(id)
+        if here != nil && here == there { selection = id } else { openTab(id) }
+    }
+
+    /// New work - a task, a session in the checkout - never replaces what the tab shows.
+    func openNew(_ id: String) {
+        if tabInUse && selection != id { openTab(id) } else { selection = id }
+    }
+
     func openTab(_ id: String? = nil) {
         let target = id ?? Place.all.rawValue
         if tabs.contains(target) { selection = target; return }

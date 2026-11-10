@@ -525,7 +525,7 @@ private struct StartTask: View {
             do {
                 let s = try await store.api.createSession(project: projectId, task: nil, mode: mode)
                 store.apply(s)
-                app.selection = s.id
+                app.openNew(s.id)
             } catch { self.error = error.localizedDescription }
         }
     }

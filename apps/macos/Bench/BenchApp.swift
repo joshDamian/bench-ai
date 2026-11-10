@@ -95,7 +95,8 @@ final class AppModel {
 
     /// A new task in a project: its page, with the task box ready to type in.
     func startTask(in project: String) {
-        selection = "project:\(project)"
+        // A project page already showing this project keeps its tab; otherwise a new one.
+        if selection == "project:\(project)" { } else { openNew("project:\(project)") }
         focusTaskBox += 1
     }
 
