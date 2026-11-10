@@ -502,7 +502,8 @@ private struct SelectableRow: ViewModifier {
         content
             .padding(.horizontal, 8).padding(.vertical, 2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(on ? theme.colors.fill(0.1) : (hover ? theme.colors.fill(0.05) : .clear), in: RoundedRectangle(cornerRadius: 8))
+            // The open session echoes the violet project tile; hover stays neutral.
+            .background(on ? RailPalette.of(dark: theme.dark).rowWash : (hover ? theme.colors.fill(0.05) : .clear), in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle())
             .onTapGesture { selection = id }
             .onHover { hover = $0 }
