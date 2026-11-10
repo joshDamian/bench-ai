@@ -36,6 +36,13 @@ final class SessionFiles {
     var viewing: FileInfo?
     /// Its local copy, once fetched.
     var viewingURL: URL?
+    /// A dev server's page open in the preview, in the viewer's place.
+    var page: PreviewTarget?
+    /// Whether the viewer or the preview is open beside the conversation.
+    var hasSide: Bool { viewing != nil || page != nil }
+
+    func open(_ t: PreviewTarget) { viewing = nil; page = t }
+
     /// Whether the viewer fills the session, the conversation set aside.
     var full = false
     /// A short note at the bottom of the window: "Saved … to Downloads".
@@ -130,6 +137,7 @@ final class SessionFiles {
     /// Opens a file in the viewer beside the conversation, showing any copy already here
     /// at once and fetching the current one behind it.
     func preview(_ f: FileInfo) {
+        page = nil
         viewing = f
         viewingURL = fetched[f.path]
         Task {

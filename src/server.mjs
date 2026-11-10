@@ -1,5 +1,6 @@
 // @ts-check
 import http from 'node:http';
+import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -914,6 +915,9 @@ async function handle(req, res) {
   if (!auth) return json(req, res, { error: 'unauthorized' }, 401);
   // A file upload is the raw bytes. application/octet-stream, like JSON, cannot be sent
   // cross-site without a preflight, which this server never answers.
+  // A dev server on this machine, for the app's preview: the request passes through as is.
+  const preview = /^\/api\/sessions\/([^/]+)\/preview\/(\d{2,5})(\/.*)?$/.exec(u.pathname);
+  if (preview) return proxyPreview(req, res, u, decodeURIComponent(preview[1]), Number(preview[2]), preview[3] || '/');
   const upload = req.method === 'POST' && /^\/api\/sessions\/([^/]+)\/uploads$/.exec(u.pathname);
   if (upload) return receiveUpload(req, res, u, decodeURIComponent(upload[1]));
   // A write must be JSON, which a cross-site form cannot send without a preflight.
@@ -980,6 +984,10 @@ server.on('upgrade', (req, socket, head) => {
   }
   if (!sameOrigin(req)) return refuse(socket, '403 Forbidden');
   if (!who(req)) return refuse(socket, '401 Unauthorized');
+
+  // A preview's WebSocket - a dev server's live reload - tunnelled to the port as is.
+  const preview = /^\/api\/sessions\/([^/]+)\/preview\/(\d{2,5})(\/.*)?$/.exec(u.pathname);
+  if (preview) return tunnelPreview(req, socket, head, u, decodeURIComponent(preview[1]), Number(preview[2]), preview[3] || '/');
 
   if (u.pathname === '/api/ws') {
     return wss.handleUpgrade(req, socket, head, (ws) => {
@@ -1134,3 +1142,63 @@ function rankPaths(list, q) {
 }
 /** @param {number} status @param {string} message */
 function httpError(status, message) { return Object.assign(new Error(message), { status }); }
+
+/**
+ * Passes one request to a server listening on this machine - the dev server a session
+ * started - and streams its answer back, for the Mac app's preview of it. Only the
+ * loopback address, never Bench's own port, and only for a session that exists.
+ * @param {http.IncomingMessage} req @param {http.ServerResponse} res @param {URL} u
+ * @param {string} sessionId @param {number} target @param {string} rest
+ */
+function proxyPreview(req, res, u, sessionId, target, rest) {
+  try { svc.session(sessionId); } catch { return json(req, res, { error: 'No such session' }, 404); }
+  if (target < 1024 || target > 65535 || target === Number(port)) return json(req, res, { error: 'Not a port Bench previews' }, 403);
+  /** @type {Record<string, string | string[]>} */
+  const headers = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (v === undefined || /^(authorization|cookie|host|connection|upgrade|accept-encoding)$/i.test(k)) continue;
+    headers[k] = v;
+  }
+  headers.host = `localhost:${target}`;
+  const out = http.request({ host: '127.0.0.1', port: target, method: req.method, path: rest + u.search, headers }, (up) => {
+    /** @type {Record<string, string | string[]>} */
+    const back = {};
+    for (const [k, v] of Object.entries(up.headers)) if (v !== undefined && !/^(connection|transfer-encoding|keep-alive)$/i.test(k)) back[k] = v;
+    res.writeHead(up.statusCode || 502, back);
+    up.pipe(res);
+  });
+  out.setTimeout(30000, () => out.destroy(new Error('timeout')));
+  out.on('error', (e) => {
+    if (res.headersSent) return res.destroy();
+    const refused = /** @type {any} */ (e).code === 'ECONNREFUSED';
+    json(req, res, { error: refused ? `Nothing is listening on :${target}` : `The server on :${target} didn't answer`, code: refused ? 'down' : 'error' }, 502);
+  });
+  req.pipe(out);
+}
+
+/**
+ * A preview's WebSocket upgrade, passed to the dev server on this machine: the request
+ * rewritten for it, then the two sockets joined. Same limits as `proxyPreview`.
+ * @param {http.IncomingMessage} req @param {import('node:stream').Duplex} socket @param {Buffer} head
+ * @param {URL} u @param {string} sessionId @param {number} target @param {string} rest
+ */
+function tunnelPreview(req, socket, head, u, sessionId, target, rest) {
+  try { svc.session(sessionId); } catch { return refuse(socket, '404 Not Found'); }
+  if (target < 1024 || target > 65535 || target === Number(port)) return refuse(socket, '403 Forbidden');
+  const lines = [`GET ${rest}${u.search} HTTP/1.1`, `Host: localhost:${target}`, `Origin: http://localhost:${target}`];
+  for (let i = 0; i < req.rawHeaders.length; i += 2) {
+    const k = req.rawHeaders[i];
+    if (/^(host|origin|authorization|cookie)$/i.test(k)) continue;
+    lines.push(`${k}: ${req.rawHeaders[i + 1]}`);
+  }
+  const up = net.connect(target, '127.0.0.1', () => {
+    up.write(lines.join('\r\n') + '\r\n\r\n');
+    if (head?.length) up.write(head);
+    up.pipe(socket);
+    socket.pipe(up);
+  });
+  up.on('error', () => (socket.writable ? refuse(socket, '502 Bad Gateway') : socket.destroy()));
+  socket.on('error', () => up.destroy());
+  socket.on('close', () => up.destroy());
+  up.on('close', () => socket.destroy());
+}

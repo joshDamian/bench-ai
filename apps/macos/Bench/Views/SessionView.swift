@@ -50,10 +50,20 @@ struct SessionView: View {
     }
 
     /// The artifact viewer: beside the conversation, or filling the session with the composer under it.
-    @ViewBuilder private func artifactSide(_ f: FileInfo) -> some View {
+    @ViewBuilder private func sidePanel() -> some View {
+        if let t = files.page {
+            PreviewPanel(files: files, target: t) { port in
+                model.editDraft = "The preview of localhost:\(port) says nothing is listening there. Start the dev server on :\(port) again."
+            }
+        } else if let f = files.viewing {
+            ArtifactPanel(files: files, file: f)
+        }
+    }
+
+    @ViewBuilder private func artifactSide() -> some View {
         if files.full {
             VStack(spacing: 0) {
-                ArtifactPanel(files: files, file: f)
+                sidePanel()
                 Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: false, focused: $composerFocused)
                     .frame(maxWidth: 760)
                     .padding(.horizontal, 24).padding(.bottom, 14).padding(.top, 8)
@@ -63,7 +73,7 @@ struct SessionView: View {
             }
         } else {
             PanelDivider(width: $panelWidth)
-            ArtifactPanel(files: files, file: f)
+            sidePanel()
                 .frame(width: panelWidth)
         }
     }
@@ -72,7 +82,7 @@ struct SessionView: View {
         @Bindable var app = app
         let session = model.session
         HStack(spacing: 0) {
-            if !(files.full && files.viewing != nil && !embedded) {
+            if !(files.full && files.hasSide && !embedded) {
             VStack(spacing: 0) {
                 if !embedded {
                     PaneHeader {
@@ -106,8 +116,8 @@ struct SessionView: View {
                 }
             }
             }
-            if !embedded, let f = files.viewing { artifactSide(f) }
-            if !embedded && showsInspector && app.showInspector && hasInspector(session) && files.viewing == nil {
+            if !embedded && files.hasSide { artifactSide() }
+            if !embedded && showsInspector && app.showInspector && hasInspector(session) && !files.hasSide {
                 Rectangle().fill(theme.colors.fill(0.08)).frame(width: 1)
                 SessionInspector(store: store, sessionId: sessionId, files: files)
                     .frame(width: 340)
@@ -122,9 +132,9 @@ struct SessionView: View {
                 Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
                     .padding(.leading, app.showSidebar ? -8 : 0)
                     // Stops where the viewer starts: it draws its own header line.
-                    .padding(.trailing, files.viewing == nil ? 0 : (files.full ? 0 : panelWidth + 1))
+                    .padding(.trailing, !files.hasSide ? 0 : (files.full ? 0 : panelWidth + 1))
                     .padding(.top, 54)
-                    .opacity(scrolled && !(files.full && files.viewing != nil) ? 1 : 0)
+                    .opacity(scrolled && !(files.full && files.hasSide) ? 1 : 0)
                     .animation(.easeOut(duration: 0.15), value: scrolled)
                     .allowsHitTesting(false)
             }
@@ -133,6 +143,12 @@ struct SessionView: View {
         .navigationTitle(session?.title ?? "Session")
         .environment(files)
         .overlay(alignment: .bottom) { ToastView(files: files) }
+        // Links to the server's own dev servers open in the preview; the rest of the web in the browser.
+        .environment(\.openURL, OpenURLAction { url in
+            guard !embedded, let t = PreviewTarget.from(url, serverHost: URL(string: store.api.config.baseURL)?.host) else { return .systemAction }
+            files.open(t)
+            return .handled
+        })
         // No animated layout: the conversation reflowing at every frame of a slide was the
         // drag. The panel appears at once and its contents ease in instead.
         .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
@@ -335,6 +351,7 @@ struct SessionView: View {
             VStack(alignment: .leading, spacing: Space.md) {
                 TurnView(steps: steps, reply: reply, label: label, ok: ok, cost: cost, live: live, cwd: cwd, model: model, id: b.id)
                 ArtifactCards(reply: reply)
+                PreviewChips(reply: reply)
             }
         }
     }
