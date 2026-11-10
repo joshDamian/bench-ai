@@ -306,7 +306,13 @@ struct CodeTextView: NSViewRepresentable {
         let para = NSMutableParagraphStyle(); para.minimumLineHeight = 22; para.maximumLineHeight = 22
         tv.defaultParagraphStyle = para
         scroll.drawsBackground = false
+        // Nothing may draw outside the view: on macOS 14 views don't clip by default, and
+        // the ruler's edge line ran up through the headers above it.
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsetsZero
+        scroll.clipsToBounds = true
         let ruler = LineNumbers(textView: tv)
+        ruler.clipsToBounds = true
         scroll.verticalRulerView = ruler
         scroll.hasVerticalRuler = true
         scroll.rulersVisible = true
@@ -395,6 +401,11 @@ final class LineNumbers: NSRulerView {
     required init(coder: NSCoder) { fatalError() }
 
     @objc private func redraw() { needsDisplay = true }
+
+    /// Numbers only: no background or edge line of the ruler's own.
+    override func draw(_ dirtyRect: NSRect) {
+        drawHashMarksAndLabels(in: dirtyRect.intersection(bounds))
+    }
 
     override func drawHashMarksAndLabels(in rect: NSRect) {
         guard let tv = clientView as? NSTextView, let lm = tv.layoutManager, let tc = tv.textContainer else { return }
