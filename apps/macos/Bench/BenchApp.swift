@@ -30,11 +30,21 @@ final class AppModel {
     var newSessionProject: String?
     var showAddProject = false
     var showQuickOpen = false
-    /// ⌘J and ⇧⌘T: the session's inspector and terminal, remembered across sessions.
-    var showInspector = UserDefaults.standard.object(forKey: "inspector") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(showInspector, forKey: "inspector") }
+    /// ⌘J and ⇧⌘T, per tab: each tab keeps its own inspector and terminal. A tab that hasn't
+    /// chosen shows the inspector as it was last left anywhere, and no terminal.
+    private var inspectorFor: [String: Bool] = [:]
+    private var terminalFor: Set<String> = []
+    private var inspectorDefault = UserDefaults.standard.object(forKey: "inspector") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(inspectorDefault, forKey: "inspector") }
     }
-    var showTerminal = false
+    var showInspector: Bool {
+        get { inspectorFor[selection ?? ""] ?? inspectorDefault }
+        set { inspectorFor[selection ?? ""] = newValue; inspectorDefault = newValue }
+    }
+    var showTerminal: Bool {
+        get { terminalFor.contains(selection ?? "") }
+        set { if newValue { terminalFor.insert(selection ?? "") } else { terminalFor.remove(selection ?? "") } }
+    }
     var showSidebar = true
     /// Asks the task on screen to open its ship sheet (⇧⌘M).
     var shipRequest = 0
