@@ -33,7 +33,8 @@ struct ArtifactPanel: View {
         .background {
             Button("") { files.step(-1) }.keyboardShortcut(.leftArrow, modifiers: [.command, .option]).hidden()
             Button("") { files.step(1) }.keyboardShortcut(.rightArrow, modifiers: [.command, .option]).hidden()
-            Button("") { files.viewing = nil }.keyboardShortcut(.cancelAction).hidden()
+            Button("") { if files.full { files.full = false } else { files.viewing = nil } }.keyboardShortcut(.cancelAction).hidden()
+            Button("") { files.full.toggle() }.keyboardShortcut(.return, modifiers: [.command, .shift]).hidden()
         }
     }
 
@@ -125,7 +126,9 @@ struct ArtifactPanel: View {
                 }
                 icon("arrow.down.to.line", "Save to Downloads") { files.save(file) }
                 icon("arrow.up.forward.app", "Open in Default App") { files.openWith(file) }
-                icon("xmark", "Close (Esc)") { files.viewing = nil }
+                icon(files.full ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                     files.full ? "Show the Conversation (⇧⌘↩)" : "Full View (⇧⌘↩)") { files.full.toggle() }
+                icon("xmark", "Close") { files.viewing = nil; files.full = false }
             }
             .foregroundStyle(theme.colors.muted)
         }
@@ -755,5 +758,32 @@ struct ArtifactPreview: View {
             default: break
             }
         }
+    }
+}
+
+/// The line between the conversation and the viewer: drag to resize, double-click to reset.
+struct PanelDivider: View {
+    @Environment(\.theme) private var theme
+    @Binding var width: Double
+    @State private var start: Double?
+    @State private var hover = false
+
+    var body: some View {
+        Rectangle().fill(theme.colors.fill(hover || start != nil ? 0.2 : 0.08)).frame(width: 1)
+            .overlay {
+                Color.clear.frame(width: 9).contentShape(Rectangle())
+                    .onHover { h in
+                        hover = h
+                        if h { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                        .onChanged { v in
+                            if start == nil { start = width }
+                            width = min(max((start ?? width) - v.translation.width, 380), 1400)
+                        }
+                        .onEnded { _ in start = nil })
+                    .onTapGesture(count: 2) { withAnimation(.snappy) { width = 640 } }
+            }
+            .zIndex(1)
     }
 }

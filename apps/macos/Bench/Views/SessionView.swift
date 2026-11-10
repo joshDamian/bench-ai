@@ -35,6 +35,8 @@ struct SessionView: View {
     @State private var seen = 0
     /// Whether the thread has scrolled under the header: then the header shows its edge.
     @State private var scrolled = false
+    /// The artifact panel's width, as last dragged.
+    @AppStorage("artifactPanelWidth") private var panelWidth: Double = 640
 
     init(store: BenchStore, sessionId: String, embedded: Bool = false, showsInspector: Bool = true, onClose: (() -> Void)? = nil, showsTitle: Bool = true) {
         self.embedded = embedded
@@ -51,6 +53,7 @@ struct SessionView: View {
         @Bindable var app = app
         let session = model.session
         HStack(spacing: 0) {
+            if !(files.full && files.viewing != nil && !embedded) {
             VStack(spacing: 0) {
                 if !embedded {
                     PaneHeader {
@@ -83,11 +86,26 @@ struct SessionView: View {
                     conversation
                 }
             }
+            }
             if !embedded, let f = files.viewing {
-                Rectangle().fill(theme.colors.fill(0.08)).frame(width: 1)
-                ArtifactPanel(files: files, file: f)
-                    .frame(minWidth: 460, idealWidth: 640, maxWidth: 820)
-                    .transition(.move(edge: .trailing))
+                if files.full {
+                    VStack(spacing: 0) {
+                        ArtifactPanel(files: files, file: f)
+                        // Full view keeps the composer, so a reply is one keystroke away.
+                        Composer(model: model, draft: $draft, running: running, embedded: false, focused: $composerFocused)
+                            .frame(maxWidth: 760)
+                            .padding(.horizontal, 24).padding(.bottom, 14).padding(.top, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(theme.colors.bg)
+                            .overlay(alignment: .top) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1) }
+                    }
+                    .transition(.opacity)
+                } else {
+                    PanelDivider(width: $panelWidth)
+                    ArtifactPanel(files: files, file: f)
+                        .frame(width: panelWidth)
+                        .transition(.move(edge: .trailing))
+                }
             }
             if !embedded && showsInspector && app.showInspector && hasInspector(session) && files.viewing == nil {
                 Rectangle().fill(theme.colors.fill(0.08)).frame(width: 1)
@@ -114,6 +132,7 @@ struct SessionView: View {
         .environment(files)
         .overlay(alignment: .bottom) { ToastView(files: files) }
         .animation(.snappy, value: files.viewing?.path)
+        .animation(.snappy, value: files.full)
         .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }

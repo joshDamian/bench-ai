@@ -36,6 +36,8 @@ final class SessionFiles {
     var viewing: FileInfo?
     /// Its local copy, once fetched.
     var viewingURL: URL?
+    /// Whether the viewer fills the session, the conversation set aside.
+    var full = false
     /// A short note at the bottom of the window: "Saved … to Downloads".
     var toast: Toast?
     struct Toast: Equatable { let id = UUID(); let text: String; var reveal: URL? = nil }
