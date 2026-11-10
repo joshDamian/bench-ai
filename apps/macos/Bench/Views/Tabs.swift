@@ -138,7 +138,8 @@ private struct TabChip: View {
         let on = model.selection == id
         let (title, place, mark) = describe()
         HStack(spacing: 7) {
-            MarkView(mark: mark)
+            // Only when there is something to know: an idle dot on every tab says nothing.
+            if mark != .idle { MarkView(mark: mark) }
             Text(title).font(.system(size: 12, weight: on ? .medium : .regular)).lineLimit(1)
             if !place.isEmpty {
                 Text(place).font(.system(size: 11)).foregroundStyle(theme.colors.muted).lineLimit(1).fixedSize()
