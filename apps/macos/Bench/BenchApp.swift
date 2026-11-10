@@ -298,7 +298,7 @@ struct BenchCommands: Commands {
             Button("Open in New Window") { if let id = selectedSession { openWindow(id: "session", value: id) } }
                 .keyboardShortcut("o", modifiers: [.command, .option])
                 .disabled(selectedSession == nil)
-            Button("Quick Prompt (⌥Space)") { QuickPrompt.shared.show() }
+            Button("Quick Prompt (\(QuickPrompt.label))") { QuickPrompt.shared.show() }
             Divider()
             // ⌥⌘1–9: the nine most recent sessions, as the sidebar orders them.
             ForEach(Array(recent.prefix(9).enumerated()), id: \.element.id) { i, s in
