@@ -32,11 +32,24 @@ final class SessionFiles {
     let sessionId: String
     private(set) var known: [String: FileInfo] = [:]
     @ObservationIgnored private var asked = Set<String>()
-    /// The local copy Quick Look is showing.
-    var previewing: URL?
-    /// A Markdown file, which Bench renders itself: Quick Look shows Markdown as raw text.
-    var reading: Reading?
-    struct Reading: Identifiable { let id = UUID(); let file: FileInfo; let text: String }
+    /// The file open in the viewer beside the conversation.
+    var viewing: FileInfo?
+    /// Its local copy, once fetched.
+    var viewingURL: URL?
+    /// Whether the viewer fills the session, the conversation set aside.
+    var full = false
+    /// A short note at the bottom of the window: "Saved … to Downloads".
+    var toast: Toast?
+    struct Toast: Equatable { let id = UUID(); let text: String; var reveal: URL? = nil }
+    /// Each file's text as last fetched, and the text before that when it changed: what
+    /// the viewer's Changes shows, and why a card says Updated.
+    private(set) var texts: [String: String] = [:]
+    private(set) var previous: [String: String] = [:]
+    private(set) var updated: Set<String> = []
+    /// The order replies named the files in.
+    @ObservationIgnored private var order: [String] = []
+    @ObservationIgnored private var fetched: [String: URL] = [:]
+    @ObservationIgnored private var fetching: [String: Task<URL?, Never>] = [:]
 
     init(api: BenchAPI, sessionId: String) { self.api = api; self.sessionId = sessionId }
 
@@ -65,10 +78,10 @@ final class SessionFiles {
         return paths.compactMap { known[$0] }.filter(\.artifact)
     }
 
-    /// Every artifact the session has named so far.
+    /// Every artifact the session has named so far, in the order the replies named them.
     var all: [FileInfo] {
         var seen = Set<String>()
-        return known.values.filter { $0.artifact && seen.insert($0.path).inserted }.sorted { $0.name < $1.name }
+        return order.compactMap { known[$0] }.filter { $0.artifact && seen.insert($0.path).inserted }
     }
 
     func stat(_ texts: [String]) async {
@@ -77,33 +90,62 @@ final class SessionFiles {
         ask.forEach { asked.insert($0) }
         guard let d = try? await api.call("/api/sessions/\(BenchAPI.enc(sessionId))/files/stat", method: "POST", body: ["paths": ask]),
               let v = try? JSONDecoder().decode(JSONValue.self, from: d) else { return }
+        for p in ask where v.object[p] != nil && !order.contains(p) { order.append(p) }
         for (p, f) in v.object {
             known[p] = FileInfo(path: f["path"].string ?? p, name: f["name"].string ?? p, mime: f["mime"].string ?? "",
                                 size: f["size"].number ?? 0, kind: f["kind"].string ?? "", artifact: f["artifact"].bool)
         }
     }
 
-    /// Fetches the file into this Mac's caches and returns the copy.
+    /// The file's local copy: the one already fetched straight away, else fetched now.
     func local(_ f: FileInfo) async -> URL? {
-        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Bench/\(sessionId)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent(f.name)
-        guard let d = try? await api.call("/api/sessions/\(BenchAPI.enc(sessionId))/files?path=\(BenchAPI.enc(f.path))") else { return nil }
-        do { try d.write(to: url); return url } catch { return nil }
+        if let u = fetched[f.path], FileManager.default.fileExists(atPath: u.path) { return u }
+        return await refresh(f)
     }
 
+    /// Fetches the file again into this Mac's caches, noting when its text changed.
+    @discardableResult
+    func refresh(_ f: FileInfo) async -> URL? {
+        if let t = fetching[f.path] { return await t.value }
+        let t = Task<URL?, Never> { [api, sessionId] in
+            let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Bench/\(sessionId)/\(abs(f.path.hashValue))", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(f.name)
+            guard let d = try? await api.call("/api/sessions/\(BenchAPI.enc(sessionId))/files?path=\(BenchAPI.enc(f.path))") else { return nil }
+            do { try d.write(to: url); return url } catch { return nil }
+        }
+        fetching[f.path] = t
+        let url = await t.value
+        fetching[f.path] = nil
+        guard let url else { return fetched[f.path] }
+        fetched[f.path] = url
+        if f.size < 2_000_000, let text = try? String(contentsOf: url, encoding: .utf8) {
+            if let old = texts[f.path], old != text { previous[f.path] = old; updated.insert(f.path) }
+            texts[f.path] = text
+        }
+        return url
+    }
+
+    /// Opens a file in the viewer beside the conversation, showing any copy already here
+    /// at once and fetching the current one behind it.
     func preview(_ f: FileInfo) {
+        viewing = f
+        viewingURL = fetched[f.path]
         Task {
-            guard let url = await local(f) else { return }
-            let ext = url.pathExtension.lowercased()
-            if ["md", "markdown", "mdx"].contains(ext), let text = try? String(contentsOf: url, encoding: .utf8) {
-                reading = Reading(file: f, text: text)
-            } else {
-                previewing = url
-            }
+            let u = await refresh(f)
+            if viewing?.path == f.path { viewingURL = u }
         }
     }
+
+    /// The next or previous file in the session, for ← and → in the viewer.
+    func step(_ by: Int) {
+        let list = all
+        guard let v = viewing, let i = list.firstIndex(where: { $0.path == v.path }), !list.isEmpty else { return }
+        preview(list[(i + by + list.count) % list.count])
+    }
+
+    func seen(_ f: FileInfo) { updated.remove(f.path) }
 
     func save(_ f: FileInfo) {
         Task {
@@ -115,9 +157,28 @@ final class SessionFiles {
                 dst = downloads.appendingPathComponent("\((f.name as NSString).deletingPathExtension) \(n).\((f.name as NSString).pathExtension)")
                 n += 1
             }
-            try? FileManager.default.copyItem(at: src, to: dst)
-            NSWorkspace.shared.activateFileViewerSelecting([dst])
+            do {
+                try FileManager.default.copyItem(at: src, to: dst)
+                show(Toast(text: "Saved \(dst.lastPathComponent) to Downloads", reveal: dst))
+            } catch {
+                show(Toast(text: "Couldn't save \(f.name)"))
+            }
         }
+    }
+
+    /// Puts the file itself on the clipboard, to paste into Finder, Mail or Messages.
+    func copy(_ f: FileInfo) {
+        Task {
+            guard let u = await local(f) else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([u as NSURL])
+            show(Toast(text: "Copied \(f.name)"))
+        }
+    }
+
+    func show(_ t: Toast) {
+        toast = t
+        Task { try? await Task.sleep(for: .seconds(3)); if toast?.id == t.id { toast = nil } }
     }
 
     func openWith(_ f: FileInfo) { Task { if let u = await local(f) { NSWorkspace.shared.open(u) } } }
@@ -143,38 +204,66 @@ struct ArtifactCard: View {
     @Environment(SessionFiles.self) private var files
     @Environment(\.theme) private var theme
     let file: FileInfo
+    /// The inspector's list: a row without the preview.
+    var compact = false
+    @State private var hover = false
 
     var body: some View {
+        let open = files.viewing?.path == file.path
+        let updated = files.updated.contains(file.path)
         Button { files.preview(file) } label: {
-            HStack(spacing: 10) {
-                Image(systemName: icon).font(.system(size: 16)).foregroundStyle(theme.colors.accent)
-                    .frame(width: 34, height: 34)
-                    .background(theme.colors.fill(0.07), in: RoundedRectangle(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(file.name).font(.system(size: 13)).lineLimit(1)
-                    Text(file.meta).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+            VStack(alignment: .leading, spacing: 0) {
+                if !compact {
+                    ArtifactPreview(files: files, file: file)
+                        .frame(width: 260, height: 132)
+                        .background(theme.colors.fill(0.03))
+                        .overlay(alignment: .topTrailing) {
+                            if updated {
+                                Text("UPDATED").font(.system(size: 9.5, weight: .bold)).tracking(0.4).foregroundStyle(theme.colors.accent)
+                                    .padding(.horizontal, 5).padding(.vertical, 2)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                                    .padding(8)
+                            }
+                        }
+                    Divider()
                 }
+                HStack(spacing: 10) {
+                    if compact {
+                        Image(systemName: ArtifactKind(file).icon).font(.system(size: 14)).foregroundStyle(theme.colors.accent)
+                            .frame(width: 30, height: 30)
+                            .background(theme.colors.fill(0.07), in: RoundedRectangle(cornerRadius: 7))
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(file.name).font(.system(size: 13, weight: compact ? .regular : .medium)).lineLimit(1)
+                        Text(file.meta).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+                    }
+                    Spacer(minLength: 0)
+                    if compact && updated { Circle().fill(theme.colors.accent).frame(width: 6, height: 6) }
+                }
+                .padding(.horizontal, compact ? 8 : 12).padding(.vertical, compact ? 7 : 9)
             }
-            .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
-            .background(theme.colors.fill(0.05), in: RoundedRectangle(cornerRadius: 12))
+            .frame(width: compact ? nil : 260, alignment: .leading)
+            .background(open ? theme.colors.accent.opacity(0.1) : theme.colors.fill(hover ? 0.07 : 0.045), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(open ? theme.colors.accent.opacity(0.4) : theme.colors.fill(0.06)))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .onDrag {
+            // The file itself when it's been fetched, so it drops into Finder or Mail.
+            let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Bench/\(files.sessionId)/\(abs(file.path.hashValue))/\(file.name)")
+            if FileManager.default.fileExists(atPath: dir.path), let p = NSItemProvider(contentsOf: dir) { return p }
+            return NSItemProvider(object: file.name as NSString)
+        }
         .contextMenu {
-            Button("Quick Look") { files.preview(file) }
-            Button("Open With Default App") { files.openWith(file) }
+            Button("Open") { files.preview(file) }
+            Button("Open in Default App") { files.openWith(file) }
+            Button("Copy File") { files.copy(file) }
             Button("Save to Downloads") { files.save(file) }
         }
-        .help("Quick Look")
-    }
-
-    private var icon: String {
-        switch file.kind {
-        case "image": "photo"
-        case "pdf": "doc.richtext"
-        case "text": "doc.text"
-        default: "doc"
-        }
+        .help("Open \(file.name)")
     }
 }
 
@@ -333,7 +422,7 @@ private struct FilesTab: View {
                 if all.isEmpty {
                     Text("Files Claude makes or is given show up here.").font(.system(size: 12.5)).foregroundStyle(theme.colors.muted)
                 }
-                ForEach(all) { f in ArtifactCard(file: f).frame(maxWidth: .infinity, alignment: .leading) }
+                ForEach(all) { f in ArtifactCard(file: f, compact: true).frame(maxWidth: .infinity, alignment: .leading) }
             }
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -458,43 +547,6 @@ private struct SessionTab: View {
         return n >= 1000 ? "\(Int(n / 1000))k tokens" : "\(Int(n)) tokens"
     }
 }
-
-/// A Markdown file, rendered: the board's viewer with Open With…, Save to Downloads and Done.
-struct MarkdownViewer: View {
-    @Environment(\.theme) private var theme
-    @Environment(\.dismiss) private var dismiss
-    let reading: SessionFiles.Reading
-    let files: SessionFiles
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: Space.sm) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(reading.file.name).font(.system(size: 13, weight: .semibold))
-                    Text(reading.file.meta).font(.system(size: 11)).foregroundStyle(theme.colors.muted)
-                }
-                Spacer()
-                Button("Open With…") { files.openWith(reading.file) }.buttonStyle(TonalButton(height: 28))
-                Button("Save to Downloads") { files.save(reading.file) }.buttonStyle(TonalButton(height: 28))
-                Button("Done") { dismiss() }.buttonStyle(PrimaryButton(height: 28)).keyboardShortcut(.cancelAction)
-            }
-            .padding(.horizontal, 18)
-            .frame(height: 54)
-            Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1)
-            ScrollView {
-                BenchMarkdown(text: reading.text)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: 720, alignment: .leading)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 24)
-                    .frame(maxWidth: .infinity)
-            }
-        }
-        .frame(minWidth: 720, idealWidth: 820, minHeight: 560, idealHeight: 720)
-        .background(theme.colors.bg)
-    }
-}
-
 
 /// A path as this Mac sees it: relative paths are under the session's folder.
 func absolute(_ path: String, _ cwd: String?) -> String {

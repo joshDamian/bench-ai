@@ -35,6 +35,8 @@ struct SessionView: View {
     @State private var seen = 0
     /// Whether the thread has scrolled under the header: then the header shows its edge.
     @State private var scrolled = false
+    /// The artifact panel's width, as last dragged.
+    @AppStorage("artifactPanelWidth") private var panelWidth: Double = 640
 
     init(store: BenchStore, sessionId: String, embedded: Bool = false, showsInspector: Bool = true, onClose: (() -> Void)? = nil, showsTitle: Bool = true) {
         self.embedded = embedded
@@ -47,10 +49,30 @@ struct SessionView: View {
         _files = State(initialValue: SessionFiles(api: store.api, sessionId: sessionId))
     }
 
+    /// The artifact viewer: beside the conversation, or filling the session with the composer under it.
+    @ViewBuilder private func artifactSide(_ f: FileInfo) -> some View {
+        if files.full {
+            VStack(spacing: 0) {
+                ArtifactPanel(files: files, file: f)
+                Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: false, focused: $composerFocused)
+                    .frame(maxWidth: 760)
+                    .padding(.horizontal, 24).padding(.bottom, 14).padding(.top, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(theme.colors.bg)
+                    .overlay(alignment: .top) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1) }
+            }
+        } else {
+            PanelDivider(width: $panelWidth)
+            ArtifactPanel(files: files, file: f)
+                .frame(width: panelWidth)
+        }
+    }
+
     var body: some View {
         @Bindable var app = app
         let session = model.session
         HStack(spacing: 0) {
+            if !(files.full && files.viewing != nil && !embedded) {
             VStack(spacing: 0) {
                 if !embedded {
                     PaneHeader {
@@ -83,7 +105,9 @@ struct SessionView: View {
                     conversation
                 }
             }
-            if !embedded && showsInspector && app.showInspector && hasInspector(session) {
+            }
+            if !embedded, let f = files.viewing { artifactSide(f) }
+            if !embedded && showsInspector && app.showInspector && hasInspector(session) && files.viewing == nil {
                 Rectangle().fill(theme.colors.fill(0.08)).frame(width: 1)
                 SessionInspector(store: store, sessionId: sessionId, files: files)
                     .frame(width: 340)
@@ -97,8 +121,10 @@ struct SessionView: View {
                 // 8pt past the left edge, over the sidebar card's margin, so it meets the card.
                 Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
                     .padding(.leading, app.showSidebar ? -8 : 0)
+                    // Stops where the viewer starts: it draws its own header line.
+                    .padding(.trailing, files.viewing == nil ? 0 : (files.full ? 0 : panelWidth + 1))
                     .padding(.top, 54)
-                    .opacity(scrolled ? 1 : 0)
+                    .opacity(scrolled && !(files.full && files.viewing != nil) ? 1 : 0)
                     .animation(.easeOut(duration: 0.15), value: scrolled)
                     .allowsHitTesting(false)
             }
@@ -106,10 +132,9 @@ struct SessionView: View {
         .animation(.snappy, value: app.showInspector)
         .navigationTitle(session?.title ?? "Session")
         .environment(files)
-        .sheet(item: Binding(get: { files.reading }, set: { files.reading = $0 })) { r in
-            MarkdownViewer(reading: r, files: files).environment(\.theme, theme)
-        }
-        .quickLookPreview(Binding(get: { files.previewing }, set: { files.previewing = $0 }))
+        .overlay(alignment: .bottom) { ToastView(files: files) }
+        // No animated layout: the conversation reflowing at every frame of a slide was the
+        // drag. The panel appears at once and its contents ease in instead.
         .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
