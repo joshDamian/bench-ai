@@ -116,6 +116,18 @@ jobs:
         run: |
           cat "$RUNNER_TEMP"/test.log "$RUNNER_TEMP"/build.log 2>/dev/null | grep -E "error:|error -|\*\* .* FAILED|Command .* failed" | sort -u | head -30 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
 
+      # On Josh's Mac the build is already where it's used: put it in /Applications, with no
+      # download for Chrome or Gatekeeper to stop. A running Bench keeps going; reopen it for this one.
+      - name: Install on this Mac
+        if: runner.environment == 'self-hosted'
+        run: |
+          rm -rf /Applications/Bench.app.new
+          ditto Bench.app /Applications/Bench.app.new
+          rm -rf /Applications/Bench.app
+          mv /Applications/Bench.app.new /Applications/Bench.app
+          xattr -dr com.apple.quarantine /Applications/Bench.app || true
+          osascript -e 'display notification "Reopen Bench to use it." with title "New Bench build installed"' || true
+
       - name: Disk image
         run: |
           mkdir dmg && cp -R Bench.app dmg/ && ln -s /Applications dmg/Applications
