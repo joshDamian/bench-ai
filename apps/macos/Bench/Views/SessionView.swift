@@ -83,7 +83,13 @@ struct SessionView: View {
                     conversation
                 }
             }
-            if !embedded && showsInspector && app.showInspector && hasInspector(session) {
+            if !embedded, let f = files.viewing {
+                Rectangle().fill(theme.colors.fill(0.08)).frame(width: 1)
+                ArtifactPanel(files: files, file: f)
+                    .frame(minWidth: 460, idealWidth: 640, maxWidth: 820)
+                    .transition(.move(edge: .trailing))
+            }
+            if !embedded && showsInspector && app.showInspector && hasInspector(session) && files.viewing == nil {
                 Rectangle().fill(theme.colors.fill(0.08)).frame(width: 1)
                 SessionInspector(store: store, sessionId: sessionId, files: files)
                     .frame(width: 340)
@@ -106,10 +112,8 @@ struct SessionView: View {
         .animation(.snappy, value: app.showInspector)
         .navigationTitle(session?.title ?? "Session")
         .environment(files)
-        .sheet(item: Binding(get: { files.reading }, set: { files.reading = $0 })) { r in
-            MarkdownViewer(reading: r, files: files).environment(\.theme, theme)
-        }
-        .quickLookPreview(Binding(get: { files.previewing }, set: { files.previewing = $0 }))
+        .overlay(alignment: .bottom) { ToastView(files: files) }
+        .animation(.snappy, value: files.viewing?.path)
         .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
