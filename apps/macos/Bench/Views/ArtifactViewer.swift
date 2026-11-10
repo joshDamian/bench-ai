@@ -13,6 +13,9 @@ struct ArtifactPanel: View {
     let files: SessionFiles
     let file: FileInfo
     @State private var mode = "view"
+    @State private var shown = false
+
+    private var hairline: some View { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1) }
 
     private var kind: ArtifactKind { ArtifactKind(file) }
     private var text: String? { files.texts[file.path] }
@@ -21,12 +24,15 @@ struct ArtifactPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             strip
-            Divider()
+            hairline
             header
-            Divider()
+            hairline
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(shown ? 1 : 0)
+                .offset(x: shown ? 0 : 16)
         }
         .background(theme.colors.bg)
+        .onAppear { withAnimation(.easeOut(duration: 0.22)) { shown = true } }
         .onChange(of: file.path) { _, _ in mode = "view" }
         .onAppear { files.seen(file) }
         .onChange(of: file.path) { _, _ in files.seen(file) }
@@ -76,7 +82,8 @@ struct ArtifactPanel: View {
         }
         .foregroundStyle(theme.colors.muted)
         .padding(.horizontal, 10)
-        .frame(height: 44)
+        // The same height as the session header beside it, so their lines meet.
+        .frame(height: 54)
     }
 
     // MARK: header

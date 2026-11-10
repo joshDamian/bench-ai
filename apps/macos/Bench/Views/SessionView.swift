@@ -61,12 +61,10 @@ struct SessionView: View {
                     .background(theme.colors.bg)
                     .overlay(alignment: .top) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1) }
             }
-            .transition(.opacity)
         } else {
             PanelDivider(width: $panelWidth)
             ArtifactPanel(files: files, file: f)
                 .frame(width: panelWidth)
-                .transition(.move(edge: .trailing))
         }
     }
 
@@ -123,8 +121,10 @@ struct SessionView: View {
                 // 8pt past the left edge, over the sidebar card's margin, so it meets the card.
                 Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
                     .padding(.leading, app.showSidebar ? -8 : 0)
+                    // Stops where the viewer starts: it draws its own header line.
+                    .padding(.trailing, files.viewing == nil ? 0 : (files.full ? 0 : panelWidth + 1))
                     .padding(.top, 54)
-                    .opacity(scrolled ? 1 : 0)
+                    .opacity(scrolled && !(files.full && files.viewing != nil) ? 1 : 0)
                     .animation(.easeOut(duration: 0.15), value: scrolled)
                     .allowsHitTesting(false)
             }
@@ -133,8 +133,8 @@ struct SessionView: View {
         .navigationTitle(session?.title ?? "Session")
         .environment(files)
         .overlay(alignment: .bottom) { ToastView(files: files) }
-        .animation(.snappy, value: files.viewing?.path)
-        .animation(.snappy, value: files.full)
+        // No animated layout: the conversation reflowing at every frame of a slide was the
+        // drag. The panel appears at once and its contents ease in instead.
         .alert("Something went wrong", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
