@@ -205,7 +205,7 @@ struct CommandPalette: View {
             var mine: [(String, String, String, String, () -> Void)] = [
                 ("s.find", "magnifyingglass", "Find in conversation", "⌘F", { app.findRequest += 1 }),
                 ("s.window", "macwindow.badge.plus", "Open in new window", "⌥⌘O", { openWindow(id: "session", value: sid) }),
-                ("s.quick", "text.bubble", "Quick prompt", "⌥Space", { QuickPrompt.shared.show() }),
+                ("s.quick", "text.bubble", "Quick prompt", QuickPrompt.label, { QuickPrompt.shared.show() }),
             ]
             if s.status == "running" { mine.insert(("s.stop", "stop.circle", "Stop Claude", "⌘.", { app.stopRequest += 1 }), at: 0) }
             if store.approvals.contains(where: { $0.session_id == sid }) { mine.insert(("s.approve", "checkmark.circle", "Approve request", "⇧⌘A", { app.approveRequest += 1 }), at: 0) }
