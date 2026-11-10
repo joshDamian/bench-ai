@@ -1,3 +1,4 @@
+import Carbon
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
@@ -534,11 +535,14 @@ private struct AppearancePage: View {
         Group2 {
             GroupRow(title: "Show Bench in the menu bar", first: true) { Toggle("", isOn: $menuBar).labelsHidden().toggleStyle(.switch) }
             GroupRow(title: "Keep running when the window is closed") { Toggle("", isOn: $keepRunning).labelsHidden().toggleStyle(.switch) }
-            GroupRow(title: "Quick prompt with ⌥Space from any app") {
-                Toggle("", isOn: Binding(get: { quickPrompt }, set: { on in
-                    quickPrompt = on
-                    if on { QuickPrompt.shared.registerHotKey() } else { QuickPrompt.shared.unregisterHotKey() }
-                })).labelsHidden().toggleStyle(.switch)
+            GroupRow(title: "Quick prompt from any app") {
+                HStack(spacing: Space.sm) {
+                    if quickPrompt { ShortcutRecorder() }
+                    Toggle("", isOn: Binding(get: { quickPrompt }, set: { on in
+                        quickPrompt = on
+                        if on { QuickPrompt.shared.registerHotKey() } else { QuickPrompt.shared.unregisterHotKey() }
+                    })).labelsHidden().toggleStyle(.switch)
+                }
             }
             if !Editors.installed.isEmpty {
                 GroupRow(title: "Open files in") {
@@ -587,7 +591,7 @@ private struct ShortcutsPage: View {
         ("Stop Claude", "⌘."), ("Approve the request on screen", "⇧⌘A"), ("Find in the conversation", "⌘F"),
         ("Previous · next turn", "⌥⌘↑ ⌥⌘↓"), ("Your nine latest sessions", "⌥⌘1 – ⌥⌘9"),
         ("New tab · close tab", "⌘T ⌘W"), ("Next · previous tab", "⇧⌘] ⇧⌘["), ("Split with the previous tab", "⌘\\"),
-        ("Open the session in a new window", "⌥⌘O"), ("Quick prompt, from any app", "⌥Space"),
+        ("Open the session in a new window", "⌥⌘O"), ("Quick prompt, from any app", QuickPrompt.label),
         ("Merge or ship the task", "⇧⌘M"), ("Dashboard", "⇧⌘D"), ("Settings", "⌘,"),
     ]
     @Environment(\.theme) private var theme
@@ -600,6 +604,89 @@ private struct ShortcutsPage: View {
                         .background(theme.colors.fill(0.08), in: RoundedRectangle(cornerRadius: 5))
                 }
             }
+        }
+    }
+}
+
+/// Click, then press the combination: the quick prompt's shortcut. Esc cancels; a
+/// combination another app holds is refused and the old one stays.
+struct ShortcutRecorder: View {
+    @Environment(\.theme) private var theme
+    @State private var label = QuickPrompt.label
+    @State private var recording = false
+    @State private var problem: String?
+    @State private var monitor: Any?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let problem { Text(problem).font(.system(size: 11.5)).foregroundStyle(theme.colors.warn) }
+            Button { recording ? stop() : start() } label: {
+                Text(recording ? "Press keys…" : label)
+                    .font(BenchFont.mono(12))
+                    .foregroundStyle(recording ? theme.colors.accent : theme.colors.text)
+                    .padding(.horizontal, 10).frame(minWidth: 96, minHeight: 26)
+                    .background(theme.colors.fill(recording ? 0.12 : 0.07), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(recording ? theme.colors.accent.opacity(0.6) : .clear))
+            }
+            .buttonStyle(.plain)
+            .help("Click, then press the shortcut you want")
+            if label != QuickPrompt.Shortcut.standard.label && !recording {
+                Button("Reset") { apply(.standard) }.buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+            }
+        }
+        .onDisappear { stop() }
+    }
+
+    private func start() {
+        problem = nil
+        recording = true
+        // Free the current shortcut while recording, so pressing it again records it.
+        QuickPrompt.shared.unregisterHotKey()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            if e.keyCode == 53 { stop(); QuickPrompt.shared.registerHotKey(); return nil } // Esc
+            let f = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard !f.intersection([.command, .control, .option]).isEmpty else {
+                problem = "Use ⌘, ⌃ or ⌥ with it"
+                return nil
+            }
+            var mods = 0, text = ""
+            if f.contains(.control) { mods |= controlKey; text += "⌃" }
+            if f.contains(.option) { mods |= optionKey; text += "⌥" }
+            if f.contains(.shift) { mods |= shiftKey; text += "⇧" }
+            if f.contains(.command) { mods |= cmdKey; text += "⌘" }
+            text += Self.name(e)
+            stop()
+            apply(QuickPrompt.Shortcut(keyCode: Int(e.keyCode), modifiers: mods, label: text))
+            return nil
+        }
+    }
+
+    private func stop() {
+        recording = false
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private func apply(_ s: QuickPrompt.Shortcut) {
+        if QuickPrompt.shared.use(s) { label = s.label; problem = nil }
+        else { label = QuickPrompt.label; problem = "\(s.label) is taken by another app" }
+    }
+
+    static func name(_ e: NSEvent) -> String {
+        switch Int(e.keyCode) {
+        case kVK_Space: return "Space"
+        case kVK_Return: return "↩"
+        case kVK_Tab: return "⇥"
+        case kVK_Delete: return "⌫"
+        case kVK_LeftArrow: return "←"
+        case kVK_RightArrow: return "→"
+        case kVK_UpArrow: return "↑"
+        case kVK_DownArrow: return "↓"
+        default:
+            let fkeys = [kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
+                         kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12"]
+            if let f = fkeys[Int(e.keyCode)] { return f }
+            return (e.charactersIgnoringModifiers ?? "?").uppercased()
         }
     }
 }
