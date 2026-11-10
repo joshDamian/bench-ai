@@ -112,7 +112,7 @@ struct Sidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(project == nil)
+        .allowsHitTesting(project != nil)
         .help(project.map { "Open \($0.name)" } ?? "")
         .padding(.bottom, 4)
         .padding(.horizontal, 6).padding(.top, 4)
@@ -225,7 +225,8 @@ struct ProjectRail: View {
             let needs = store.sessions.filter { Mark.of($0, store: store) == .needs && $0.archived_at == nil }.count
             tile(id: "inbox", label: "Inbox", sub: needs == 0 ? "Nothing needs you" : "\(needs) need\(needs == 1 ? "s" : "") you", keys: "⌃0",
                  fill: nil, mark: nil, badge: needs) {
-                Image(systemName: "tray").font(.system(size: 14, weight: .medium)).foregroundStyle(theme.colors.text)
+                Image(systemName: "tray").font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(model.rail == "inbox" ? Color.white : theme.colors.text)
             }
             Rectangle().fill(theme.colors.fill(0.1)).frame(width: 22, height: 1)
             ScrollView(.vertical, showsIndicators: false) {
@@ -253,7 +254,8 @@ struct ProjectRail: View {
             Spacer(minLength: 0)
             tile(id: "ask", label: "Ask Bench", sub: "Questions about Bench itself", keys: nil,
                  fill: nil, mark: nil, badge: 0) {
-                Image(systemName: "bubble.left").font(.system(size: 13, weight: .medium)).foregroundStyle(theme.colors.text)
+                Image(systemName: "bubble.left").font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(model.rail == "ask" ? Color.white : theme.colors.text)
             }
             .padding(.bottom, 10)
         }
