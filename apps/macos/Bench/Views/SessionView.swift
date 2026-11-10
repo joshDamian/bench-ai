@@ -156,19 +156,9 @@ struct SessionView: View {
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { i, b in
                         // A time at the top, and wherever the session paused for an hour or more.
                         if let d = divider(i, blocks) { TimeDivider(text: d) }
-                        Group {
-                            switch b {
-                            case .user(let r), .note(let r): RowView(row: r, cwd: cwd, model: model)
-                            case .turn(_, let steps, let reply, let label, let ok, let cost):
-                                VStack(alignment: .leading, spacing: Space.md) {
-                                    TurnView(steps: steps, reply: reply, label: label, ok: ok, cost: cost,
-                                             live: running && b.id == blocks.last?.id, cwd: cwd, model: model, id: b.id)
-                                    ArtifactCards(reply: reply)
-                                }
-                            }
-                        }
-                        .environment(\.findCurrent, currentHit == b.id)
-                        .id(b.id)
+                        blockView(b, live: running && b.id == blocks.last?.id, cwd: cwd)
+                            .environment(\.findCurrent, currentHit == b.id)
+                            .id(b.id)
                     }
                     if !model.streamText.isEmpty || !model.streamThinking.isEmpty {
                         VStack(alignment: .leading, spacing: Space.xs) {
@@ -310,6 +300,17 @@ struct SessionView: View {
         case .turn(_, let steps, let reply, _, _, _):
             let prose = steps.compactMap { r -> String? in if case .text(_, let t, _) = r { t } else { nil } }
             return ([reply] + prose).joined(separator: "\n")
+        }
+    }
+
+    @ViewBuilder private func blockView(_ b: Block, live: Bool, cwd: String) -> some View {
+        switch b {
+        case .user(let r), .note(let r): RowView(row: r, cwd: cwd, model: model)
+        case .turn(_, let steps, let reply, let label, let ok, let cost):
+            VStack(alignment: .leading, spacing: Space.md) {
+                TurnView(steps: steps, reply: reply, label: label, ok: ok, cost: cost, live: live, cwd: cwd, model: model, id: b.id)
+                ArtifactCards(reply: reply)
+            }
         }
     }
 

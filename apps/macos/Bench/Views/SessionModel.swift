@@ -7,10 +7,6 @@ struct Attachment: Identifiable, Hashable {
     var progress: Double = 0
     var ref: UploadRef?
     var error: String?
-    /// When each event happened, by event id: for time dividers and hover times.
-    private(set) var times: [Int: Date] = [:]
-    /// Edit & resend: text for the composer to take.
-    var editDraft: String?
 }
 
 /// One open session: its transcript, the text streaming in, and what is being attached.
@@ -36,6 +32,10 @@ final class SessionModel {
     var commands: [SlashCommand] = []
     var attachments: [Attachment] = []
     var busyApprovals: Set<String> = []
+    /// When each event happened, by event id: for time dividers and hover times.
+    private(set) var times: [Int: Date] = [:]
+    /// Edit & resend: text for the composer to take.
+    var editDraft: String?
     var thinking: [String: String] = [:]
     var error: String?
 
@@ -163,7 +163,8 @@ final class SessionModel {
     func time(of id: String) -> Date? {
         guard id.hasPrefix("e") else { return nil }
         let digits = id.dropFirst().prefix { $0.isNumber }
-        return Int(digits).flatMap { times[$0] }
+        guard let n = Int(String(digits)) else { return nil }
+        return times[n]
     }
 
     /// Retry: sends again the message that started this turn.
