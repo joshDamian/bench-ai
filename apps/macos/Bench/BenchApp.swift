@@ -147,6 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 struct BenchMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
+
+    init() { BenchFont.register() }
     @AppStorage("menuBar") private var menuBar = true
 
     var body: some Scene {

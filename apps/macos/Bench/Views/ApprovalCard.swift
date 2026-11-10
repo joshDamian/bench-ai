@@ -199,7 +199,7 @@ struct ApprovalCard: View {
         switch approval.tool {
         case "Bash":
             Text(i["command"].string ?? "")
-                .font(.system(size: TypeScale.sm, design: .monospaced))
+                .font(BenchFont.mono(TypeScale.sm))
                 .foregroundStyle(theme.colors.wellText)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)

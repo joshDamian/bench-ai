@@ -47,7 +47,7 @@ struct AddProjectSheet: View {
                     }
                     GridRow {
                         Text(source == .clone ? "Clone into" : "Created in").foregroundStyle(theme.colors.muted)
-                        Text(projectsDir).font(.system(size: 12, design: .monospaced))
+                        Text(projectsDir).font(BenchFont.mono(12))
                     }
                 }
                 .font(.system(size: 13))

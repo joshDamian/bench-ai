@@ -385,7 +385,7 @@ struct Composer: View {
                     ForEach(Array(list.enumerated()), id: \.offset) { i, c in
                         Button { choose(c) } label: {
                             HStack(spacing: 10) {
-                                Text("/\(c.name)").font(.system(size: 13, design: .monospaced)).fixedSize()
+                                Text("/\(c.name)").font(BenchFont.mono(13)).fixedSize()
                                 Text(c.description ?? "").font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1)
                                 Spacer(minLength: 0)
                             }

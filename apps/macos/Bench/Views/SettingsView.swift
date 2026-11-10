@@ -140,7 +140,7 @@ private struct ServerPage: View {
         Group2 {
             GroupRow(title: "Server", first: true) {
                 Text(store.api.config.baseURL.replacingOccurrences(of: #"^https?://"#, with: "", options: .regularExpression))
-                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.muted).textSelection(.enabled).lineLimit(1)
+                    .font(BenchFont.mono(12)).foregroundStyle(theme.colors.muted).textSelection(.enabled).lineLimit(1)
             }
             GroupRow(title: "Status") {
                 HStack(spacing: 6) {
@@ -163,11 +163,11 @@ private struct ServerPage: View {
             GroupRow(title: "This Mac", first: true) { Text(store.me?.device?.name ?? (store.api.config.isLoopback ? "On the server itself" : "Paired")).foregroundStyle(theme.colors.muted) }
             GroupRow(title: "Projects folder") {
                 if editingDir {
-                    TextField("", text: $projectsDir).textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced)).frame(width: 240)
+                    TextField("", text: $projectsDir).textFieldStyle(.roundedBorder).font(BenchFont.mono(12)).frame(width: 240)
                         .onSubmit { saveDir() }
                     Button("Save") { saveDir() }.buttonStyle(TonalButton(height: 24))
                 } else {
-                    Text(projectsDir).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.muted)
+                    Text(projectsDir).font(BenchFont.mono(12)).foregroundStyle(theme.colors.muted)
                     Button("Change…") { editingDir = true }.buttonStyle(TonalButton(height: 24))
                 }
             }

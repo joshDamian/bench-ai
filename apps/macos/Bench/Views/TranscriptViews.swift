@@ -11,9 +11,9 @@ struct BenchMarkdown: View {
         let c = theme.colors
         Markdown(text)
             .markdownCodeSyntaxHighlighter(BenchHighlighter(dark: theme.dark, base: c.wellText))
-            .markdownTextStyle { ForegroundColor(c.text); FontSize(14.5) }
+            .markdownTextStyle { FontFamily(.custom(BenchFont.reading)); ForegroundColor(c.text); FontSize(14.5) }
             .markdownTextStyle(\.code) {
-                FontFamilyVariant(.monospaced); FontSize(.em(0.88))
+                FontFamily(.custom(BenchFont.mono)); FontSize(.em(0.86))
                 ForegroundColor(c.text); BackgroundColor(c.fill(0.08))
             }
             .markdownTextStyle(\.strong) { FontWeight(.semibold) }
@@ -56,7 +56,7 @@ struct BenchMarkdown: View {
                     Rectangle().fill(c.fill(0.06)).frame(height: 1)
                     ScrollView(.horizontal, showsIndicators: false) {
                         b.label
-                            .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(12.5) }
+                            .markdownTextStyle { FontFamily(.custom(BenchFont.mono)); FontSize(12.5) }
                             .relativeLineSpacing(.em(0.3))
                             .padding(12)
                     }
@@ -157,7 +157,7 @@ struct RowView: View {
         case .check(_, let ok, let head, let command, let output):
             Disclosure(head: {
                 Pill(text: head, color: ok ? theme.colors.good : theme.colors.bad)
-                Text(command).font(.system(size: TypeScale.sm, design: .monospaced)).lineLimit(1)
+                Text(command).font(BenchFont.mono(TypeScale.sm)).lineLimit(1)
             }) { CodeBlock(text: output) }
         }
     }
@@ -190,7 +190,7 @@ struct TurnView: View {
                             LiveDot()
                             Text("Running").foregroundStyle(theme.colors.text.opacity(0.8))
                             Text(Transcript.headline(current, cwd: cwd))
-                                .font(.system(size: TypeScale.sm, design: .monospaced))
+                                .font(BenchFont.mono(TypeScale.sm))
                                 .lineLimit(1).truncationMode(.middle)
                             Text("· step \(count)").fixedSize()
                         } else if live && !done {
@@ -402,7 +402,7 @@ struct CodeBlock: View {
     var body: some View {
         ScrollView(.horizontal) {
             Text(text)
-                .font(.system(size: TypeScale.sm, design: .monospaced))
+                .font(BenchFont.mono(TypeScale.sm))
                 .foregroundStyle(color ?? theme.colors.wellText)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: true, vertical: false)
@@ -435,7 +435,7 @@ struct MiniDiff: View {
 
     private func line(_ s: String, _ c: Color) -> some View {
         Text(s)
-            .font(.system(size: TypeScale.sm, design: .monospaced))
+            .font(BenchFont.mono(TypeScale.sm))
             .foregroundStyle(c)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(c.opacity(0.10))

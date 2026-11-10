@@ -125,3 +125,23 @@ struct RailPalette {
             vivid: [hex(0x8f78f0), hex(0x6b52dc), hex(0x5640c4)], vividGlow: hex(0x5b40c4).opacity(0.35), rowWash: hex(0x6b52dc).opacity(0.10))
     }
 }
+
+
+/// The terminal's colours: muted and even in brightness, built around Bench's greys and
+/// violet so a prompt reads as calm teal and lilac, not neon (the canvas's Terminal boards).
+struct TerminalPalette {
+    let bg: Color, fg: Color, cursor: Color, selection: Color
+    /// The 16 ANSI colours: black red green yellow blue magenta cyan white, then bright.
+    let ansi: [UInt32]
+
+    static func of(dark: Bool, bg: Color) -> TerminalPalette {
+        dark ? TerminalPalette(
+            bg: bg, fg: hex(0xd7dae0), cursor: hex(0xb9a3ff), selection: hex(0xb9a3ff).opacity(0.28),
+            ansi: [0x3a3d45, 0xec7a7a, 0x7fcf9b, 0xe2c07d, 0x7aa7ff, 0xb9a3ff, 0x6fcfd6, 0xc9ccd3,
+                   0x80858f, 0xf59a9a, 0x9be0b2, 0xecd29a, 0x9bbdff, 0xcdbcff, 0x91dde2, 0xf1f2f4])
+        : TerminalPalette(
+            bg: bg, fg: hex(0x2a2c31), cursor: hex(0x6b52dc), selection: hex(0x6b52dc).opacity(0.18),
+            ansi: [0x2a2c31, 0xc4453c, 0x1f8a5b, 0xa06d00, 0x2f6fdb, 0x6b52dc, 0x0f7c86, 0x7a7f88,
+                   0x5f636b, 0xd65a50, 0x27a06b, 0xb88200, 0x4a85ea, 0x8068e6, 0x1593a0, 0x1b1c1f])
+    }
+}

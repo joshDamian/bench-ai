@@ -232,7 +232,7 @@ private struct ChangesTab: View {
                             Text("+\(diff.reduce(0) { $0 + $1.added })").foregroundStyle(theme.colors.good)
                             Text("−\(diff.reduce(0) { $0 + $1.removed })").foregroundStyle(theme.colors.bad)
                         }
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(BenchFont.mono(12))
                         VStack(spacing: 1) {
                             ForEach(diff) { f in
                                 let abs = absolute(f.path, s?.cwd)
@@ -250,7 +250,7 @@ private struct ChangesTab: View {
                 } else {
                     Text("\(dirty.count) uncommitted in the checkout").font(.system(size: 12.5, weight: .semibold))
                     ForEach(dirty, id: \.self) { p in
-                        Text(p).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.text.opacity(0.85)).lineLimit(1).truncationMode(.head)
+                        Text(p).font(BenchFont.mono(12)).foregroundStyle(theme.colors.text.opacity(0.85)).lineLimit(1).truncationMode(.head)
                             .contextMenu { FileActions(path: absolute(p, s?.cwd), line: nil) }
                             .onDrag { dragItem(absolute(p, s?.cwd)) }
                     }
@@ -260,7 +260,7 @@ private struct ChangesTab: View {
                         GroupRow(title: "Check", first: true) {
                             HStack(spacing: 6) {
                                 MarkView(mark: t.check_status == "passed" ? .ready : t.check_status == "failed" ? .failed : t.check_status == "running" ? .running : .idle)
-                                Text(c).font(.system(size: 12, design: .monospaced)).lineLimit(1)
+                                Text(c).font(BenchFont.mono(12)).lineLimit(1)
                             }
                         }
                     }
@@ -275,12 +275,12 @@ private struct ChangesTab: View {
 
     private func fileRow(_ f: DiffFile) -> some View {
         HStack(spacing: Space.sm) {
-            Text(f.status).font(.system(size: 11, design: .monospaced))
+            Text(f.status).font(BenchFont.mono(11))
                 .foregroundStyle(f.status == "A" ? theme.colors.good : f.status == "D" ? theme.colors.bad : theme.colors.warn)
                 .frame(width: 12)
             Text(f.path).font(.system(size: 12.5)).lineLimit(1).truncationMode(.head)
             Spacer(minLength: Space.xs)
-            Text("+\(f.added) −\(f.removed)").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.colors.muted).fixedSize()
+            Text("+\(f.added) −\(f.removed)").font(BenchFont.mono(11)).foregroundStyle(theme.colors.muted).fixedSize()
         }
         .padding(.horizontal, Space.sm)
         .frame(height: 28)
@@ -307,7 +307,7 @@ struct MiniDiffView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(file.lines.prefix(60).enumerated()), id: \.offset) { _, l in
                 Text(l.isEmpty ? " " : l)
-                    .font(.system(size: 11.5, design: .monospaced))
+                    .font(BenchFont.mono(11.5))
                     .lineLimit(1)
                     .foregroundStyle(l.hasPrefix("@@") ? theme.colors.muted : l.hasPrefix("+") ? theme.colors.good : l.hasPrefix("-") ? theme.colors.bad : theme.colors.text.opacity(0.8))
                     .padding(.horizontal, 10)

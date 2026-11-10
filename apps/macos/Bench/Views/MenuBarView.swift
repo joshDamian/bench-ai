@@ -85,7 +85,7 @@ struct MenuBarView: View {
                     .font(.system(size: 11.5)).foregroundStyle(theme.colors.muted).lineLimit(1)
             }
             if let d = PanelText.detail(a, cwd: s?.cwd ?? "") {
-                Text(d).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.wellText).lineLimit(3)
+                Text(d).font(BenchFont.mono(12)).foregroundStyle(theme.colors.wellText).lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10).padding(.vertical, 7)
                     .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: 7))

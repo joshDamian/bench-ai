@@ -18,7 +18,7 @@ final class RemoteShell: NSObject, TerminalViewDelegate {
         self.query = query
         super.init()
         view.terminalDelegate = self
-        view.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+        view.font = BenchFont.monoNS(13)
     }
 
     func connect() {
@@ -139,14 +139,13 @@ struct RemoteTerminalView: View {
                 }
             }
             .foregroundStyle(theme.colors.muted)
-            .padding(.horizontal, Space.sm)
-            .frame(height: 32)
-            Divider().overlay(theme.colors.line)
+            .padding(.leading, 14).padding(.trailing, 10)
+            .frame(height: 38)
             ZStack {
                 ForEach(tabs, id: \.self) { id in
                     if let shell = shells[id] {
                         TerminalHost(shell: shell)
-                            .padding(Space.sm)
+                            .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 12)
                             .opacity(id == current ? 1 : 0)
                             .allowsHitTesting(id == current)
                     }
@@ -154,9 +153,7 @@ struct RemoteTerminalView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: theme.radiusSm))
-        .overlay(RoundedRectangle(cornerRadius: theme.radiusSm).strokeBorder(theme.colors.line))
-        .padding(Space.lg)
+        .background(theme.colors.bg)
         // The split's divider stops at the sidebar card's 8pt margin; this carries it on to
         // the card, as the header and tab lines do.
         .overlay(alignment: .topLeading) {
@@ -183,7 +180,7 @@ struct RemoteTerminalView: View {
         return HStack(spacing: 6) {
             Circle().fill(problems[id] == nil ? theme.colors.good : theme.colors.warn).frame(width: 5, height: 5)
             Text(label(id, index: index)).lineLimit(1).truncationMode(.head)
-                .font(.system(size: TypeScale.xs, design: .monospaced))
+                .font(BenchFont.mono(TypeScale.xs))
             if tabs.count > 1 {
                 Button { closeTab(id) } label: { Image(systemName: "xmark").font(.system(size: 7, weight: .bold)).frame(width: 14, height: 14) }
                     .buttonStyle(.plain).opacity(on ? 1 : 0.5)
@@ -210,8 +207,14 @@ struct RemoteTerminalView: View {
         let s = RemoteShell(api: store.api, query: "\(query)&tab=\(id)")
         s.onState = { problems[id] = $0 }
         s.onTitle = { titles[id] = $0 }
-        s.view.nativeBackgroundColor = NSColor(theme.colors.wellBg)
-        s.view.nativeForegroundColor = NSColor(theme.colors.wellText)
+        let pal = TerminalPalette.of(dark: theme.dark, bg: theme.colors.bg)
+        s.view.nativeBackgroundColor = NSColor(pal.bg)
+        s.view.nativeForegroundColor = NSColor(pal.fg)
+        s.view.caretColor = NSColor(pal.cursor)
+        s.view.selectedTextBackgroundColor = NSColor(pal.selection)
+        s.view.installColors(pal.ansi.map { v in
+            SwiftTerm.Color(red8: UInt16((v >> 16) & 0xff), green8: UInt16((v >> 8) & 0xff), blue8: UInt16(v & 0xff))
+        })
         shells[id] = s
         s.connect()
     }

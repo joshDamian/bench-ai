@@ -140,7 +140,7 @@ struct ChangedFilesCard: View {
         return HStack(spacing: Space.sm) {
             Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
                 .rotationEffect(.degrees(isOpen ? 90 : 0)).foregroundStyle(theme.colors.muted)
-            Text(f.shown).font(.system(size: TypeScale.sm, design: .monospaced)).lineLimit(1).truncationMode(.head)
+            Text(f.shown).font(BenchFont.mono(TypeScale.sm)).lineLimit(1).truncationMode(.head)
             Spacer(minLength: Space.sm)
             LineCounts(added: f.added, removed: f.removed)
             if f.isLocal, let e = Editors.preferred {
@@ -174,6 +174,6 @@ struct LineCounts: View {
             if added > 0 { Text("+\(added)").foregroundStyle(theme.colors.good) }
             if removed > 0 { Text("−\(removed)").foregroundStyle(theme.colors.bad) }
         }
-        .font(.system(size: TypeScale.xs, design: .monospaced))
+        .font(BenchFont.mono(TypeScale.xs))
     }
 }
