@@ -24,6 +24,12 @@ final class SessionModel {
         return m
     }
 
+    /// Where the thread was scrolled when its tab was left: following the end, or the first
+    /// block in view. Kept here because the model outlives the view between tab switches.
+    var followingEnd = true
+    var scrollAnchor: String?
+    @ObservationIgnored var visible: Set<String> = []
+
     /// Stops following a session whose tab closed.
     static func release(_ sessionId: String) {
         kept.removeValue(forKey: sessionId)?.close()

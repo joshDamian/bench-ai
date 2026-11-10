@@ -60,6 +60,26 @@ struct SessionView: View {
         }
     }
 
+    /// The end of a thread, once its rows have been measured: a lazy list estimates the
+    /// heights of rows it hasn't drawn, so one jump lands short of the end on a long thread.
+    private func settleAtEnd(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo("bottom", anchor: .bottom)
+        for delay in [0.05, 0.2, 0.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if model.followingEnd || delay == 0.05 { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+        }
+    }
+
+    private func restoreScroll(_ proxy: ScrollViewProxy) {
+        if !model.followingEnd, let a = model.scrollAnchor {
+            DispatchQueue.main.async { proxy.scrollTo(a, anchor: .top) }
+        } else {
+            model.followingEnd = true
+            settleAtEnd(proxy)
+        }
+    }
+
     /// The start of Claude's last reply, for the floating composer's context line.
     private var lastReply: String? {
         for b in model.blocks.reversed() {
@@ -217,6 +237,8 @@ struct SessionView: View {
                         blockView(b, live: running && b.id == blocks.last?.id, cwd: cwd)
                             .environment(\.findCurrent, currentHit == b.id)
                             .id(b.id)
+                            .onAppear { model.visible.insert(b.id) }
+                            .onDisappear { model.visible.remove(b.id) }
                     }
                     if !model.streamText.isEmpty || !model.streamThinking.isEmpty {
                         VStack(alignment: .leading, spacing: Space.xs) {
@@ -244,8 +266,8 @@ struct SessionView: View {
                         .id("approval")
                     }
                     Color.clear.frame(height: approvals.isEmpty ? 150 : 24).id("bottom")
-                        .onAppear { follow = true }
-                        .onDisappear { follow = false }
+                        .onAppear { follow = true; model.followingEnd = true }
+                        .onDisappear { follow = false; model.followingEnd = false }
                 }
                 .environment(\.findQuery, finding ? query : "")
                 .frame(maxWidth: 680)
@@ -254,11 +276,18 @@ struct SessionView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollContentBackground(.hidden)
+            .defaultScrollAnchor(.bottom)
             .background(theme.colors.bg)
+            // Back to where the tab was left, or to the end on a first open.
+            .onAppear { restoreScroll(proxy) }
+            .onDisappear {
+                let blocks = model.blocks
+                model.scrollAnchor = blocks.first { model.visible.contains($0.id) }?.id
+            }
             .onChange(of: model.rows.count) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: approvals.first?.id) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
-            .onChange(of: model.loading) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: model.loading) { _, loading in if !loading && model.followingEnd { settleAtEnd(proxy) } }
             .modifier(SessionKeys(proxy: proxy, follow: follow, seen: $seen, finding: $finding, findFocused: $findFocused,
                                   model: model, jump: { jumpTurn($0, proxy) }))
             .overlay(alignment: .bottom) {
