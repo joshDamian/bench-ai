@@ -75,7 +75,8 @@ struct FloatingComposer<Content: View>: View {
             }
             content
         }
-        .frame(width: 460)
+        .padding(.bottom, 6)
+        .frame(width: 540)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .background(theme.colors.surface2.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.colors.fill(0.14)))

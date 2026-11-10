@@ -76,13 +76,15 @@ struct SessionView: View {
             sidePanel()
                 .overlay {
                     FloatingComposer(files: files, lastReply: lastReply) {
-                        Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: true, focused: $composerFocused)
+                        Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: true, focused: $composerFocused, floating: true)
                     } onOpen: { composerFocused = true }
                 }
         } else {
             PanelDivider(width: $panelWidth)
+            // As wide as dragged, but never at the conversation's expense: it keeps 420 points.
             sidePanel()
-                .frame(width: panelWidth)
+                .frame(minWidth: 380, idealWidth: panelWidth, maxWidth: panelWidth)
+                .layoutPriority(1)
         }
     }
 
@@ -123,6 +125,7 @@ struct SessionView: View {
                     conversation
                 }
             }
+            .frame(minWidth: files.hasSide && !embedded ? 420 : nil)
             }
             if !embedded && files.hasSide { artifactSide() }
             if !embedded && showsInspector && app.showInspector && hasInspector(session) && !files.hasSide {
@@ -442,6 +445,8 @@ struct Composer: View {
     let running: Bool
     var embedded = false
     var focused: FocusState<Bool>.Binding
+    /// Inside the full view's floating window, which draws the card itself.
+    var floating = false
     @State private var importing = false
     @State private var pasteMonitor: Any?
 
@@ -621,17 +626,14 @@ struct Composer: View {
                     }
                 }
             }
-            .padding(.leading, 18)
-            .padding([.top, .trailing], Space.md)
+            .padding(.leading, floating ? 14 : 18)
+            .padding([.top, .trailing], floating ? Space.sm : Space.md)
             .padding(.bottom, 10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
-            .background(theme.colors.surface3.opacity(0.6), in: RoundedRectangle(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(theme.colors.fill(0.1)))
-            .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+            .modifier(ComposerCard(on: !floating))
         }
         .frame(maxWidth: 720)
-        .padding(.horizontal, 40)
-        .padding(.bottom, 18)
+        .padding(.horizontal, floating ? 0 : 40)
+        .padding(.bottom, floating ? 0 : 18)
         .frame(maxWidth: .infinity)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { model.attach(urls) }
@@ -848,6 +850,23 @@ private struct SessionKeys: ViewModifier {
             model.answer(a, ["allow": true, "mode": "acceptEdits"])
         } else if PanelText.answerable(a) {
             model.answer(a, ["allow": true])
+        }
+    }
+}
+
+/// The composer's card: material, edge and shadow, unless something around it draws one.
+struct ComposerCard: ViewModifier {
+    @Environment(\.theme) private var theme
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+                .background(theme.colors.surface3.opacity(0.6), in: RoundedRectangle(cornerRadius: 22))
+                .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(theme.colors.fill(0.1)))
+                .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+        } else {
+            content
         }
     }
 }
