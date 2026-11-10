@@ -4,6 +4,18 @@ import WebKit
 
 /// A page a session's dev server serves, as the preview shows it: a port on the server's
 /// machine and a path on it.
+extension URL {
+    /// The path and query exactly as written: Foundation's `path` drops a trailing slash,
+    /// and /projects/moments/ is not /projects/moments to a static server.
+    var pathAndQuery: String {
+        let c = URLComponents(url: self, resolvingAgainstBaseURL: false)
+        var p = c?.percentEncodedPath ?? path
+        if p.isEmpty { p = "/" }
+        if let q = c?.percentEncodedQuery { p += "?\(q)" }
+        return p
+    }
+}
+
 struct PreviewTarget: Equatable, Hashable {
     let port: Int
     var path: String
@@ -18,9 +30,7 @@ struct PreviewTarget: Equatable, Hashable {
         let local = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].contains(host) || host.hasSuffix(".localhost")
             || hosts.contains(host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")))
         guard local else { return nil }
-        var path = url.path.isEmpty ? "/" : url.path
-        if let q = url.query { path += "?\(q)" }
-        return PreviewTarget(port: port, path: path)
+        return PreviewTarget(port: port, path: url.pathAndQuery)
     }
 
     /// The localhost links in a reply, one per port.
@@ -173,9 +183,7 @@ struct PreviewWebView: NSViewRepresentable {
                     self.web.canGoForward = v.canGoForward
                     self.web.loading = v.isLoading
                     if let u = v.url, let host = u.host, host.hasPrefix("p"), let port = Int(host.dropFirst()) {
-                        var path = u.path.isEmpty ? "/" : u.path
-                        if let q = u.query { path += "?\(q)" }
-                        self.web.current = PreviewTarget(port: port, path: path)
+                        self.web.current = PreviewTarget(port: port, path: u.pathAndQuery)
                     }
                 }
             }
@@ -215,8 +223,7 @@ final class PreviewScheme: NSObject, WKURLSchemeHandler {
         guard let url = task.request.url, let host = url.host, host.hasPrefix("p"), let port = Int(host.dropFirst()) else {
             task.didFailWithError(URLError(.badURL)); return
         }
-        var path = url.path.isEmpty ? "/" : url.path
-        if let q = url.query { path += "?\(q)" }
+        let path = url.pathAndQuery
         var r = api.request("/api/sessions/\(BenchAPI.enc(sessionId))/preview/\(port)\(path.hasPrefix("/") ? path : "/" + path)",
                             method: task.request.httpMethod ?? "GET")
         r.httpBody = task.request.httpBody
@@ -232,7 +239,7 @@ final class PreviewScheme: NSObject, WKURLSchemeHandler {
             r.setValue(isMain ? "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" : "*/*", forHTTPHeaderField: "Accept")
         }
         if isMain { r.setValue("document", forHTTPHeaderField: "Sec-Fetch-Dest"); r.setValue("navigate", forHTTPHeaderField: "Sec-Fetch-Mode") }
-        let dt = URLSession.shared.dataTask(with: r) { [weak self] data, response, error in
+        let dt = Self.session.dataTask(with: r) { [weak self] data, response, error in
             // WebKit wants its scheme tasks answered on the main thread.
             DispatchQueue.main.async { self?.finish(task, id: id, url: url, port: port, isMain: isMain, data: data, response: response, error: error) }
         }
@@ -260,6 +267,16 @@ final class PreviewScheme: NSObject, WKURLSchemeHandler {
                 return
             }
             if isMain { Task { @MainActor in self.web?.down = false } }
+            // A redirect: the page goes there, as a browser would; anything else is fetched
+            // from there on WebKit's next request.
+            if isMain, let http, (300..<400).contains(http.statusCode), let loc = http.value(forHTTPHeaderField: "Location"),
+               let to = Self.redirectTarget(loc, from: url, port: port) {
+                let target = to.absoluteString.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                let html = "<!doctype html><meta charset=utf-8><script>location.replace(\"\(target)\")</script>"
+                let res = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/html; charset=utf-8"])!
+                task.didReceive(res); task.didReceive(Data(html.utf8)); task.didFinish()
+                return
+            }
             var headers = http?.allHeaderFields as? [String: String] ?? [:]
             headers.removeValue(forKey: "Content-Encoding")
             headers.removeValue(forKey: "Content-Length")
@@ -268,6 +285,25 @@ final class PreviewScheme: NSObject, WKURLSchemeHandler {
             task.didReceive(data ?? Data())
             task.didFinish()
         }
+    }
+
+    /// Redirects come back to WebKit rather than being followed here: a Location of
+    /// /projects/moments/ is on the dev server, and following it from this side would ask
+    /// Bench's own server for that page.
+    private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ s: URLSession, task: URLSessionTask, willPerformHTTPRedirection r: HTTPURLResponse, newRequest: URLRequest) async -> URLRequest? { nil }
+    }
+    private static let session = URLSession(configuration: .default, delegate: NoRedirects(), delegateQueue: nil)
+
+    /// Where a redirect's Location points, as a preview address: the same port for a
+    /// relative one or one back to the server's own localhost, else the open web.
+    static func redirectTarget(_ location: String, from url: URL, port: Int) -> URL? {
+        guard let loc = URL(string: location, relativeTo: url)?.absoluteURL else { return nil }
+        if loc.scheme == "bench-preview" { return loc }
+        if let h = loc.host?.lowercased(), ["localhost", "127.0.0.1", "0.0.0.0"].contains(h) {
+            return URL(string: "bench-preview://p\(loc.port ?? port)\(loc.pathAndQuery)")
+        }
+        return loc
     }
 
     func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {
