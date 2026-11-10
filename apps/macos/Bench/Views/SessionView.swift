@@ -60,17 +60,25 @@ struct SessionView: View {
         }
     }
 
+    /// The start of Claude's last reply, for the floating composer's context line.
+    private var lastReply: String? {
+        for b in model.blocks.reversed() {
+            if case .turn(_, _, let reply, _, _, _) = b, !reply.isEmpty {
+                return reply.replacingOccurrences(of: #"[*_`#>]+"#, with: "", options: .regularExpression)
+                    .components(separatedBy: .newlines).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            }
+        }
+        return nil
+    }
+
     @ViewBuilder private func artifactSide() -> some View {
         if files.full {
-            VStack(spacing: 0) {
-                sidePanel()
-                Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: false, focused: $composerFocused)
-                    .frame(maxWidth: 760)
-                    .padding(.horizontal, 24).padding(.bottom, 14).padding(.top, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(theme.colors.bg)
-                    .overlay(alignment: .top) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1) }
-            }
+            sidePanel()
+                .overlay {
+                    FloatingComposer(files: files, lastReply: lastReply) {
+                        Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: true, focused: $composerFocused)
+                    } onOpen: { composerFocused = true }
+                }
         } else {
             PanelDivider(width: $panelWidth)
             sidePanel()

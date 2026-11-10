@@ -75,6 +75,7 @@ struct PreviewPanel: View {
             .padding(.horizontal, 10).frame(height: 30)
             .background(theme.colors.fill(0.07), in: RoundedRectangle(cornerRadius: 8))
             .padding(.horizontal, 4)
+            if files.full && files.composer == "hidden" { ReplyButton(files: files) }
             Button("Open in Browser") { openInBrowser() }.buttonStyle(TonalButton(height: 26))
             icon(files.full ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                  files.full ? "Show the Conversation (⇧⌘↩)" : "Full View (⇧⌘↩)") { files.full.toggle() }

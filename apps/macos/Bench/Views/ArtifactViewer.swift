@@ -135,6 +135,7 @@ struct ArtifactPanel: View {
                 icon("arrow.up.forward.app", "Open in Default App") { files.openWith(file) }
                 icon(files.full ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                      files.full ? "Show the Conversation (⇧⌘↩)" : "Full View (⇧⌘↩)") { files.full.toggle() }
+                if files.full && files.composer == "hidden" { ReplyButton(files: files) }
                 icon("xmark", "Close") { files.viewing = nil; files.full = false }
             }
             .foregroundStyle(theme.colors.muted)

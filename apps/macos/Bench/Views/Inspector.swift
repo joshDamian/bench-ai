@@ -55,6 +55,11 @@ final class SessionFiles {
         serverHosts = hosts
     }
 
+    /// The composer in full view: "open", "pill" or "hidden", kept between uses.
+    var composer: String = UserDefaults.standard.string(forKey: "fullComposer") ?? "open" {
+        didSet { UserDefaults.standard.set(composer, forKey: "fullComposer") }
+    }
+
     /// Whether the viewer fills the session, the conversation set aside.
     var full = false
     /// A short note at the bottom of the window: "Saved … to Downloads".
