@@ -41,6 +41,7 @@ struct Sidebar: View {
             if let s = store.session(v) { model.rail = s.project_id.flatMap { store.project($0) != nil ? $0 : nil } ?? "ask" }
             else if v.hasPrefix("task:"), let t = store.task(String(v.dropFirst(5))), let p = t.project_id { model.rail = p }
             else if v.hasPrefix("project:") { model.rail = String(v.dropFirst(8)) }
+            else if v.hasPrefix("files:") { model.rail = String(v.dropFirst(6)) }
         }
     }
 
@@ -114,6 +115,17 @@ struct Sidebar: View {
         .buttonStyle(.plain)
         .allowsHitTesting(project != nil)
         .help(project.map { "Open \($0.name)" } ?? "")
+        .overlay(alignment: .trailing) {
+            if let project {
+                Button { model.openTab("files:\(project.id)") } label: {
+                    Image(systemName: "folder").font(.system(size: 12)).frame(width: 26, height: 26).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.colors.muted)
+                .help("Browse \(project.name)'s files (⌃⇧F)")
+                .accessibilityLabel("Files")
+            }
+        }
         .padding(.bottom, 4)
         .padding(.horizontal, 6).padding(.top, 4)
     }

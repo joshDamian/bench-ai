@@ -617,6 +617,36 @@ route('GET', '/api/github/repos', () => svc.githubRepos());
 route('POST', '/api/projects', ({ body }) => svc.addProject(body));
 route('PATCH', '/api/projects/:id', ({ params, body }) => (body.routing !== undefined ? svc.setProjectRouting(params[0], body.routing) : null, svc.store.updateProject(params[0], { ...body, routing: undefined })));
 route('DELETE', '/api/projects/:id', ({ params }) => (svc.removeProject(params[0]), { ok: true }));
+// The project's files, for the Files tab: the list, and one file's text to read or save.
+// Paths stay inside the project; text only, up to 2 MB.
+route('GET', '/api/projects/:id/tree', async ({ params }) => ({ paths: await listPaths(svc.project(params[0]).path, true) }));
+route('GET', '/api/projects/:id/text', ({ params, u }) => {
+  const full = projectPath(params[0], u.searchParams.get('path'));
+  const st = fs.statSync(full);
+  if (!st.isFile()) throw httpError(400, 'Not a file');
+  if (st.size > 2 << 20) throw httpError(413, 'Too large to open here');
+  const data = fs.readFileSync(full);
+  if (data.includes(0)) throw httpError(415, 'Not a text file');
+  return { path: u.searchParams.get('path'), text: data.toString('utf8'), mtime: st.mtimeMs, size: st.size };
+});
+route('PUT', '/api/projects/:id/text', ({ params, body }) => {
+  const full = projectPath(params[0], body.path);
+  if (typeof body.text !== 'string') throw httpError(400, 'No text');
+  const st = fs.statSync(full);
+  if (body.mtime && Math.abs(st.mtimeMs - body.mtime) > 1) throw httpError(409, 'The file changed since you opened it');
+  fs.writeFileSync(full, body.text);
+  pathCache.clear();
+  return { ok: true, mtime: fs.statSync(full).mtimeMs };
+});
+/** @param {string} id @param {unknown} rel */
+function projectPath(id, rel) {
+  const root = fs.realpathSync(svc.project(id).path);
+  if (typeof rel !== 'string' || !rel) throw httpError(400, 'No path');
+  const full = path.resolve(root, rel);
+  let real; try { real = fs.realpathSync(full); } catch { throw httpError(404, 'No such file'); }
+  if (!real.startsWith(root + path.sep)) throw httpError(403, 'Outside the project');
+  return real;
+}
 route('GET', '/api/projects/:id/git', ({ params }) => svc.git(params[0]));
 route('GET', '/api/projects/:id/diff', ({ params }) => svc.checkoutDiff(params[0]));
 route('POST', '/api/projects/:id/fetch', ({ params }) => svc.fetch(params[0]));
@@ -1066,8 +1096,9 @@ server.listen(port, host, () => {
 /** @type {Map<string, {at:number, list:string[]}>} */
 const pathCache = new Map();
 /** @param {string} cwd @returns {Promise<string[]>} */
-async function listPaths(cwd) {
-  const hit = pathCache.get(cwd);
+async function listPaths(cwd, all = false) {
+  const key = all ? `${cwd}\0all` : cwd;
+  const hit = pathCache.get(key);
   if (hit && Date.now() - hit.at < 15000) return hit.list;
   const { execFile } = await import('node:child_process');
   let list = await new Promise((done) => execFile('git', ['ls-files', '-co', '--exclude-standard'], { cwd, maxBuffer: 32 << 20 }, (e, out) => done(e ? null : out.split('\n').filter(Boolean))));
@@ -1085,7 +1116,7 @@ async function listPaths(cwd) {
     };
     walk('', 0);
   }
-  pathCache.set(cwd, { at: Date.now(), list });
+  pathCache.set(key, { at: Date.now(), list });
   return list;
 }
 /** Best first: a name starting with the query, then the name containing it, then the path; subsequence last. @param {string[]} list @param {string} q */
@@ -1101,3 +1132,5 @@ function rankPaths(list, q) {
   }
   return scored.sort((a, b) => /** @type {number} */(a[0]) - /** @type {number} */(b[0]) || /** @type {number} */(a[1]) - /** @type {number} */(b[1])).map((x) => /** @type {string} */(x[2]));
 }
+/** @param {number} status @param {string} message */
+function httpError(status, message) { return Object.assign(new Error(message), { status }); }
