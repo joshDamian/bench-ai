@@ -43,6 +43,18 @@ final class SessionFiles {
 
     func open(_ t: PreviewTarget) { viewing = nil; page = t }
 
+    /// The names and addresses the server's machine answers to - its Tailscale address,
+    /// its host name - so a link to any of them opens in the preview.
+    private(set) var serverHosts: Set<String> = []
+
+    func loadHosts() async {
+        var hosts = Set([URL(string: api.config.baseURL)?.host?.lowercased()].compactMap { $0 })
+        if let d = try? await api.call("/api/hosts"), let v = try? JSONDecoder().decode(JSONValue.self, from: d) {
+            for h in v["hosts"].array.compactMap(\.string) { hosts.insert(h.lowercased()) }
+        }
+        serverHosts = hosts
+    }
+
     /// Whether the viewer fills the session, the conversation set aside.
     var full = false
     /// A short note at the bottom of the window: "Saved … to Downloads".
@@ -58,7 +70,10 @@ final class SessionFiles {
     @ObservationIgnored private var fetched: [String: URL] = [:]
     @ObservationIgnored private var fetching: [String: Task<URL?, Never>] = [:]
 
-    init(api: BenchAPI, sessionId: String) { self.api = api; self.sessionId = sessionId }
+    init(api: BenchAPI, sessionId: String) {
+        self.api = api; self.sessionId = sessionId
+        Task { await loadHosts() }
+    }
 
     private static let pattern = try! NSRegularExpression(pattern: #"(?:~?/|\.{1,2}/)?[\w@+.-]*[\w@+-](?:/[\w@+.-]+)*"#)
 
