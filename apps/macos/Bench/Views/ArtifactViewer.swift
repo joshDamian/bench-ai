@@ -288,7 +288,10 @@ struct MarkdownDoc: View {
             if !fence, let m = line.range(of: #"^#{1,3} "#, options: .regularExpression) {
                 flush()
                 level = line[m].filter { $0 == "#" }.count
-                title = String(line[m.upperBound...]).trimmingCharacters(in: .whitespaces)
+                title = String(line[m.upperBound...])
+                    .replacingOccurrences(of: #"[*_`]+"#, with: "", options: .regularExpression)
+                    .replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespaces)
                 body = [line]
             } else {
                 body.append(line)
@@ -351,9 +354,9 @@ struct MarkdownDoc: View {
                                     .onAppear { if s.title != nil && abs(s.id - section) == 1 { section = s.id } }
                             }
                         }
-                        .frame(maxWidth: 640, alignment: .leading)
+                        .frame(maxWidth: 720, alignment: .leading)
                         .padding(.horizontal, 28).padding(.vertical, 22)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity)
                     }
                 }
             }
@@ -599,11 +602,18 @@ struct ImageViewer: View {
                 Checkerboard()
                 if let image {
                     let fit = min(geo.size.width / max(image.size.width, 1), geo.size.height / max(image.size.height, 1), 1)
-                    let scale = zoom ?? fit
-                    ScrollView([.horizontal, .vertical]) {
-                        Image(nsImage: image).resizable().interpolation(scale > 1 ? .none : .high)
-                            .frame(width: image.size.width * scale, height: image.size.height * scale)
-                            .frame(minWidth: geo.size.width, minHeight: geo.size.height)
+                    if let scale = zoom {
+                        ScrollView([.horizontal, .vertical]) {
+                            Image(nsImage: image).resizable().interpolation(scale > 1 ? .none : .high)
+                                .frame(width: image.size.width * scale, height: image.size.height * scale)
+                                .frame(minWidth: geo.size.width, minHeight: geo.size.height)
+                        }
+                    } else {
+                        // Fit: the whole image, whatever the pane's size, with a margin round it.
+                        Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: image.size.width, maxHeight: image.size.height)
+                            .padding(20)
+                            .frame(width: geo.size.width, height: geo.size.height)
                     }
                     HStack(spacing: 4) {
                         zoomButton("Fit", on: zoom == nil) { zoom = nil }
