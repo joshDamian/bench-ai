@@ -5,20 +5,34 @@ import SwiftUI
 /// step down clearly, roomy lists, code and tables on tonal wells.
 struct BenchMarkdown: View {
     @Environment(\.theme) private var theme
+    @Environment(\.findQuery) private var find
+    @Environment(\.findCurrent) private var current
     let text: String
 
     var body: some View {
         let c = theme.colors
-        Markdown(text)
-            .markdownTextStyle { ForegroundColor(c.text); FontSize(14.5) }
+        Markdown(find.isEmpty ? text : FindMark.mark(text, find))
+            .markdownCodeSyntaxHighlighter(BenchHighlighter(dark: theme.dark, base: c.wellText))
+            .markdownTextStyle { FontFamily(.custom(BenchFont.reading)); ForegroundColor(c.text); FontSize(15) }
+            // While a search is on, matches arrive as ~~ ~~ and are drawn as highlights;
+            // otherwise strikethrough is strikethrough.
+            .markdownTextStyle(\.strikethrough) {
+                if find.isEmpty {
+                    StrikethroughStyle(.single)
+                } else if current {
+                    BackgroundColor(c.warn); ForegroundColor(Color.black.opacity(0.85))
+                } else {
+                    BackgroundColor(c.warn.opacity(0.3))
+                }
+            }
             .markdownTextStyle(\.code) {
-                FontFamilyVariant(.monospaced); FontSize(.em(0.88))
+                FontFamily(.custom(BenchFont.mono)); FontSize(.em(0.86))
                 ForegroundColor(c.text); BackgroundColor(c.fill(0.08))
             }
             .markdownTextStyle(\.strong) { FontWeight(.semibold) }
-            .markdownTextStyle(\.link) { ForegroundColor(c.accent) }
+            .markdownTextStyle(\.link) { ForegroundColor(Color(nsColor: .linkColor)) }  // macOS's link blue, whatever the accent
             .markdownBlockStyle(\.paragraph) { b in
-                b.label.relativeLineSpacing(.em(0.38)).markdownMargin(top: 0, bottom: 12)
+                b.label.relativeLineSpacing(.em(0.42)).markdownMargin(top: 0, bottom: 12)
             }
             .markdownBlockStyle(\.heading1) { b in
                 b.label.markdownTextStyle { FontSize(21); FontWeight(.semibold) }
@@ -55,7 +69,7 @@ struct BenchMarkdown: View {
                     Rectangle().fill(c.fill(0.06)).frame(height: 1)
                     ScrollView(.horizontal, showsIndicators: false) {
                         b.label
-                            .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(12.5); ForegroundColor(c.wellText) }
+                            .markdownTextStyle { FontFamily(.custom(BenchFont.mono)); FontSize(12.5) }
                             .relativeLineSpacing(.em(0.3))
                             .padding(12)
                     }
@@ -103,15 +117,17 @@ struct CopyButton: View {
     }
 }
 
-struct RowView: View {
+/// Your message: a soft bubble; on hover, Edit & resend, Copy and when you sent it.
+struct UserMessage: View {
     @Environment(\.theme) private var theme
-    let row: Row
-    let cwd: String
+    let id: String
+    let text: String
+    let attachments: [String]
     let model: SessionModel
+    @State private var hover = false
 
     var body: some View {
-        switch row {
-        case .user(_, let text, let attachments):
+        VStack(alignment: .trailing, spacing: 3) {
             HStack {
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: Space.xs) {
@@ -120,11 +136,32 @@ struct RowView: View {
                     }
                     if !text.isEmpty { BenchMarkdown(text: text) }
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 15)
                 .padding(.vertical, 10)
-                .background(theme.colors.surface3, in: RoundedRectangle(cornerRadius: 14))
+                .background(theme.colors.fill(theme.dark ? 0.07 : 0.05), in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 18, bottomTrailingRadius: 6, topTrailingRadius: 18))
                 .frame(maxWidth: 520, alignment: .trailing)
             }
+            HoverActions(items: [
+                ("Edit & resend", { model.editDraft = text }),
+                ("Copy", { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }),
+            ], trailing: model.time(of: id).map(TurnTime.clock))
+            .opacity(hover ? 1 : 0)
+        }
+        .contentShape(Rectangle())
+        .onHover { hover = $0 }
+    }
+}
+
+struct RowView: View {
+    @Environment(\.theme) private var theme
+    let row: Row
+    let cwd: String
+    let model: SessionModel
+
+    var body: some View {
+        switch row {
+        case .user(let id, let text, let attachments):
+            UserMessage(id: id, text: text, attachments: attachments, model: model)
         case .text(_, let text, let sub):
             BenchMarkdown(text: text).padding(.leading, sub ? Space.lg : 0)
         case .thinking(let id, let eventId, let index, let length, let text):
@@ -156,7 +193,7 @@ struct RowView: View {
         case .check(_, let ok, let head, let command, let output):
             Disclosure(head: {
                 Pill(text: head, color: ok ? theme.colors.good : theme.colors.bad)
-                Text(command).font(.system(size: TypeScale.sm, design: .monospaced)).lineLimit(1)
+                Text(command).font(BenchFont.mono(TypeScale.sm)).lineLimit(1)
             }) { CodeBlock(text: output) }
         }
     }
@@ -174,14 +211,18 @@ struct TurnView: View {
     let live: Bool
     let cwd: String
     let model: SessionModel
+    var id: String = ""
     @State private var open = false
+    @State private var hover = false
 
     var body: some View {
         let count = Transcript.stepCount(steps)
         let done = label != nil
         let prose = done ? [] : steps.compactMap { r -> String? in if case .text(_, let t, false) = r { t } else { nil } }
         VStack(alignment: .leading, spacing: 10) {
-            if done || count > 0 {
+            if live && !done {
+                ActivityStrip(steps: steps, cwd: cwd, since: model.store.runningSince[model.sessionId])
+            } else if done || count > 0 {
                 Button { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } } label: {
                     HStack(spacing: Space.sm) {
                         if live && !done, let current = steps.reversed().lazy.compactMap({ r -> ToolCall? in
@@ -189,7 +230,7 @@ struct TurnView: View {
                             LiveDot()
                             Text("Running").foregroundStyle(theme.colors.text.opacity(0.8))
                             Text(Transcript.headline(current, cwd: cwd))
-                                .font(.system(size: TypeScale.sm, design: .monospaced))
+                                .font(BenchFont.mono(TypeScale.sm))
                                 .lineLimit(1).truncationMode(.middle)
                             Text("· step \(count)").fixedSize()
                         } else if live && !done {
@@ -199,7 +240,8 @@ struct TurnView: View {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9, weight: .semibold))
                                 .rotationEffect(.degrees(open ? 90 : 0))
-                            Text([label, count > 0 ? "\(count) step\(count == 1 ? "" : "s")" : nil].compactMap { $0 }.joined(separator: " · "))
+                            let files = TurnChanges.of(steps, cwd: cwd).count
+                            Text([label, count > 0 ? "\(count) step\(count == 1 ? "" : "s")" : nil, files > 0 ? "\(files) file\(files == 1 ? "" : "s")" : nil].compactMap { $0 }.joined(separator: " · "))
                                 .foregroundStyle(ok ? theme.colors.muted : theme.colors.bad)
                         }
                     }
@@ -223,21 +265,31 @@ struct TurnView: View {
             }
             ForEach(Array(prose.enumerated()), id: \.offset) { _, t in BenchMarkdown(text: t) }
             if !reply.isEmpty { BenchMarkdown(text: reply) }
-            if done && (cost != nil || !reply.isEmpty) {
-                HStack(spacing: Space.md) {
-                    if let cost { Text(cost) }
-                    if !reply.isEmpty {
-                        Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(reply, forType: .string) } label: {
-                            Image(systemName: "doc.on.doc").font(.system(size: 11))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Copy Reply")
-                    }
-                }
-                .font(.system(size: TypeScale.xs))
-                .foregroundStyle(theme.colors.muted)
+            if done {
+                let changed = TurnChanges.of(steps, cwd: cwd)
+                if !changed.isEmpty { ChangedFilesCard(files: changed) }
+            }
+            // Cost and actions only on hover: repeated on every turn they were noise.
+            if done {
+                HoverActions(items: footerItems, trailing: [cost, model.time(of: id).map(TurnTime.clock)].compactMap { $0 }.joined(separator: " · "))
+                    .padding(.leading, -7)
+                    .opacity(hover ? 1 : 0)
             }
         }
+        .contentShape(Rectangle())
+        .onHover { hover = $0 }
+    }
+}
+
+extension TurnView {
+    /// Copy (when there's a reply) and Retry, for the hover row.
+    var footerItems: [(String, () -> Void)] {
+        var items: [(String, () -> Void)] = []
+        let text = reply
+        if !text.isEmpty { items.append(("Copy", { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) })) }
+        let m = model, turn = id
+        items.append(("Retry", { m.retry(turn: turn) }))
+        return items
     }
 }
 
@@ -397,7 +449,7 @@ struct CodeBlock: View {
     var body: some View {
         ScrollView(.horizontal) {
             Text(text)
-                .font(.system(size: TypeScale.sm, design: .monospaced))
+                .font(BenchFont.mono(TypeScale.sm))
                 .foregroundStyle(color ?? theme.colors.wellText)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: true, vertical: false)
@@ -430,7 +482,7 @@ struct MiniDiff: View {
 
     private func line(_ s: String, _ c: Color) -> some View {
         Text(s)
-            .font(.system(size: TypeScale.sm, design: .monospaced))
+            .font(BenchFont.mono(TypeScale.sm))
             .foregroundStyle(c)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(c.opacity(0.10))

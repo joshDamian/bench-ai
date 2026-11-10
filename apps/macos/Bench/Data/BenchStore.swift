@@ -16,8 +16,14 @@ final class BenchStore {
     var error: String?
     var projects: [Project] = []
     var tasks: [BenchTask] = []
-    var sessions: [Session] = []
-    var approvals: [Approval] = []
+    var sessions: [Session] = [] {
+        didSet { sessionsChanged(from: oldValue) }
+    }
+    var approvals: [Approval] = [] {
+        didSet { if approvals.map(\.id) != oldValue.map(\.id) { onGlanceChange?() } }
+    }
+    /// When each running session started its current turn, for the menu bar's timers.
+    var runningSince: [String: Date] = [:]
     var defaults = Defaults()
     var providers: [ProviderInfo] = []
     var me: Me?
@@ -29,6 +35,10 @@ final class BenchStore {
     @ObservationIgnored private var listeners: [UUID: (ServerMessage) -> Void] = [:]
     @ObservationIgnored private var reconnectListeners: [UUID: () -> Void] = [:]
     @ObservationIgnored var onNewApproval: ((Approval) -> Void)?
+    /// A session left "running": finished its turn, or stopped with an error.
+    @ObservationIgnored var onTurnEnded: ((Session) -> Void)?
+    /// What needs you or what's running changed: the widget, Spotlight and the Dock badge follow.
+    @ObservationIgnored var onGlanceChange: (() -> Void)?
     @ObservationIgnored private var watched: [String: Int] = [:]
     @ObservationIgnored private var socket: URLSessionWebSocketTask?
     @ObservationIgnored private var retry = 0
@@ -41,6 +51,21 @@ final class BenchStore {
     }
 
     var needsYouCount: Int { approvals.count }
+
+    private func sessionsChanged(from old: [Session]) {
+        let before = Dictionary(old.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
+        var changed = false
+        for s in sessions {
+            let was = before[s.id]
+            if s.status == "running" {
+                if runningSince[s.id] == nil { runningSince[s.id] = Date(); changed = true }
+            } else if runningSince.removeValue(forKey: s.id) != nil {
+                changed = true
+                if was == "running" { onTurnEnded?(s) }
+            }
+        }
+        if changed || sessions.count != old.count || sessions.map(\.title) != old.map(\.title) { onGlanceChange?() }
+    }
     /// "Opus · high effort": the session's model and effort, in words.
     func modelLine(_ s: Session) -> String {
         let m = providers.flatMap(\.models).first { $0.id == s.model_id }

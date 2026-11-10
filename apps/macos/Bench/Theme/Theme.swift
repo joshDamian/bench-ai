@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // Bench's tokens, as SwiftUI reads them. Views take colours from `theme.colors` and sizes
@@ -37,15 +38,20 @@ enum TypeScale {
 struct Themed: ViewModifier {
     @AppStorage("appearance") private var appearance = Appearance.system.rawValue
     @Environment(\.colorScheme) private var scheme
+    /// Bumped when the Mac's accent colour changes, so the palette is rebuilt.
+    @State private var accentVersion = 0
 
     func body(content: Content) -> some View {
         let a = Appearance(rawValue: appearance) ?? .system
         let dark = a == .system ? scheme == .dark : a == .dark
-        let t = dark ? macDark : macLight
+        let base = dark ? macDark : macLight
+        let t = base.systemAccent()
+        let _ = accentVersion
         content
             .environment(\.theme, t)
             .preferredColorScheme(a == .system ? nil : (a == .dark ? .dark : .light))
             .tint(t.colors.accent)
+            .onReceive(NotificationCenter.default.publisher(for: NSColor.systemColorsDidChangeNotification)) { _ in accentVersion += 1 }
     }
 }
 

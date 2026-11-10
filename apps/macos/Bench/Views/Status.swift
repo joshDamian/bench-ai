@@ -217,6 +217,8 @@ struct Segments<T: Hashable>: View {
     let options: [(T, String)]
     @Binding var selection: T
     var fill = false
+    /// Tighter padding, for many options in a narrow space.
+    var compact = false
 
     var body: some View {
         HStack(spacing: 2) {
@@ -227,7 +229,8 @@ struct Segments<T: Hashable>: View {
                         .font(.system(size: 12, weight: on ? .medium : .regular))
                         .foregroundStyle(on ? theme.colors.text : theme.colors.muted)
                         .lineLimit(1)
-                        .padding(.horizontal, 12)
+                        .fixedSize()
+                        .padding(.horizontal, compact ? 6 : 12)
                         .frame(maxWidth: fill ? .infinity : nil)
                         .frame(height: 24)
                         .background(on ? theme.colors.fill(0.14) : .clear, in: RoundedRectangle(cornerRadius: 7))
@@ -362,4 +365,47 @@ private struct SystemLightsHider: NSViewRepresentable {
     }
     func makeNSView(context: Context) -> V { V() }
     func updateNSView(_ v: V, context: Context) {}
+}
+
+/// A multi-line text box that grows with its text. Return adds a line, unless `onReturn`
+/// is given (the composer): then Return calls it, and Shift- or Option-Return adds a line.
+struct GrowingEditor: View {
+    @Environment(\.theme) private var theme
+    @Binding var text: String
+    let placeholder: String
+    var size: CGFloat = 13.5
+    var minLines = 1
+    var maxLines = 10
+    var onReturn: (() -> Void)? = nil
+
+    var body: some View {
+        let line = size * 1.32
+        // The invisible copy of the text sets the height (up to maxLines); the editor is laid
+        // over it and takes exactly that height, so the box grows with what's typed.
+        Text(text.isEmpty ? " " : text + " ")
+            .font(.system(size: size))
+            .lineLimit(maxLines)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: line * CGFloat(minLines), alignment: .topLeading)
+            .opacity(0)
+            .overlay(alignment: .topLeading) {
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $text)
+                        .font(.system(size: size))
+                        .scrollContentBackground(.hidden)
+                        .scrollIndicators(.never)
+                        .padding(.horizontal, -5)
+                        .onKeyPress(.return, phases: .down) { press in
+                            guard let onReturn else { return .ignored }
+                            if press.modifiers.contains(.shift) || press.modifiers.contains(.option) || press.modifiers.contains(.command) { return .ignored }
+                            onReturn()
+                            return .handled
+                        }
+                    if text.isEmpty {
+                        Text(placeholder).font(.system(size: size)).foregroundStyle(theme.colors.muted).allowsHitTesting(false)
+                    }
+                }
+            }
+    }
 }

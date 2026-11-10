@@ -26,7 +26,7 @@ struct ProjectView: View {
             if app.showTerminal {
                 VSplitView {
                     content.frame(minHeight: 260)
-                    RemoteTerminalView(store: store, query: "project=\(BenchAPI.enc(projectId))", place: project?.path ?? "Checkout")
+                    RemoteTerminalView(store: store, query: "project=\(BenchAPI.enc(projectId))", place: project?.path ?? "Checkout", onClose: { app.showTerminal = false })
                         .frame(minHeight: 140, idealHeight: 250)
                 }
             } else {
@@ -144,7 +144,7 @@ struct ProjectView: View {
             HStack(spacing: 0) {
                 MarkView(mark: mark).frame(width: 28, alignment: .leading)
                 Text(title).font(.system(size: 13)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 12)
-                Text(branch).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.colors.muted).lineLimit(1).truncationMode(.middle)
+                Text(branch).font(BenchFont.mono(11.5)).foregroundStyle(theme.colors.muted).lineLimit(1).truncationMode(.middle)
                     .frame(width: 210, alignment: .leading)
                 Text(status).font(.system(size: 12)).foregroundStyle(tint).lineLimit(1).frame(width: 150, alignment: .leading)
                 Text(when).font(.system(size: 12)).foregroundStyle(theme.colors.muted).frame(width: 70, alignment: .trailing)
@@ -167,7 +167,7 @@ struct ProjectView: View {
             HStack(spacing: 0) {
                 Button { branching = true } label: {
                     HStack(spacing: 5) {
-                        Text(git?.branch ?? "…").font(.system(size: 12, design: .monospaced))
+                        Text(git?.branch ?? "…").font(BenchFont.mono(12))
                         Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
                     }
                     .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
@@ -330,12 +330,12 @@ private struct CommitSheet: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Commit").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Text("to \(git?.branch ?? "main")").font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.muted)
+                Text("to \(git?.branch ?? "main")").font(BenchFont.mono(12)).foregroundStyle(theme.colors.muted)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array((git?.dirty ?? []).enumerated()), id: \.offset) { _, p in
-                        Text(p).font(.system(size: 12.5, design: .monospaced)).lineLimit(1).truncationMode(.head)
+                        Text(p).font(BenchFont.mono(12.5)).lineLimit(1).truncationMode(.head)
                             .padding(.horizontal, 12).frame(height: 28, alignment: .leading)
                     }
                 }
@@ -345,8 +345,7 @@ private struct CommitSheet: View {
             .frame(maxHeight: 180)
             .background(theme.colors.fill(0.05), in: RoundedRectangle(cornerRadius: 12))
             Text("Message").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
-            TextField("", text: $message, axis: .vertical)
-                .textFieldStyle(.plain).lineLimit(2...6).font(.system(size: 13.5))
+            GrowingEditor(text: $message, placeholder: "What changed", size: 13.5, minLines: 2, maxLines: 6)
                 .padding(10)
                 .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 10))
             if let error { Text(error).font(.system(size: 12)).foregroundStyle(theme.colors.bad).textSelection(.enabled) }

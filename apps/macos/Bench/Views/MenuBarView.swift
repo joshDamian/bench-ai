@@ -35,7 +35,16 @@ struct MenuBarView: View {
                                 Text(store.project(s.project_id)?.name ?? "Ask Bench").font(.system(size: 11.5)).foregroundStyle(theme.colors.muted).lineLimit(1)
                             }
                             Spacer()
-                            Text(Format.ago(s.updated_at)).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+                            if let since = store.runningSince[s.id] {
+                                Text(since, style: .timer).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(theme.colors.muted)
+                            }
+                            Button { Task { try? await store.api.interrupt(s.id) } } label: {
+                                Image(systemName: "stop.fill").font(.system(size: 9)).frame(width: 22, height: 22)
+                                    .background(theme.colors.fill(0.08), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("Stop")
+                            .accessibilityLabel("Stop \(s.title)")
                         }
                     }
                 }
@@ -76,7 +85,7 @@ struct MenuBarView: View {
                     .font(.system(size: 11.5)).foregroundStyle(theme.colors.muted).lineLimit(1)
             }
             if let d = PanelText.detail(a, cwd: s?.cwd ?? "") {
-                Text(d).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.wellText).lineLimit(3)
+                Text(d).font(BenchFont.mono(12)).foregroundStyle(theme.colors.wellText).lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10).padding(.vertical, 7)
                     .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: 7))
@@ -89,6 +98,13 @@ struct MenuBarView: View {
                     Button("Open") { open(a.session_id) }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(theme.colors.muted)
                     Button("Allow") { Task { try? await store.answer(a, ["allow": true]) } }
                         .buttonStyle(PrimaryButton(height: 28))
+                } else if a.tool == "ExitPlanMode" {
+                    Spacer()
+                    Button("Open") { open(a.session_id) }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                    Button("Approve") { Task { try? await store.answer(a, ["allow": true, "mode": "acceptEdits"]) } }
+                        .buttonStyle(PrimaryButton(height: 28))
+                } else if a.tool == "AskUserQuestion" {
+                    QuickAnswer(approval: a, store: store)
                 } else {
                     Spacer()
                     Button("Answer in Bench") { open(a.session_id) }.buttonStyle(PrimaryButton(height: 28))
@@ -125,5 +141,49 @@ struct MenuBarView: View {
         if let id { model.selection = id }
         openWindow(id: "main")
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+
+/// A question answered in a line: its options as buttons when it has them, or a reply field.
+struct QuickAnswer: View {
+    @Environment(\.theme) private var theme
+    let approval: Approval
+    let store: BenchStore
+    @State private var reply = ""
+
+    private var question: JSONValue? { approval.input["questions"].array.first }
+
+    var body: some View {
+        let q = question?["question"].string ?? ""
+        let options = question?["options"].array.compactMap { $0["label"].string } ?? []
+        VStack(alignment: .leading, spacing: 6) {
+            if !options.isEmpty {
+                FlowButtons(options: options) { send(q, $0) }
+            }
+            HStack(spacing: 6) {
+                TextField("", text: $reply, prompt: Text(options.isEmpty ? "Your answer" : "Or type an answer"))
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { send(q, reply) }
+                Button("Send") { send(q, reply) }.buttonStyle(PrimaryButton(height: 26)).disabled(reply.isEmpty)
+            }
+        }
+    }
+
+    private func send(_ q: String, _ answer: String) {
+        guard !answer.isEmpty else { return }
+        Task { try? await store.answer(approval, ["allow": true, "answers": [q: answer]]) }
+    }
+}
+
+private struct FlowButtons: View {
+    let options: [String]
+    let pick: (String) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(options, id: \.self) { o in
+                Button(o) { pick(o) }.buttonStyle(TonalButton(height: 26)).lineLimit(1)
+            }
+        }
     }
 }

@@ -79,7 +79,7 @@ struct TaskView: View {
             if app.showTerminal {
                 VSplitView {
                     content.frame(minHeight: 260)
-                    RemoteTerminalView(store: store, query: "task=\(BenchAPI.enc(taskId))", place: model.task?.branch ?? "Worktree")
+                    RemoteTerminalView(store: store, query: "task=\(BenchAPI.enc(taskId))", place: model.task?.branch ?? "Worktree", onClose: { app.showTerminal = false })
                         .frame(minHeight: 140, idealHeight: 250)
                 }
             } else {
@@ -152,7 +152,7 @@ struct TaskView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(t?.title ?? "Task").font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 4) {
-                    Text("\(t?.branch ?? "") → \(model.base)").font(.system(size: 11.5, design: .monospaced)).truncationMode(.middle)
+                    Text("\(t?.branch ?? "") → \(model.base)").font(BenchFont.mono(11.5)).truncationMode(.middle)
                     if let g, !g.conflicted.isEmpty {
                         Text("· \(g.conflicted.count) conflict\(g.conflicted.count == 1 ? "" : "s")").foregroundStyle(theme.colors.bad).fixedSize()
                     } else if let c = t?.check_status {
@@ -243,8 +243,7 @@ private struct TaskOverview: View {
                     section("Done means") {
                         Group2 {
                             if editingDone {
-                                TextField("", text: $done, prompt: Text("What does done look like?"), axis: .vertical)
-                                    .textFieldStyle(.plain).font(.system(size: 13.5)).lineLimit(3...8)
+                                GrowingEditor(text: $done, placeholder: "What does done look like?", size: 13.5, minLines: 3, maxLines: 8)
                                     .padding(12)
                                 GroupRow(title: "") {
                                     Button("Cancel") { editingDone = false; done = t?.done ?? "" }.buttonStyle(TonalButton(height: 24))
@@ -264,7 +263,7 @@ private struct TaskOverview: View {
                         Group2 {
                             GroupRow(title: "Command", first: true, muted: true) {
                                 TextField("", text: $check, prompt: Text("npm test"))
-                                    .textFieldStyle(.plain).font(.system(size: 12.5, design: .monospaced))
+                                    .textFieldStyle(.plain).font(BenchFont.mono(12.5))
                                     .multilineTextAlignment(.trailing).frame(maxWidth: 220)
                                     .onSubmit { save(["check": check]) }
                             }
@@ -287,7 +286,7 @@ private struct TaskOverview: View {
                         }
                         if let out = t?.check_output, !out.isEmpty, t?.check_status == "failed" {
                             Text(out.suffix(1200))
-                                .font(.system(size: 11.5, design: .monospaced))
+                                .font(BenchFont.mono(11.5))
                                 .foregroundStyle(theme.colors.wellText)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -514,7 +513,7 @@ struct ChangesView: View {
         let name = (f.path as NSString).lastPathComponent
         let dir = (f.path as NSString).deletingLastPathComponent
         return HStack(spacing: Space.sm) {
-            Text(f.status).font(.system(size: 11, design: .monospaced))
+            Text(f.status).font(BenchFont.mono(11))
                 .foregroundStyle(f.status == "A" ? theme.colors.good : f.status == "D" ? theme.colors.bad : theme.colors.warn)
                 .frame(width: 12)
             VStack(alignment: .leading, spacing: 0) {
@@ -565,7 +564,7 @@ private struct DiffLine: View {
                 .padding(.trailing, 12)
             Text(text.isEmpty ? " " : text).foregroundStyle(fg).fixedSize()
         }
-        .font(.system(size: 12, design: .monospaced))
+        .font(BenchFont.mono(12))
         .frame(minHeight: 21)
         .padding(.trailing, Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -699,10 +698,7 @@ struct ShipSheet: View {
     }
 
     private func field(_ text: Binding<String>, _ prompt: String, lines: Int) -> some View {
-        TextField("", text: text, prompt: Text(prompt), axis: .vertical)
-            .textFieldStyle(.plain)
-            .lineLimit(lines...max(lines, 6))
-            .font(.system(size: 13))
+        GrowingEditor(text: text, placeholder: prompt, size: 13, minLines: lines, maxLines: max(lines, 6))
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 9))
     }

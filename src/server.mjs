@@ -661,7 +661,11 @@ route('POST', '/api/tasks/:id/abort-merge', ({ params }) => svc.abortTaskMerge(p
 route('POST', '/api/tasks/:id/merge', ({ params, body }) => svc.mergeTask(params[0], body));
 route('POST', '/api/tasks/:id/push', ({ params }) => svc.pushTask(params[0]));
 route('POST', '/api/tasks/:id/pr', ({ params, body }) => svc.pullRequest(params[0], body));
-route('POST', '/api/tasks/:id/close', ({ params, body }) => svc.closeTask(params[0], body));
+route('POST', '/api/tasks/:id/close', async ({ params, body }) => {
+  const r = await svc.closeTask(params[0], body);
+  terminals.closeMatching(`task:${params[0]}`);
+  return r;
+});
 route('POST', '/api/tasks/:id/reopen', ({ params }) => svc.reopenTask(params[0]));
 route('POST', '/api/tasks/:id/check', ({ params }) => svc.checkTask(params[0]));
 route('GET', '/api/tasks/:id/log', ({ params }) => svc.taskLog(params[0]));
@@ -693,6 +697,13 @@ route('GET', '/api/sessions/:id/events', ({ params, u }) =>
 route('GET', '/api/sessions/:id/events/:event/thinking', ({ params }) => svc.eventThinking(params[0], Number(params[1])));
 route('POST', '/api/sessions/:id/messages', ({ params, body }) => svc.send(params[0], body.text, { images: body.images, files: body.files, uploads: body.uploads }));
 route('GET', '/api/sessions/:id/files', ({ req, res, params, u }) => sendSessionFile(req, res, params[0], u));
+// Paths for the composer's @ suggestions: the session's files, git's list where there is
+// one, else a shallow walk. Ranked by how well the name matches; at most 30.
+route('GET', '/api/sessions/:id/paths', async ({ params, u }) => {
+  const s = svc.session(params[0]);
+  return { paths: rankPaths(await listPaths(s.cwd), String(u.searchParams.get('q') || '')).slice(0, 30) };
+});
+
 // Which of the paths a transcript mentions are files, and what each is. The client
 // cannot stat and must not guess a type from a name, so it asks here, for all of a
 // transcript's paths at once. Anything missing, a directory, or out of reach is left out.
@@ -726,8 +737,17 @@ route('GET', '/api/sessions/:id/routing', ({ params }) => svc.sessionRouting(par
 route('POST', '/api/sessions/:id/limit', ({ params, body }) => svc.sessionLimit(params[0], body));
 route('POST', '/api/sessions/:id/interrupt', async ({ params }) => ({ ok: await svc.interrupt(params[0]) }));
 route('PATCH', '/api/sessions/:id', ({ params, body }) => svc.updateSession(params[0], body));
-route('POST', '/api/sessions/:id/archive', ({ params, body }) => svc.archiveSession(params[0], body.archived !== false));
-route('DELETE', '/api/sessions/:id', ({ params }) => svc.deleteSession(params[0]));
+// Archiving or deleting a session ends the shells opened beside it; closing a task, its own.
+route('POST', '/api/sessions/:id/archive', async ({ params, body }) => {
+  const r = await svc.archiveSession(params[0], body.archived !== false);
+  if (body.archived !== false) terminals.closeMatching(`shell:${params[0]}`);
+  return r;
+});
+route('DELETE', '/api/sessions/:id', async ({ params }) => {
+  const r = await svc.deleteSession(params[0]);
+  terminals.closeMatching(`shell:${params[0]}`);
+  return r;
+});
 route('POST', '/api/approvals/:id', ({ params, body }) => ({ ok: svc.runtime.answer(params[0], body) }));
 
 route('GET', '/api/providers', () => svc.providers());
@@ -977,16 +997,21 @@ server.on('upgrade', (req, socket, head) => {
  * Which shell a terminal socket opens: in a task's worktree, in a project's checkout, or
  * a `claude --resume` on a session's own conversation - the escape hatch to the real TUI.
  * @param {URL} u
- * @returns {{error:string} | {key:string, cwd:string, command?:string, env?:Record<string,string>}}
+ * @returns {{error:string} | {key:string, cwd:string, command?:string, env?:Record<string,string>, keep?:boolean}}
  */
 function terminalSpec(u) {
   const q = u.searchParams;
+  // `tab`: one of several shells in the same place. Each tab is its own shell and keeps
+  // running until it is closed; without one, the place's single shell times out as before.
+  const tab = q.get('tab');
+  if (tab !== null && !/^[A-Za-z0-9_-]{1,32}$/.test(tab)) return { error: '400 Bad Request' };
+  const tabbed = (/** @type {{key:string, cwd:string}} */ spec) => (tab ? { ...spec, key: `${spec.key}#${tab}`, keep: true } : spec);
   try {
     if (q.get('session') && q.get('shell')) {
       // A plain shell where the session works, for running commands beside the chat.
       const s = svc.session(/** @type {string} */ (q.get('session')));
       if (!fs.existsSync(s.cwd)) return { error: '409 Conflict' };
-      return { key: `shell:${s.id}`, cwd: s.cwd };
+      return tabbed({ key: `shell:${s.id}`, cwd: s.cwd });
     }
     if (q.get('session')) {
       const s = svc.session(/** @type {string} */ (q.get('session')));
@@ -1004,11 +1029,11 @@ function terminalSpec(u) {
     if (q.get('task')) {
       const t = svc.task(/** @type {string} */ (q.get('task')));
       if (!fs.existsSync(t.worktree)) return { error: '409 Conflict' };
-      return { key: `task:${t.id}`, cwd: t.worktree };
+      return tabbed({ key: `task:${t.id}`, cwd: t.worktree });
     }
     if (q.get('project')) {
       const p = svc.project(/** @type {string} */ (q.get('project')));
-      return { key: `project:${p.id}`, cwd: p.path };
+      return tabbed({ key: `project:${p.id}`, cwd: p.path });
     }
   } catch {
     return { error: '404 Not Found' };
@@ -1037,3 +1062,42 @@ server.listen(port, host, () => {
   console.log(`Bench: http://localhost:${bound}`);
   if (loopbackBind) console.log('Other devices: run `bench share`, then pair from Settings or `bench pair`.');
 });
+
+/** @type {Map<string, {at:number, list:string[]}>} */
+const pathCache = new Map();
+/** @param {string} cwd @returns {Promise<string[]>} */
+async function listPaths(cwd) {
+  const hit = pathCache.get(cwd);
+  if (hit && Date.now() - hit.at < 15000) return hit.list;
+  const { execFile } = await import('node:child_process');
+  let list = await new Promise((done) => execFile('git', ['ls-files', '-co', '--exclude-standard'], { cwd, maxBuffer: 32 << 20 }, (e, out) => done(e ? null : out.split('\n').filter(Boolean))));
+  if (!list) {
+    list = [];
+    const skip = new Set(['node_modules', '.git', 'build', 'dist', '.build', 'DerivedData']);
+    const walk = (/** @type {string} */ dir, /** @type {number} */ depth) => {
+      if (depth > 6 || list.length > 20000) return;
+      let ents; try { ents = fs.readdirSync(path.join(cwd, dir), { withFileTypes: true }); } catch { return; }
+      for (const e of ents) {
+        if (e.name.startsWith('.') || skip.has(e.name)) continue;
+        const rel = dir ? `${dir}/${e.name}` : e.name;
+        if (e.isDirectory()) walk(rel, depth + 1); else list.push(rel);
+      }
+    };
+    walk('', 0);
+  }
+  pathCache.set(cwd, { at: Date.now(), list });
+  return list;
+}
+/** Best first: a name starting with the query, then the name containing it, then the path; subsequence last. @param {string[]} list @param {string} q */
+function rankPaths(list, q) {
+  q = q.toLowerCase();
+  if (!q) return [...list].sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b));
+  const scored = [];
+  for (const p of list) {
+    const lp = p.toLowerCase(), name = lp.slice(lp.lastIndexOf('/') + 1);
+    let score = name.startsWith(q) ? 0 : name.includes(q) ? 1 : lp.includes(q) ? 2 : -1;
+    if (score < 0) { let i = 0; for (const c of lp) if (c === q[i]) i++; if (i < q.length) continue; score = 3; }
+    scored.push([score, p.length, p]);
+  }
+  return scored.sort((a, b) => /** @type {number} */(a[0]) - /** @type {number} */(b[0]) || /** @type {number} */(a[1]) - /** @type {number} */(b[1])).map((x) => /** @type {string} */(x[2]));
+}

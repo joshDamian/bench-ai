@@ -93,6 +93,12 @@ final class BenchAPI: @unchecked Sendable {
         ])
     }
 
+    /// Files in the session's folder matching what follows an "@", best first.
+    func paths(_ id: String, query: String) async throws -> [String] {
+        let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+"))) ?? ""
+        return try decode(JSONValue.self, await call("/api/sessions/\(Self.enc(id))/paths?q=\(q)"))["paths"].array.compactMap(\.string)
+    }
+
     func interrupt(_ id: String) async throws { try await call("/api/sessions/\(Self.enc(id))/interrupt", method: "POST", body: [:]) }
     func setMode(_ id: String, _ mode: Mode) async throws { try await call("/api/sessions/\(Self.enc(id))", method: "PATCH", body: ["mode": mode.rawValue]) }
     func rename(_ id: String, _ title: String) async throws { try await call("/api/sessions/\(Self.enc(id))", method: "PATCH", body: ["title": title]) }

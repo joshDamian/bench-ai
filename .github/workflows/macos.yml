@@ -17,6 +17,11 @@ on:
   pull_request:
     paths: ['apps/macos/**', 'apps/tokens.mjs', 'web/app.css', 'web/themes.css', 'web/theme.mjs', '.github/workflows/macos.yml']
   workflow_dispatch:
+    inputs:
+      hosted:
+        description: Build on GitHub's Macs instead of the bench-mac runner
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,14 +32,18 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-26
+    # Josh's Mac (a self-hosted runner labelled bench-mac) builds by default; a manual run
+    # can choose GitHub's Macs when it's asleep.
+    runs-on: ${{ inputs.hosted && 'macos-26' || fromJSON('["self-hosted","bench-mac"]') }}
     defaults:
       run:
         working-directory: apps/macos
     steps:
       - uses: actions/checkout@v5
 
+      # A self-hosted Mac uses the Node it has; downloading one there can stall.
       - uses: actions/setup-node@v5
+        if: runner.environment == 'github-hosted'
         with:
           node-version: 22
       - name: Themes match the stylesheet
@@ -43,12 +52,16 @@ jobs:
 
       - name: Xcode
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          # GitHub's Macs carry several Xcodes; a self-hosted Mac uses the one already selected.
+          if [ "$RUNNER_ENVIRONMENT" = "github-hosted" ]; then
+            sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          fi
           xcodebuild -version
 
       - name: Generate the project
         run: |
-          brew install xcodegen
+          command -v xcodegen >/dev/null || brew install xcodegen
+          command -v xcbeautify >/dev/null || brew install xcbeautify
           xcodegen generate
 
       - name: Version
@@ -60,7 +73,10 @@ jobs:
             echo "name=0.0.0-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
+      # The tests launch a copy of Bench as their host. On Josh's Mac that copy competes with
+      # the Bench he's using and hangs, so they run on GitHub's Macs only.
       - name: Test
+        if: runner.environment == 'github-hosted'
         run: |
           set -o pipefail
           xcodebuild test -project Bench.xcodeproj -scheme Bench -destination 'platform=macOS' \
@@ -99,6 +115,24 @@ jobs:
         if: failure()
         run: |
           cat "$RUNNER_TEMP"/test.log "$RUNNER_TEMP"/build.log 2>/dev/null | grep -E "error:|error -|\*\* .* FAILED|Command .* failed" | sort -u | head -30 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
+
+      # On Josh's Mac the build is already where it's used: put it in /Applications, with no
+      # download for Chrome or Gatekeeper to stop. A running Bench keeps going; reopen it for this one.
+      - name: Install on this Mac
+        if: runner.environment == 'self-hosted'
+        run: |
+          dest=/Applications/Bench.app
+          rm -rf "$dest.new"
+          rm -rf "$dest" 2>/dev/null || true
+          # macOS's App Management protection can stop the runner changing apps in
+          # /Applications. Say so, rather than leaving a half-replaced app behind.
+          if [ -e "$dest" ]; then
+            echo "::error::macOS wouldn't let the runner replace $dest. Allow it in System Settings > Privacy & Security > App Management (add the runner's Runner.Listener, or the Terminal it runs in), then re-run."
+            exit 1
+          fi
+          ditto Bench.app "$dest"
+          xattr -dr com.apple.quarantine "$dest" || true
+          osascript -e 'display notification "Reopen Bench to use it." with title "New Bench build installed"' || true
 
       - name: Disk image
         run: |

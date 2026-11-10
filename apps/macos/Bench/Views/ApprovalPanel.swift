@@ -64,7 +64,7 @@ private struct ApprovalPanelView: View {
                 Text(PanelText.title(a)).font(.system(size: 13.5, weight: .semibold))
                 if let detail = PanelText.detail(a, cwd: s?.cwd ?? "") {
                     Text(detail)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(BenchFont.mono(12))
                         .foregroundStyle(theme.colors.wellText)
                         .lineLimit(4)
                         .frame(maxWidth: .infinity, alignment: .leading)

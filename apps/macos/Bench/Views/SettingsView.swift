@@ -110,7 +110,10 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 920, height: 640)
+        // Fill the whole window: a fixed height left the hidden title bar's height as a bare
+        // strip at the bottom once the content moved up into it.
+        .frame(width: 920)
+        .frame(minHeight: 640, maxHeight: .infinity)
         .background(theme.colors.bg)
         .ignoresSafeArea()
         .hideToolbarTitle()
@@ -137,7 +140,7 @@ private struct ServerPage: View {
         Group2 {
             GroupRow(title: "Server", first: true) {
                 Text(store.api.config.baseURL.replacingOccurrences(of: #"^https?://"#, with: "", options: .regularExpression))
-                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.muted).textSelection(.enabled).lineLimit(1)
+                    .font(BenchFont.mono(12)).foregroundStyle(theme.colors.muted).textSelection(.enabled).lineLimit(1)
             }
             GroupRow(title: "Status") {
                 HStack(spacing: 6) {
@@ -160,11 +163,11 @@ private struct ServerPage: View {
             GroupRow(title: "This Mac", first: true) { Text(store.me?.device?.name ?? (store.api.config.isLoopback ? "On the server itself" : "Paired")).foregroundStyle(theme.colors.muted) }
             GroupRow(title: "Projects folder") {
                 if editingDir {
-                    TextField("", text: $projectsDir).textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced)).frame(width: 240)
+                    TextField("", text: $projectsDir).textFieldStyle(.roundedBorder).font(BenchFont.mono(12)).frame(width: 240)
                         .onSubmit { saveDir() }
                     Button("Save") { saveDir() }.buttonStyle(TonalButton(height: 24))
                 } else {
-                    Text(projectsDir).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.colors.muted)
+                    Text(projectsDir).font(BenchFont.mono(12)).foregroundStyle(theme.colors.muted)
                     Button("Change…") { editingDir = true }.buttonStyle(TonalButton(height: 24))
                 }
             }
@@ -509,6 +512,8 @@ private struct AppearancePage: View {
     @AppStorage("appearance") private var appearance = Appearance.system.rawValue
     @AppStorage("menuBar") private var menuBar = true
     @AppStorage("keepRunning") private var keepRunning = true
+    @AppStorage("quickPrompt") private var quickPrompt = true
+    @AppStorage("editor") private var editor = Editors.preferred?.id ?? ""
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -529,6 +534,20 @@ private struct AppearancePage: View {
         Group2 {
             GroupRow(title: "Show Bench in the menu bar", first: true) { Toggle("", isOn: $menuBar).labelsHidden().toggleStyle(.switch) }
             GroupRow(title: "Keep running when the window is closed") { Toggle("", isOn: $keepRunning).labelsHidden().toggleStyle(.switch) }
+            GroupRow(title: "Quick prompt with ⌥Space from any app") {
+                Toggle("", isOn: Binding(get: { quickPrompt }, set: { on in
+                    quickPrompt = on
+                    if on { QuickPrompt.shared.registerHotKey() } else { QuickPrompt.shared.unregisterHotKey() }
+                })).labelsHidden().toggleStyle(.switch)
+            }
+            if !Editors.installed.isEmpty {
+                GroupRow(title: "Open files in") {
+                    Picker("", selection: $editor) {
+                        ForEach(Editors.installed) { e in Text(e.name).tag(e.id) }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+            }
         }
     }
 
@@ -565,7 +584,11 @@ private struct ShortcutsPage: View {
         ("New session", "⌘N"), ("Add project", "⇧⌘N"), ("Go anywhere or run a command", "⌘K"),
         ("Needs you · Running · All sessions", "⌘1 ⌘2 ⌘3"), ("Show or hide the inspector", "⌘J"),
         ("Show or hide the terminal", "⇧⌘T"), ("Send", "⌘↩"), ("Allow", "⌘↩"), ("Deny", "⌘⌫"),
-        ("Stop Claude", "⌘."), ("Merge or ship the task", "⇧⌘M"), ("Dashboard", "⇧⌘D"), ("Settings", "⌘,"),
+        ("Stop Claude", "⌘."), ("Approve the request on screen", "⇧⌘A"), ("Find in the conversation", "⌘F"),
+        ("Previous · next turn", "⌥⌘↑ ⌥⌘↓"), ("Your nine latest sessions", "⌥⌘1 – ⌥⌘9"),
+        ("New tab · close tab", "⌘T ⌘W"), ("Next · previous tab", "⇧⌘] ⇧⌘["), ("Split with the previous tab", "⌘\\"),
+        ("Open the session in a new window", "⌥⌘O"), ("Quick prompt, from any app", "⌥Space"),
+        ("Merge or ship the task", "⇧⌘M"), ("Dashboard", "⇧⌘D"), ("Settings", "⌘,"),
     ]
     @Environment(\.theme) private var theme
 

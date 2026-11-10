@@ -1,3 +1,4 @@
+import CoreSpotlight
 import SwiftUI
 
 struct RootView: View {
@@ -32,7 +33,7 @@ struct MainView: View {
         HStack(spacing: 0) {
             if model.showSidebar {
                 Sidebar(store: store, selection: $model.selection)
-                    .frame(width: 256)
+                    .frame(width: 300)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
                     .background(theme.colors.surface3.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
                     .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(theme.colors.fill(0.07)))
@@ -41,25 +42,18 @@ struct MainView: View {
             }
             VStack(spacing: 0) {
                 if !model.showSidebar { Color.clear.frame(height: 0) }
-                detail
+                // With the sidebar hidden the strip always shows: the traffic lights live in it.
+                if model.tabs.count > 1 || !model.showSidebar { TabStrip(store: store, lights: !model.showSidebar) }
+                if let side = model.split, store.session(side) != nil, side != model.selection {
+                    HSplitView {
+                        detail.frame(minWidth: 380)
+                        SplitPane(store: store, id: side).frame(minWidth: 380)
+                    }
+                } else {
+                    detail
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.leading, model.showSidebar ? 0 : 112)
-        }
-        .overlay(alignment: .topLeading) {
-            if !model.showSidebar {
-                Button { withAnimation(.snappy) { model.showSidebar = true } } label: {
-                    Image(systemName: "sidebar.left").font(.system(size: 13)).foregroundStyle(theme.colors.muted)
-                        .frame(width: 28, height: 26).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).help("Show Sidebar (⌃⌘S)")
-                .padding(.leading, 78).padding(.top, 14)
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            if !model.showSidebar {
-                TrafficLights().padding(.leading, 18).padding(.top, 21)
-            }
         }
         .background(theme.colors.bg)
         .ignoresSafeArea()
@@ -85,7 +79,20 @@ struct MainView: View {
             CommandPalette(store: store)
                 .environment(\.theme, theme)
         }
-        .onAppear { model.panel.hide() }
+        .onAppear {
+            model.panel.hide()
+            // Open where you left off.
+            if model.selection == nil, let last = UserDefaults.standard.string(forKey: "lastSelection") { model.selection = last }
+            if let sel = model.selection, !model.tabs.contains(sel) { model.tabs.append(sel) }
+        }
+        .onChange(of: model.selection) { old, v in
+            if let v { UserDefaults.standard.set(v, forKey: "lastSelection") }
+            model.follow(old, v)
+        }
+        // A session picked in Spotlight.
+        .onContinueUserActivity(CSSearchableItemActionType) { a in
+            if let id = a.userInfo?[CSSearchableItemActivityIdentifier] as? String { model.selection = id }
+        }
     }
 
     @ViewBuilder private var detail: some View {

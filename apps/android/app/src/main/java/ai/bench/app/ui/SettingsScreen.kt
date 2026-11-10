@@ -1,5 +1,9 @@
 package ai.bench.app.ui
 
+import ai.bench.app.ui.theme.DYNAMIC
+import ai.bench.app.ui.theme.dynamicAvailable
+import androidx.compose.material3.MaterialTheme
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -137,7 +141,12 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(Space.md)) {
                             Text("Theme", fontSize = 15.5.sp)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.md), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                                BenchThemes.forEach { t ->
+                                val ctx = androidx.compose.ui.platform.LocalContext.current
+                                val wallpaper = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                                    val m = androidx.compose.material3.dynamicDarkColorScheme(ctx)
+                                    listOf(BenchThemes.first().let { b -> b.copy(id = DYNAMIC, name = "Wallpaper", colors = b.colors.copy(bg = m.surface, surface1 = m.surfaceContainerHigh, accent = m.primary)) })
+                                } else emptyList()
+                                (wallpaper + BenchThemes).forEach { t ->
                                     Column(Modifier.width(68.dp).clickable { scope.launch { settings.setTheme(t.id) } }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Row(
                                             Modifier.fillMaxWidth().heightIn(min = 46.dp).background(t.colors.bg, RoundedCornerShape(14.dp))

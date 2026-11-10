@@ -19,7 +19,7 @@ struct PairView: View {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
             VStack(spacing: Space.sm) {
                 Text("Connect to Bench").font(.system(size: 20, weight: .semibold))
-                (Text("Paste the link from ") + Text("bench pair").font(.system(size: 13, design: .monospaced)) + Text(", or Settings › Pair a device in Bench."))
+                (Text("Paste the link from ") + Text("bench pair").font(BenchFont.mono(13)) + Text(", or Settings › Pair a device in Bench."))
                     .font(.system(size: 13))
                     .foregroundStyle(theme.colors.muted)
                     .multilineTextAlignment(.center)
