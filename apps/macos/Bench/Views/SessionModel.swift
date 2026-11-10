@@ -7,6 +7,10 @@ struct Attachment: Identifiable, Hashable {
     var progress: Double = 0
     var ref: UploadRef?
     var error: String?
+    /// When each event happened, by event id: for time dividers and hover times.
+    private(set) var times: [Int: Date] = [:]
+    /// Edit & resend: text for the composer to take.
+    var editDraft: String?
 }
 
 /// One open session: its transcript, the text streaming in, and what is being attached.
@@ -99,8 +103,12 @@ final class SessionModel {
         rebuildTask = Task.detached(priority: .userInitiated) { [weak self] in
             let rows = Transcript.rows(snapshot)
             let blocks = Transcript.blocks(rows)
+            let f1 = ISO8601DateFormatter(); f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let f2 = ISO8601DateFormatter()
+            var times: [Int: Date] = [:]
+            for e in snapshot { if let c = e.created_at, let d = f1.date(from: c) ?? f2.date(from: c) { times[e.id] = d } }
             guard !Task.isCancelled else { return }
-            await MainActor.run { self?.rows = rows; self?.blocks = blocks }
+            await MainActor.run { self?.rows = rows; self?.blocks = blocks; self?.times = times }
         }
     }
 
@@ -148,6 +156,21 @@ final class SessionModel {
         Task {
             let blocks = try? await store.api.thinking(sessionId, event: eventId)
             thinking[id] = blocks?[index] ?? "That reasoning could not be loaded."
+        }
+    }
+
+    /// When a row or block (id "e123…") happened.
+    func time(of id: String) -> Date? {
+        guard id.hasPrefix("e") else { return nil }
+        let digits = id.dropFirst().prefix { $0.isNumber }
+        return Int(digits).flatMap { times[$0] }
+    }
+
+    /// Retry: sends again the message that started this turn.
+    func retry(turn id: String) {
+        guard let i = blocks.firstIndex(where: { $0.id == id }) else { return }
+        for b in blocks[..<i].reversed() {
+            if case .user(let r) = b, case .user(_, let text, _) = r { Task { _ = await send(text) }; return }
         }
     }
 

@@ -56,11 +56,7 @@ struct SessionView: View {
                     PaneHeader {
                         if showsTitle { HeaderTitle(title: session?.title ?? "Session", sub: subtitle(session)) }
                     } trailing: {
-                        if let session {
-                            ModelMenu(store: store, session: session, capsule: true)
-                            ModeMenu(store: store, session: session)
-                        }
-                        Spacer().frame(width: Space.sm)
+
                         HeaderToggle(icon: "terminal", help: "Terminal (⇧⌘T)", on: $app.showTerminal)
                         if showsInspector && hasInspector(session) {
                             HeaderToggle(icon: "sidebar.right", help: "Inspector (⌘J)", on: $app.showInspector)
@@ -156,17 +152,23 @@ struct SessionView: View {
                             .padding(Space.xl)
                     }
                     let blocks = model.blocks
-                    ForEach(blocks) { b in
-                        switch b {
-                        case .user(let r), .note(let r): RowView(row: r, cwd: cwd, model: model).id(b.id)
-                        case .turn(_, let steps, let reply, let label, let ok, let cost):
-                            VStack(alignment: .leading, spacing: Space.md) {
-                                TurnView(steps: steps, reply: reply, label: label, ok: ok, cost: cost,
-                                         live: running && b.id == blocks.last?.id, cwd: cwd, model: model)
-                                ArtifactCards(reply: reply)
+                    let currentHit = currentMatch
+                    ForEach(Array(blocks.enumerated()), id: \.element.id) { i, b in
+                        // A time at the top, and wherever the session paused for an hour or more.
+                        if let d = divider(i, blocks) { TimeDivider(text: d) }
+                        Group {
+                            switch b {
+                            case .user(let r), .note(let r): RowView(row: r, cwd: cwd, model: model)
+                            case .turn(_, let steps, let reply, let label, let ok, let cost):
+                                VStack(alignment: .leading, spacing: Space.md) {
+                                    TurnView(steps: steps, reply: reply, label: label, ok: ok, cost: cost,
+                                             live: running && b.id == blocks.last?.id, cwd: cwd, model: model, id: b.id)
+                                    ArtifactCards(reply: reply)
+                                }
                             }
-                            .id(b.id)
                         }
+                        .environment(\.findCurrent, currentHit == b.id)
+                        .id(b.id)
                     }
                     if !model.streamText.isEmpty || !model.streamThinking.isEmpty {
                         VStack(alignment: .leading, spacing: Space.xs) {
@@ -197,7 +199,8 @@ struct SessionView: View {
                         .onAppear { follow = true }
                         .onDisappear { follow = false }
                 }
-                .frame(maxWidth: 700)
+                .environment(\.findQuery, finding ? query : "")
+                .frame(maxWidth: 680)
                 .padding(.horizontal, 40)
                 .padding(.top, Space.md)
                 .frame(maxWidth: .infinity)
@@ -223,6 +226,20 @@ struct SessionView: View {
                         }
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                let q = finding ? query.trimmingCharacters(in: .whitespaces) : ""
+                let mine = model.blocks.compactMap { b -> (id: String, text: String, time: Date?, hit: Bool)? in
+                    guard case .user(let r) = b, case .user(_, let t, _) = r else { return nil }
+                    return (b.id, t, model.time(of: b.id), false)
+                }
+                if mine.count > 2 {
+                    let hits = Set(matches)
+                    ConversationOutline(items: mine.map { ($0.id, $0.text, $0.time, !q.isEmpty && hits.contains($0.id)) },
+                                        current: currentMatch,
+                                        go: { id in withAnimation(.snappy) { proxy.scrollTo(id, anchor: .top) } })
+                        .padding(.trailing, 14).padding(.top, 16)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if !follow {
                     let unseen = max(0, model.blocks.count - seen)
@@ -246,6 +263,10 @@ struct SessionView: View {
         }
             }
         .onAppear { takePending() }
+        .onChange(of: model.editDraft) { _, v in
+            guard let v else { return }
+            draft = v; model.editDraft = nil; composerFocused = true
+        }
         .onChange(of: app.pendingAttachments[sessionId]?.count ?? 0) { _, _ in takePending() }
         .onDrop(of: [.fileURL, .image], isTargeted: $dropTargeted) { providers in
             for p in providers where p.hasItemConformingToTypeIdentifier(UTType.image.identifier) && !p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
@@ -290,6 +311,20 @@ struct SessionView: View {
             let prose = steps.compactMap { r -> String? in if case .text(_, let t, _) = r { t } else { nil } }
             return ([reply] + prose).joined(separator: "\n")
         }
+    }
+
+    /// The block the find bar is on.
+    private var currentMatch: String? {
+        let m = matches
+        guard finding, !m.isEmpty else { return nil }
+        return m[m.count - 1 - min(hit, m.count - 1)]
+    }
+
+    private func divider(_ i: Int, _ blocks: [Block]) -> String? {
+        guard let t = model.time(of: blocks[i].id) else { return nil }
+        if i == 0 { return TurnTime.label(t) }
+        guard let prev = model.time(of: blocks[i - 1].id) else { return nil }
+        return TurnTime.gap(from: prev, to: t)
     }
 
     private var matches: [String] {
@@ -428,7 +463,7 @@ struct Composer: View {
                         }
                     }
                 }
-                GrowingEditor(text: $draft, placeholder: running ? "Queue a message" : "Reply to Claude, / for commands",
+                GrowingEditor(text: $draft, placeholder: running ? "Queue a message, @ for files, / for commands" : "Reply to Claude, @ for files, / for commands",
                               size: TypeScale.md, minLines: 2, maxLines: 10) {
                     if let c = matches[safe: pick] { choose(c) } else { send() }
                 }
@@ -443,12 +478,23 @@ struct Composer: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(theme.colors.muted)
                         .help("Attach Files")
-                    if embedded, let s = model.session { ModelMenu(store: model.store, session: s, capsule: false) }
-                    Text(running ? "Claude is working. Messages queue until it's done." : "")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(theme.colors.muted)
-                        .lineLimit(1)
+                    Button { insert("@") } label: { Text("@").font(.system(size: 13, weight: .medium)).frame(width: 22, height: 26) }
+                        .buttonStyle(.plain).foregroundStyle(theme.colors.muted).help("Mention a file")
+                    Button { insert("/") } label: { Text("/").font(.system(size: 13, weight: .medium)).frame(width: 22, height: 26) }
+                        .buttonStyle(.plain).foregroundStyle(theme.colors.muted).help("Commands")
+                    // Model and permissions live in the composer, beside what they apply to.
+                    if let s = model.session {
+                        ModelMenu(store: model.store, session: s, capsule: true)
+                        ModeMenu(store: model.store, session: s)
+                    }
                     Spacer()
+                    if running {
+                        Group {
+                            if let since = model.store.runningSince[model.sessionId] { Text("Working · ") + Text(since, style: .timer) } else { Text("Working") }
+                        }
+                        .font(.system(size: 12).monospacedDigit())
+                        .foregroundStyle(theme.colors.muted)
+                    }
                     if running {
                         Button(action: model.interrupt) {
                             RoundedRectangle(cornerRadius: 2).fill(theme.colors.bg).frame(width: 10, height: 10)
@@ -501,6 +547,13 @@ struct Composer: View {
             }
         }
         .onDisappear { if let m = pasteMonitor { NSEvent.removeMonitor(m) }; pasteMonitor = nil }
+    }
+
+    /// @ and /: start a mention or a command where the text ends.
+    private func insert(_ c: String) {
+        if c == "/" && draft.isEmpty { draft = "/" }
+        else { draft += (draft.isEmpty || draft.hasSuffix(" ") || draft.hasSuffix("\n") ? "" : " ") + c }
+        focused.wrappedValue = true
     }
 
     private func send() {
