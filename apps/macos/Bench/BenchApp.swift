@@ -9,7 +9,13 @@ final class AppModel {
     /// What the current tab shows. Opening anything from anywhere - ⌘K, Spotlight, a
     /// notification, the sidebar - also shows its project in the rail, sidebar open or not.
     var selection: String? {
-        didSet { if selection != oldValue { syncRail() } }
+        didSet {
+            guard selection != oldValue else { return }
+            syncRail()
+            // The tab strip and "open where you left off" follow too, whichever window is open.
+            follow(oldValue, selection)
+            if let v = selection { UserDefaults.standard.set(v, forKey: "lastSelection") }
+        }
     }
 
     private func syncRail() {
