@@ -175,7 +175,7 @@ final class ServicesProvider: NSObject {
     }
 }
 
-// MARK: - Quick prompt: ⌥Space from anywhere
+// MARK: - Quick prompt: a shortcut from anywhere
 
 /// A small floating box that starts a session without switching apps.
 @MainActor
@@ -183,17 +183,60 @@ final class QuickPrompt {
     static let shared = QuickPrompt()
     private var panel: NSPanel?
     private var hotKey: EventHotKeyRef?
+    private var handlerInstalled = false
 
-    /// ⌥Space by default; Settings can turn it off.
-    func registerHotKey() {
-        guard UserDefaults.standard.object(forKey: "quickPrompt") as? Bool ?? true, hotKey == nil else { return }
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            Task { @MainActor in QuickPrompt.shared.toggle() }
-            return noErr
-        }, 1, &spec, nil, nil)
+    /// The shortcut, as Carbon key code and modifiers: ⌃⌥Space unless Settings says otherwise.
+    struct Shortcut: Equatable {
+        var keyCode: Int
+        var modifiers: Int
+        var label: String
+
+        static let standard = Shortcut(keyCode: kVK_Space, modifiers: controlKey | optionKey, label: "⌃⌥Space")
+
+        static var current: Shortcut {
+            let d = UserDefaults.standard
+            guard let label = d.string(forKey: "quickPromptLabel"), d.object(forKey: "quickPromptKey") != nil else { return .standard }
+            return Shortcut(keyCode: d.integer(forKey: "quickPromptKey"), modifiers: d.integer(forKey: "quickPromptModifiers"), label: label)
+        }
+
+        func save() {
+            let d = UserDefaults.standard
+            d.set(keyCode, forKey: "quickPromptKey"); d.set(modifiers, forKey: "quickPromptModifiers"); d.set(label, forKey: "quickPromptLabel")
+        }
+    }
+
+    /// The shortcut's label for menus and Settings.
+    static var label: String { Shortcut.current.label }
+
+    /// Registers the saved shortcut, unless Settings turned the quick prompt off. Returns
+    /// false when another app already holds that combination.
+    @discardableResult
+    func registerHotKey() -> Bool {
+        guard UserDefaults.standard.object(forKey: "quickPrompt") as? Bool ?? true else { return true }
+        unregisterHotKey()
+        if !handlerInstalled {
+            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+            InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
+                Task { @MainActor in QuickPrompt.shared.toggle() }
+                return noErr
+            }, 1, &spec, nil, nil)
+            handlerInstalled = true
+        }
+        let s = Shortcut.current
         let id = EventHotKeyID(signature: OSType(0x424E4348), id: 1) // "BNCH"
-        RegisterEventHotKey(UInt32(kVK_Space), UInt32(optionKey), id, GetApplicationEventTarget(), 0, &hotKey)
+        let status = RegisterEventHotKey(UInt32(s.keyCode), UInt32(s.modifiers), id, GetApplicationEventTarget(), 0, &hotKey)
+        if status != noErr { hotKey = nil }
+        return status == noErr
+    }
+
+    /// Saves a new shortcut and registers it; on a clash the old one is put back.
+    func use(_ s: Shortcut) -> Bool {
+        let old = Shortcut.current
+        s.save()
+        if registerHotKey() { return true }
+        old.save()
+        registerHotKey()
+        return false
     }
 
     func unregisterHotKey() {
