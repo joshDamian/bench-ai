@@ -225,6 +225,13 @@ final class PreviewScheme: NSObject, WKURLSchemeHandler {
         }
         let id = ObjectIdentifier(task)
         let isMain = task.request.mainDocumentURL == url
+        // WebKit sends no Accept for a custom scheme. A browser loading a page says it takes
+        // HTML, and dev servers rely on that: Vite only falls back to index.html for a
+        // single-page app's routes (/projects/moments, on reload) when the request does.
+        if isMain || task.request.value(forHTTPHeaderField: "Accept") == nil {
+            r.setValue(isMain ? "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" : "*/*", forHTTPHeaderField: "Accept")
+        }
+        if isMain { r.setValue("document", forHTTPHeaderField: "Sec-Fetch-Dest"); r.setValue("navigate", forHTTPHeaderField: "Sec-Fetch-Mode") }
         let dt = URLSession.shared.dataTask(with: r) { [weak self] data, response, error in
             // WebKit wants its scheme tasks answered on the main thread.
             DispatchQueue.main.async { self?.finish(task, id: id, url: url, port: port, isMain: isMain, data: data, response: response, error: error) }
