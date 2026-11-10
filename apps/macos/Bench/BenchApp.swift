@@ -6,7 +6,19 @@ import UserNotifications
 @Observable
 final class AppModel {
     var store: BenchStore?
-    var selection: String?
+    /// What the current tab shows. Opening anything from anywhere - ⌘K, Spotlight, a
+    /// notification, the sidebar - also shows its project in the rail, sidebar open or not.
+    var selection: String? {
+        didSet { if selection != oldValue { syncRail() } }
+    }
+
+    private func syncRail() {
+        guard let v = selection, let store else { return }
+        if let s = store.session(v) { rail = s.project_id.flatMap { store.project($0) != nil ? $0 : nil } ?? "ask" }
+        else if v.hasPrefix("task:"), let t = store.task(String(v.dropFirst(5))), let p = t.project_id { rail = p }
+        else if v.hasPrefix("project:") { rail = String(v.dropFirst(8)) }
+        else if v.hasPrefix("files:") { rail = String(v.dropFirst(6)) }
+    }
     var showNewSession = false
     /// The project the next New Session sheet starts on.
     var newSessionProject: String?

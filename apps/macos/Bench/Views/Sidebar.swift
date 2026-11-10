@@ -35,14 +35,6 @@ struct Sidebar: View {
             }
             footer
         }
-        // Opening a session from anywhere (⌘K, Spotlight, a notification) shows its project.
-        .onChange(of: selection) { _, v in
-            guard let v else { return }
-            if let s = store.session(v) { model.rail = s.project_id.flatMap { store.project($0) != nil ? $0 : nil } ?? "ask" }
-            else if v.hasPrefix("task:"), let t = store.task(String(v.dropFirst(5))), let p = t.project_id { model.rail = p }
-            else if v.hasPrefix("project:") { model.rail = String(v.dropFirst(8)) }
-            else if v.hasPrefix("files:") { model.rail = String(v.dropFirst(6)) }
-        }
     }
 
     private func newest(_ a: Session, _ b: Session) -> Bool { (a.updated_at ?? "") > (b.updated_at ?? "") }
