@@ -123,9 +123,12 @@ struct PreviewWebView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(PreviewScheme(api: api, sessionId: sessionId, web: web), forURLScheme: "bench-preview")
         config.userContentController.add(context.coordinator, name: "bench")
+        config.userContentController.add(context.coordinator.sockets, name: "benchSocket")
+        config.userContentController.addUserScript(WKUserScript(source: PreviewSockets.shim, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.websiteDataStore = .nonPersistent()
         let v = WKWebView(frame: .zero, configuration: config)
         v.navigationDelegate = context.coordinator
+        context.coordinator.sockets.attach(v, api: api, sessionId: sessionId)
         v.allowsBackForwardNavigationGestures = true
         context.coordinator.observe(v)
         web.view = v
@@ -145,11 +148,14 @@ struct PreviewWebView: NSViewRepresentable {
 
     static func dismantleNSView(_ v: WKWebView, coordinator: Coordinator) {
         v.configuration.userContentController.removeScriptMessageHandler(forName: "bench")
+        v.configuration.userContentController.removeScriptMessageHandler(forName: "benchSocket")
+        coordinator.sockets.closeAll()
     }
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let web: PreviewWeb
+        let sockets = PreviewSockets()
         var onStart: (Int) -> Void
         var started: PreviewTarget?
         private var watches: [NSKeyValueObservation] = []
@@ -311,4 +317,125 @@ struct PreviewChips: View {
             }
         }
     }
+}
+
+/// WebSockets for the preview - a dev server's live reload - carried by the app. The page's
+/// WebSocket is swapped for a stand-in that hands each socket to the app, which opens it
+/// to Bench's server with the login, and passes messages back and forth.
+@MainActor
+final class PreviewSockets: NSObject, WKScriptMessageHandler {
+    private weak var view: WKWebView?
+    private var api: BenchAPI?
+    private var sessionId = ""
+    private var open: [Int: URLSessionWebSocketTask] = [:]
+
+    func attach(_ v: WKWebView, api: BenchAPI, sessionId: String) { view = v; self.api = api; self.sessionId = sessionId }
+
+    func closeAll() { open.values.forEach { $0.cancel(with: .goingAway, reason: nil) }; open = [:] }
+
+    func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+        guard let body = m.body as? [String: Any], let op = body["op"] as? String, let id = body["id"] as? Int else { return }
+        switch op {
+        case "open":
+            guard let api, let port = body["port"] as? Int, let path = body["path"] as? String else { return }
+            var r = api.request("/api/sessions/\(BenchAPI.enc(sessionId))/preview/\(port)\(path.hasPrefix("/") ? path : "/" + path)")
+            r.url = URL(string: r.url!.absoluteString.replacingOccurrences(of: "^http", with: "ws", options: .regularExpression))
+            if let p = body["protocols"] as? [String], !p.isEmpty { r.setValue(p.joined(separator: ", "), forHTTPHeaderField: "Sec-WebSocket-Protocol") }
+            let task = URLSession.shared.webSocketTask(with: r)
+            open[id] = task
+            task.resume()
+            emit(id, "open", nil)
+            receive(id, task)
+        case "send":
+            guard let task = open[id] else { return }
+            if let t = body["text"] as? String { task.send(.string(t)) { _ in } }
+            else if let b = body["b64"] as? String, let d = Data(base64Encoded: b) { task.send(.data(d)) { _ in } }
+        case "close":
+            open.removeValue(forKey: id)?.cancel(with: .normalClosure, reason: nil)
+        default: break
+        }
+    }
+
+    private func receive(_ id: Int, _ task: URLSessionWebSocketTask) {
+        task.receive { [weak self] result in
+            Task { @MainActor in
+                guard let self, self.open[id] === task else { return }
+                switch result {
+                case .success(.string(let t)): self.emit(id, "message", ["text": t]); self.receive(id, task)
+                case .success(.data(let d)): self.emit(id, "message", ["b64": d.base64EncodedString()]); self.receive(id, task)
+                case .success: self.receive(id, task)
+                case .failure:
+                    self.open[id] = nil
+                    self.emit(id, "close", ["code": Int(task.closeCode.rawValue)])
+                }
+            }
+        }
+    }
+
+    private func emit(_ id: Int, _ kind: String, _ data: [String: Any]?) {
+        let json = (try? JSONSerialization.data(withJSONObject: data ?? [:])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        view?.evaluateJavaScript("window.__benchSocket && window.__benchSocket(\(id), '\(kind)', \(json))")
+    }
+
+    /// Replaces WebSocket for sockets to the dev server; any other address keeps the real one.
+    static let shim = #"""
+    (() => {
+      const Real = window.WebSocket;
+      const live = new Map();
+      let next = 1;
+      const portOf = (u) => {
+        if (/^p\d+$/.test(u.hostname)) return Number(u.hostname.slice(1));
+        if (['localhost', '127.0.0.1', '0.0.0.0', '[::1]'].includes(u.hostname) && u.port) return Number(u.port);
+        return null;
+      };
+      class BenchSocket extends EventTarget {
+        constructor(url, protocols) {
+          super();
+          let u;
+          try { u = new URL(String(url).replace(/:\/(?=\/|$)/, '/'), location.href); } catch (e) { u = null; }
+          const port = u && (portOf(u) ?? (/^p\d+$/.test(location.hostname) && !u.port ? Number(location.hostname.slice(1)) : null));
+          if (!port) return new Real(url, protocols);
+          this.url = String(url); this.readyState = 0; this.protocol = ''; this.extensions = ''; this.binaryType = 'blob'; this.bufferedAmount = 0;
+          this.onopen = this.onmessage = this.onclose = this.onerror = null;
+          this._id = next++;
+          live.set(this._id, this);
+          const list = protocols == null ? [] : (Array.isArray(protocols) ? protocols : [protocols]);
+          window.webkit.messageHandlers.benchSocket.postMessage({ op: 'open', id: this._id, port, path: u.pathname + u.search, protocols: list });
+        }
+        send(data) {
+          if (this.readyState !== 1) return;
+          const id = this._id;
+          if (typeof data === 'string') return window.webkit.messageHandlers.benchSocket.postMessage({ op: 'send', id, text: data });
+          const buf = data instanceof ArrayBuffer ? data : (data.buffer || null);
+          if (buf) { let s = ''; new Uint8Array(buf).forEach((b) => (s += String.fromCharCode(b))); window.webkit.messageHandlers.benchSocket.postMessage({ op: 'send', id, b64: btoa(s) }); }
+        }
+        close() {
+          if (this.readyState > 1) return;
+          this.readyState = 2;
+          window.webkit.messageHandlers.benchSocket.postMessage({ op: 'close', id: this._id });
+          this._fire('close', { code: 1000 });
+        }
+        _fire(kind, d) {
+          let ev;
+          if (kind === 'message') {
+            let data = d.text;
+            if (d.b64 != null) { const bin = atob(d.b64), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); data = this.binaryType === 'arraybuffer' ? a.buffer : new Blob([a]); }
+            ev = new MessageEvent('message', { data });
+          } else if (kind === 'close') {
+            this.readyState = 3; live.delete(this._id);
+            ev = new CloseEvent('close', { code: d.code || 1006, wasClean: d.code === 1000 });
+          } else {
+            if (kind === 'open') this.readyState = 1;
+            ev = new Event(kind);
+          }
+          const h = this['on' + kind];
+          if (typeof h === 'function') h.call(this, ev);
+          this.dispatchEvent(ev);
+        }
+      }
+      BenchSocket.CONNECTING = 0; BenchSocket.OPEN = 1; BenchSocket.CLOSING = 2; BenchSocket.CLOSED = 3;
+      window.WebSocket = BenchSocket;
+      window.__benchSocket = (id, kind, d) => { const s = live.get(id); if (s) s._fire(kind, d || {}); };
+    })();
+    """#
 }

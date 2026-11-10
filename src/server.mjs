@@ -1,5 +1,6 @@
 // @ts-check
 import http from 'node:http';
+import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -984,6 +985,10 @@ server.on('upgrade', (req, socket, head) => {
   if (!sameOrigin(req)) return refuse(socket, '403 Forbidden');
   if (!who(req)) return refuse(socket, '401 Unauthorized');
 
+  // A preview's WebSocket - a dev server's live reload - tunnelled to the port as is.
+  const preview = /^\/api\/sessions\/([^/]+)\/preview\/(\d{2,5})(\/.*)?$/.exec(u.pathname);
+  if (preview) return tunnelPreview(req, socket, head, u, decodeURIComponent(preview[1]), Number(preview[2]), preview[3] || '/');
+
   if (u.pathname === '/api/ws') {
     return wss.handleUpgrade(req, socket, head, (ws) => {
       const client = /** @type {import('ws').WebSocket & {watch?: Set<string>, alive?: boolean}} */ (ws);
@@ -1169,4 +1174,31 @@ function proxyPreview(req, res, u, sessionId, target, rest) {
     json(req, res, { error: refused ? `Nothing is listening on :${target}` : `The server on :${target} didn't answer`, code: refused ? 'down' : 'error' }, 502);
   });
   req.pipe(out);
+}
+
+/**
+ * A preview's WebSocket upgrade, passed to the dev server on this machine: the request
+ * rewritten for it, then the two sockets joined. Same limits as `proxyPreview`.
+ * @param {http.IncomingMessage} req @param {import('node:stream').Duplex} socket @param {Buffer} head
+ * @param {URL} u @param {string} sessionId @param {number} target @param {string} rest
+ */
+function tunnelPreview(req, socket, head, u, sessionId, target, rest) {
+  try { svc.session(sessionId); } catch { return refuse(socket, '404 Not Found'); }
+  if (target < 1024 || target > 65535 || target === Number(port)) return refuse(socket, '403 Forbidden');
+  const lines = [`GET ${rest}${u.search} HTTP/1.1`, `Host: localhost:${target}`, `Origin: http://localhost:${target}`];
+  for (let i = 0; i < req.rawHeaders.length; i += 2) {
+    const k = req.rawHeaders[i];
+    if (/^(host|origin|authorization|cookie)$/i.test(k)) continue;
+    lines.push(`${k}: ${req.rawHeaders[i + 1]}`);
+  }
+  const up = net.connect(target, '127.0.0.1', () => {
+    up.write(lines.join('\r\n') + '\r\n\r\n');
+    if (head?.length) up.write(head);
+    up.pipe(socket);
+    socket.pipe(up);
+  });
+  up.on('error', () => (socket.writable ? refuse(socket, '502 Bad Gateway') : socket.destroy()));
+  socket.on('error', () => up.destroy());
+  socket.on('close', () => up.destroy());
+  up.on('close', () => socket.destroy());
 }
