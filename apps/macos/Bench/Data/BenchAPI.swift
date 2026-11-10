@@ -129,9 +129,11 @@ final class BenchAPI: @unchecked Sendable {
     }
 
     /// The server starts the task's first session and sends it the prompt.
-    func createTask(project: String, title: String, prompt: String, mode: Mode) async throws -> Session {
+    func createTask(project: String, title: String, prompt: String, mode: Mode, base: String? = nil, done: String? = nil) async throws -> Session {
         var body: [String: Any] = ["projectId": project, "title": title, "mode": mode.rawValue]
         if !prompt.isEmpty { body["prompt"] = prompt }
+        if let base, !base.isEmpty { body["baseBranch"] = base }
+        if let done, !done.isEmpty { body["done"] = done }
         return try decode(TaskCreated.self, await call("/api/tasks", method: "POST", body: body)).session
     }
 
