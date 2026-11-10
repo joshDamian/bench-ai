@@ -12,6 +12,20 @@ final class RemoteShell: NSObject, TerminalViewDelegate {
     var onState: ((String?) -> Void)?
     /// The title the shell sets (usually user@host: folder), for the tab's label.
     var onTitle: ((String) -> Void)?
+    /// The last title the shell set, for a panel that comes back to it.
+    var title: String?
+    var live: Bool { socket != nil }
+
+    /// Shells kept for as long as their app tab is open, so switching tabs and back finds the
+    /// same screen and scrollback instead of a new connection.
+    @MainActor static var kept: [String: RemoteShell] = [:]
+
+    /// Lets go of the shells for an app tab that closed. Their shells on the server keep
+    /// running, as when the panel is hidden; only this app's connection ends.
+    @MainActor static func release(matching id: String) {
+        let enc = BenchAPI.enc(id)
+        for (k, s) in kept where k.contains("=\(enc)&") || k.contains("=\(id)&") { s.close(); kept[k] = nil }
+    }
 
     init(api: BenchAPI, query: String) {
         self.api = api
@@ -71,7 +85,7 @@ final class RemoteShell: NSObject, TerminalViewDelegate {
         Task { @MainActor in self.sendFrame(["type": "resize", "cols": newCols, "rows": newRows]) }
     }
     nonisolated func setTerminalTitle(source: TerminalView, title: String) {
-        Task { @MainActor in self.onTitle?(title) }
+        Task { @MainActor in self.title = title; self.onTitle?(title) }
     }
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     nonisolated func scrolled(source: TerminalView, position: Double) {}
@@ -167,7 +181,7 @@ struct RemoteTerminalView: View {
             current = UserDefaults.standard.string(forKey: memoryKey + ".current").flatMap { tabs.contains($0) ? $0 : nil } ?? tabs[0]
             for id in tabs { connect(id) }
         }
-        .onDisappear { shells.values.forEach { $0.close() } }
+        // Shells stay connected while their app tab is open; AppModel.closeTab lets them go.
         .onChange(of: tabs) { _, t in UserDefaults.standard.set(t, forKey: memoryKey) }
         .onChange(of: current) { _, c in
             UserDefaults.standard.set(c, forKey: memoryKey + ".current")
@@ -204,7 +218,17 @@ struct RemoteTerminalView: View {
     }
 
     private func connect(_ id: String) {
-        let s = RemoteShell(api: store.api, query: "\(query)&tab=\(id)")
+        let key = "\(query)&tab=\(id)"
+        if let s = RemoteShell.kept[key] {
+            s.onState = { problems[id] = $0 }
+            s.onTitle = { titles[id] = $0 }
+            if let t = s.title { titles[id] = t }
+            shells[id] = s
+            if !s.live { s.connect() }
+            return
+        }
+        let s = RemoteShell(api: store.api, query: key)
+        RemoteShell.kept[key] = s
         s.onState = { problems[id] = $0 }
         s.onTitle = { titles[id] = $0 }
         let pal = TerminalPalette.of(dark: theme.dark, bg: theme.colors.bg)
@@ -230,6 +254,7 @@ struct RemoteTerminalView: View {
         guard tabs.count > 1, let i = tabs.firstIndex(of: id) else { return }
         shells[id]?.end()
         shells[id] = nil
+        RemoteShell.kept["\(query)&tab=\(id)"] = nil
         titles[id] = nil
         problems[id] = nil
         tabs.remove(at: i)

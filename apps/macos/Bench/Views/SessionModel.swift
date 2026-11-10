@@ -13,6 +13,22 @@ struct Attachment: Identifiable, Hashable {
 @MainActor
 @Observable
 final class SessionModel {
+    /// One per session for as long as its app tab is open: switching back to a tab finds
+    /// the transcript as it was, kept current in the background, rather than loading it again.
+    private static var kept: [String: SessionModel] = [:]
+
+    static func of(sessionId: String, store: BenchStore) -> SessionModel {
+        if let m = kept[sessionId], m.store === store { return m }
+        let m = SessionModel(sessionId: sessionId, store: store)
+        kept[sessionId] = m
+        return m
+    }
+
+    /// Stops following a session whose tab closed.
+    static func release(_ sessionId: String) {
+        kept.removeValue(forKey: sessionId)?.close()
+    }
+
     let sessionId: String
     let store: BenchStore
 

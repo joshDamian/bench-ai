@@ -56,6 +56,9 @@ extension AppModel {
         tabs.remove(at: i)
         if selection == id { selection = tabs[min(i, tabs.count - 1)] }
         if split == id { split = nil }
+        // What was kept for the tab - its transcript, its terminal connections - goes with it.
+        if let session = id.hasPrefix("task:") ? nil : Optional(id) { SessionModel.release(session) }
+        RemoteShell.release(matching: id.replacingOccurrences(of: #"^(task|project|files):"#, with: "", options: .regularExpression))
     }
 
     /// ⌃↑ / ⌃↓: the rail's next or previous entry, Inbox first and Ask Bench last.

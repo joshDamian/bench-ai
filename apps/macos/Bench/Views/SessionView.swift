@@ -45,7 +45,7 @@ struct SessionView: View {
         self.showsTitle = showsTitle
         self.store = store
         self.sessionId = sessionId
-        _model = State(initialValue: SessionModel(sessionId: sessionId, store: store))
+        _model = State(initialValue: SessionModel.of(sessionId: sessionId, store: store))
         _files = State(initialValue: SessionFiles.of(api: store.api, sessionId: sessionId))
     }
 
@@ -166,7 +166,8 @@ struct SessionView: View {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
         .onAppear { model.open(); composerFocused = true }
-        .onDisappear { model.close() }
+        // Kept following while the session has a tab; closing the tab lets it go.
+        .onDisappear { if !app.tabs.contains(sessionId) && app.split != sessionId { SessionModel.release(sessionId) } }
         .task(id: model.rows.count) {
             let replies: [String] = model.blocks.compactMap { (b: Block) -> String? in
                 if case .turn(_, _, let reply, _, _, _) = b { return reply }
