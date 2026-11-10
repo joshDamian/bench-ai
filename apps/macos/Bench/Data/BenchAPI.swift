@@ -99,6 +99,22 @@ final class BenchAPI: @unchecked Sendable {
         return try decode(JSONValue.self, await call("/api/sessions/\(Self.enc(id))/paths?q=\(q)"))["paths"].array.compactMap(\.string)
     }
 
+    // MARK: project files
+
+    func tree(_ project: String) async throws -> [String] {
+        try decode(JSONValue.self, await call("/api/projects/\(Self.enc(project))/tree"))["paths"].array.compactMap(\.string)
+    }
+
+    func text(_ project: String, path: String) async throws -> (text: String, mtime: Double) {
+        let q = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+#"))) ?? path
+        let v = try decode(JSONValue.self, await call("/api/projects/\(Self.enc(project))/text?path=\(q)"))
+        return (v["text"].string ?? "", v["mtime"].number ?? 0)
+    }
+
+    func save(_ project: String, path: String, text: String, mtime: Double) async throws -> Double {
+        try decode(JSONValue.self, await call("/api/projects/\(Self.enc(project))/text", method: "PUT", body: ["path": path, "text": text, "mtime": mtime]))["mtime"].number ?? 0
+    }
+
     func interrupt(_ id: String) async throws { try await call("/api/sessions/\(Self.enc(id))/interrupt", method: "POST", body: [:]) }
     func setMode(_ id: String, _ mode: Mode) async throws { try await call("/api/sessions/\(Self.enc(id))", method: "PATCH", body: ["mode": mode.rawValue]) }
     func rename(_ id: String, _ title: String) async throws { try await call("/api/sessions/\(Self.enc(id))", method: "PATCH", body: ["title": title]) }

@@ -316,6 +316,10 @@ struct BenchCommands: Commands {
             Divider()
             Button("Previous in Rail") { model.stepRail(-1) }.keyboardShortcut(.upArrow, modifiers: [.control])
             Button("Next in Rail") { model.stepRail(1) }.keyboardShortcut(.downArrow, modifiers: [.control])
+            Divider()
+            Button("Browse Files") { if let p = model.store?.project(model.rail) { model.openTab("files:\(p.id)") } }
+                .keyboardShortcut("f", modifiers: [.control, .shift])
+                .disabled(model.store?.project(model.rail) == nil)
         }
         CommandMenu("Task") {
             Button("Merge or Ship…") { model.shipRequest += 1 }

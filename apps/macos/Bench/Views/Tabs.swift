@@ -144,6 +144,7 @@ private struct TabChip: View {
     /// The tab's title, where it is, and its state mark.
     private func describe() -> (String, String, Mark) {
         if let p = Place(rawValue: id) { return (p.title, "", .idle) }
+        if id.hasPrefix("files:") { return ("Files", store.project(String(id.dropFirst(6)))?.name ?? "", .idle) }
         if id.hasPrefix("project:") { return (store.project(String(id.dropFirst(8)))?.name ?? "Project", "", .idle) }
         if id.hasPrefix("task:") {
             let t = store.task(String(id.dropFirst(5)))

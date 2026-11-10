@@ -40,7 +40,7 @@ struct BenchHighlighter: CodeSyntaxHighlighter {
         "AND", "OR", "NOT", "ORDER", "BY", "GROUP", "LIMIT", "then", "fi", "done", "esac", "echo",
     ]
 
-    private func attributed(_ code: String, language: String) -> AttributedString {
+    func attributed(_ code: String, language: String) -> AttributedString {
         var out = AttributedString(code)
         out.foregroundColor = base
         let ns = code as NSString
