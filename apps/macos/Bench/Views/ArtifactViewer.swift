@@ -155,7 +155,7 @@ struct ArtifactPanel: View {
 
     @ViewBuilder private var content: some View {
         if mode == "changes", let previous, let text {
-            ChangesView(old: previous, new: text)
+            FileChangesView(old: previous, new: text)
         } else if let url = files.viewingURL {
             switch kind {
             case .markdown:
@@ -417,7 +417,7 @@ struct LineDiff {
     }
 }
 
-struct ChangesView: View {
+struct FileChangesView: View {
     @Environment(\.theme) private var theme
     let old: String
     let new: String
