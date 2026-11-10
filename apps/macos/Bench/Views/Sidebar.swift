@@ -85,7 +85,7 @@ struct Sidebar: View {
     @ViewBuilder private func projectList(_ p: Project) -> some View {
         let tasks = store.tasks.filter { $0.project_id == p.id && $0.state == "active" }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
         let loose = store.sessions.filter { $0.project_id == p.id && $0.task_id == nil && $0.archived_at == nil }.sorted(by: newest)
-        header(title: p.name, sub: "\(loose.count) session\(loose.count == 1 ? "" : "s")" + (tasks.isEmpty ? "" : " · \(tasks.count) task\(tasks.count == 1 ? "" : "s")"), project: p)
+        header(title: p.name, sub: tasks.isEmpty && loose.isEmpty ? "Nothing open" : "\(loose.count) session\(loose.count == 1 ? "" : "s")" + (tasks.isEmpty ? "" : " · \(tasks.count) task\(tasks.count == 1 ? "" : "s")"), project: p)
         if !tasks.isEmpty {
             Section {
                 ForEach(tasks) { t in
@@ -94,12 +94,63 @@ struct Sidebar: View {
                 }
             } header: { label("Tasks") }
         }
-        Section {
-            if loose.isEmpty {
-                Text("No sessions yet").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+        if tasks.isEmpty && loose.isEmpty {
+            startPoints(p)
+        } else {
+            Section {
+                ForEach(loose) { s in sessionRow(s) }
+            } header: { if !loose.isEmpty { label("Sessions") } }
+        }
+    }
+
+    /// A project with nothing open: what can be started or opened in it, and its last work.
+    @ViewBuilder private func startPoints(_ p: Project) -> some View {
+        label("Start")
+        action("plus", "Start a task…", keys: "⌘N", primary: true) { model.startTask(in: p.id) }
+        action("terminal", "Work in the checkout") {
+            Task {
+                if let s = try? await store.api.createSession(project: p.id, task: nil, mode: Mode(rawValue: store.defaults.mode ?? "") ?? .default) {
+                    store.apply(s); selection = s.id
+                }
             }
-            ForEach(loose) { s in sessionRow(s) }
-        } header: { label("Sessions") }
+        }
+        label("Go to")
+        action("square.grid.2x2", "Project page") { selection = "project:\(p.id)" }
+        action("folder", "Files", keys: "⌃⇧F") { model.openTab("files:\(p.id)") }
+        action("apple.terminal", "Terminal") { selection = "project:\(p.id)"; model.showTerminal = true }
+        let recent = store.tasks.filter { $0.project_id == p.id && $0.state != "active" }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+        if !recent.isEmpty {
+            label("Recent")
+            ForEach(recent.prefix(3)) { t in
+                Button { selection = "task:\(t.id)" } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark").font(.system(size: 10)).frame(width: 16)
+                        Text(t.title).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(Format.ago(t.updated_at)).font(.system(size: 11))
+                    }
+                    .font(.system(size: 12.5)).foregroundStyle(theme.colors.muted)
+                    .padding(.horizontal, 10).frame(height: 30).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func action(_ icon: String, _ title: String, keys: String? = nil, primary: Bool = false, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 11.5)).frame(width: 16)
+                    .foregroundStyle(primary ? theme.colors.accent : theme.colors.muted)
+                Text(title).font(.system(size: 13))
+                Spacer(minLength: 4)
+                if let keys { Text(keys).font(BenchFont.mono(10.5)).foregroundStyle(theme.colors.muted.opacity(0.7)) }
+            }
+            .padding(.horizontal, 10).frame(height: 34)
+            .background(primary ? theme.colors.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// The list's heading: what the rail has selected. A project's name opens its page.
@@ -247,7 +298,7 @@ struct ProjectRail: View {
                         let mark = projectMark(p)
                         // Neutral tiles: on the rail, colour is kept for what a project is doing.
                         tile(id: p.id, label: p.name, sub: summary(p), keys: i < 9 ? "⌃\(i + 1)" : nil,
-                             fill: nil, mark: mark, badge: 0) {
+                             fill: nil, mark: mark, badge: 0, quiet: !Self.busy(p.id, store)) {
                             Text(Self.initials(p.name)).font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(model.rail == p.id ? Color.white : RailPalette.of(dark: theme.dark).letters)
                         }
@@ -351,10 +402,20 @@ struct ProjectRail: View {
         }
     }
 
+    /// Whether a project has anything open: an active task or a session in its checkout.
+    static func busy(_ id: String, _ store: BenchStore) -> Bool {
+        store.tasks.contains { $0.project_id == id && $0.state == "active" }
+            || store.sessions.contains { $0.project_id == id && $0.task_id == nil && $0.archived_at == nil }
+    }
+
     private func tile<Icon: View>(id: String, label: String, sub: String, keys: String?, fill: Color?, mark: Mark?, badge: Int,
-                                   @ViewBuilder icon: () -> Icon) -> some View {
+                                   quiet: Bool = false, @ViewBuilder icon: () -> Icon) -> some View {
         let on = model.rail == id
-        return Button { withAnimation(.easeOut(duration: 0.26)) { model.rail = id } } label: {
+        return Button {
+            withAnimation(.easeOut(duration: 0.26)) { model.rail = id }
+            // A project with nothing open has nothing to list: go straight to its page.
+            if quiet { model.selection = "project:\(id)" }
+        } label: {
             ZStack { icon() }
                 .frame(width: 34, height: 34)
                 .background(face(fill, on: on, hovered: hover == id))
@@ -381,6 +442,9 @@ struct ProjectRail: View {
                     }
                 }
                 .contentShape(Rectangle())
+                // Quiet projects recede, so the ones with work stand out.
+                .opacity(quiet && !on && hover != id ? 0.45 : 1)
+                .animation(.easeOut(duration: 0.15), value: hover)
         }
         .buttonStyle(.plain)
         // Selected: a pill on the rail's left edge, Discord's way; hovered: a shorter, fainter one.

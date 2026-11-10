@@ -433,6 +433,13 @@ private struct StartTask: View {
     @FocusState private var focused: Bool
 
     var body: some View {
+        content
+            .onAppear { if app.focusTaskBox > 0 { focused = true } }
+            .onChange(of: app.focusTaskBox) { _, _ in focused = true }
+            .onDisappear { app.focusTaskBox = 0 }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: open ? .top : .center, spacing: 12) {
                 if !open { Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.colors.accent) }

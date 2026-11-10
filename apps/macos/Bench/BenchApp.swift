@@ -90,6 +90,15 @@ final class AppModel {
         use(nil)
     }
 
+    /// Bumped to put the cursor in the project page's task box.
+    var focusTaskBox = 0
+
+    /// A new task in a project: its page, with the task box ready to type in.
+    func startTask(in project: String) {
+        selection = "project:\(project)"
+        focusTaskBox += 1
+    }
+
     func newSession(in project: String? = nil) {
         newSessionProject = project
         showNewSession = true
@@ -227,8 +236,11 @@ struct BenchCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("New Session…") { model.newSession() }
-                .keyboardShortcut("n", modifiers: [.command])
+            // With a project in the rail, ⌘N is a task in it; elsewhere, a session.
+            Button(model.store?.project(model.rail) != nil ? "New Task" : "New Session…") {
+                if let p = model.store?.project(model.rail) { model.startTask(in: p.id) } else { model.newSession() }
+            }
+            .keyboardShortcut("n", modifiers: [.command])
             Button("Add Project…") { model.showAddProject = true }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model.store == nil)
