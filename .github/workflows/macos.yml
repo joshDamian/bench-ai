@@ -121,11 +121,17 @@ jobs:
       - name: Install on this Mac
         if: runner.environment == 'self-hosted'
         run: |
-          rm -rf /Applications/Bench.app.new
-          ditto Bench.app /Applications/Bench.app.new
-          rm -rf /Applications/Bench.app
-          mv /Applications/Bench.app.new /Applications/Bench.app
-          xattr -dr com.apple.quarantine /Applications/Bench.app || true
+          dest=/Applications/Bench.app
+          rm -rf "$dest.new"
+          rm -rf "$dest" 2>/dev/null || true
+          # macOS's App Management protection can stop the runner changing apps in
+          # /Applications. Say so, rather than leaving a half-replaced app behind.
+          if [ -e "$dest" ]; then
+            echo "::error::macOS wouldn't let the runner replace $dest. Allow it in System Settings > Privacy & Security > App Management (add the runner's Runner.Listener, or the Terminal it runs in), then re-run."
+            exit 1
+          fi
+          ditto Bench.app "$dest"
+          xattr -dr com.apple.quarantine "$dest" || true
           osascript -e 'display notification "Reopen Bench to use it." with title "New Bench build installed"' || true
 
       - name: Disk image
