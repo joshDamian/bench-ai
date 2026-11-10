@@ -46,7 +46,7 @@ struct SessionView: View {
         self.store = store
         self.sessionId = sessionId
         _model = State(initialValue: SessionModel(sessionId: sessionId, store: store))
-        _files = State(initialValue: SessionFiles(api: store.api, sessionId: sessionId))
+        _files = State(initialValue: SessionFiles.of(api: store.api, sessionId: sessionId))
     }
 
     /// The artifact viewer: beside the conversation, or filling the session with the composer under it.

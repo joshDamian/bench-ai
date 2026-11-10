@@ -49,7 +49,8 @@ struct PreviewPanel: View {
         VStack(spacing: 0) {
             bar
             Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1)
-            PreviewWebView(web: web, api: files.api, sessionId: files.sessionId, start: target, onStart: onStart)
+            PreviewWebView(web: web, api: files.api, sessionId: files.sessionId, start: target, resume: files.pageAt, onStart: onStart)
+                .onChange(of: web.current) { _, c in files.pageAt = c }
         }
         .background(theme.colors.bg)
         .background {
@@ -116,6 +117,7 @@ struct PreviewWebView: NSViewRepresentable {
     let api: BenchAPI
     let sessionId: String
     let start: PreviewTarget
+    var resume: PreviewTarget? = nil
     let onStart: (Int) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(web: web, onStart: onStart) }
@@ -133,7 +135,7 @@ struct PreviewWebView: NSViewRepresentable {
         v.allowsBackForwardNavigationGestures = true
         context.coordinator.observe(v)
         web.view = v
-        v.load(URLRequest(url: start.schemeURL))
+        v.load(URLRequest(url: (resume?.port == start.port ? resume! : start).schemeURL))
         context.coordinator.started = start
         return v
     }

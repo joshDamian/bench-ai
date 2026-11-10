@@ -41,7 +41,7 @@ final class SessionFiles {
     /// Whether the viewer or the preview is open beside the conversation.
     var hasSide: Bool { viewing != nil || page != nil }
 
-    func open(_ t: PreviewTarget) { viewing = nil; page = t }
+    func open(_ t: PreviewTarget) { viewing = nil; page = t; pageAt = nil }
 
     /// The names and addresses the server's machine answers to - its Tailscale address,
     /// its host name - so a link to any of them opens in the preview.
@@ -74,6 +74,20 @@ final class SessionFiles {
     @ObservationIgnored private var order: [String] = []
     @ObservationIgnored private var fetched: [String: URL] = [:]
     @ObservationIgnored private var fetching: [String: Task<URL?, Never>] = [:]
+
+    /// One per session for as long as the app runs, so a tab switched away from and back
+    /// finds its viewer or preview as it was left.
+    private static var kept: [String: SessionFiles] = [:]
+
+    static func of(api: BenchAPI, sessionId: String) -> SessionFiles {
+        if let f = kept[sessionId], f.api === api { return f }
+        let f = SessionFiles(api: api, sessionId: sessionId)
+        kept[sessionId] = f
+        return f
+    }
+
+    /// Where the preview had got to, so it reopens on that page rather than the link's.
+    var pageAt: PreviewTarget?
 
     init(api: BenchAPI, sessionId: String) {
         self.api = api; self.sessionId = sessionId
