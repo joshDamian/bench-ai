@@ -94,9 +94,70 @@ final class BenchAPI: @unchecked Sendable {
     }
 
     /// Files in the session's folder matching what follows an "@", best first.
-    func paths(_ id: String, query: String) async throws -> [String] {
+    /// Notes come first, as `note:name` with what to call each; then files.
+    func paths(_ id: String, query: String) async throws -> (paths: [String], titles: [String: String]) {
         let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+"))) ?? ""
-        return try decode(JSONValue.self, await call("/api/sessions/\(Self.enc(id))/paths?q=\(q)"))["paths"].array.compactMap(\.string)
+        let v = try decode(JSONValue.self, await call("/api/sessions/\(Self.enc(id))/paths?q=\(q)"))
+        var out: [String] = [], titles: [String: String] = [:]
+        for n in v["notes"].array {
+            guard let token = n["token"].string else { continue }
+            out.append(token)
+            titles[token] = n["title"].string ?? token
+        }
+        return (out + v["paths"].array.compactMap(\.string), titles)
+    }
+
+    // MARK: notes
+
+    private static func q(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+#"))) ?? s
+    }
+
+    private static func note(_ v: JSONValue?) -> Note? {
+        guard let name = v["name"].string else { return nil }
+        return Note(name: name, title: v["title"].string ?? name, mtime: v["mtime"].number ?? 0, include: v["include"].bool)
+    }
+
+    /// A project's notes, or with no project the ones that belong to none.
+    func notes(project: String?) async throws -> NoteList {
+        let v = try decode(JSONValue.self, await call("/api/notes" + (project.map { "?project=\(Self.q($0))" } ?? "")))
+        return NoteList(notes: v["notes"].array.compactMap { Self.note($0) }, instructions: v["instructions"].bool, elsewhere: v["elsewhere"].int ?? 0)
+    }
+
+    func noteText(project: String?, name: String) async throws -> (text: String, mtime: Double, include: Bool, path: String) {
+        let v = try decode(JSONValue.self, await call("/api/notes/text?name=\(Self.q(name))" + (project.map { "&project=\(Self.q($0))" } ?? "")))
+        return (v["text"].string ?? "", v["mtime"].number ?? 0, v["include"].bool, v["path"].string ?? "")
+    }
+
+    private func noteBody(_ project: String?, _ more: [String: Any]) -> [String: Any] {
+        var b = more
+        if let project { b["project"] = project }
+        return b
+    }
+
+    func createNote(project: String?, title: String) async throws -> Note {
+        let v = try decode(JSONValue.self, await call("/api/notes", method: "POST", body: noteBody(project, ["title": title])))
+        guard let n = Self.note(v) else { throw BenchError(status: 500, message: "The server didn't return the note") }
+        return n
+    }
+
+    /// Saves a note; `mtime` 0 saves whatever the file holds now.
+    func saveNote(project: String?, name: String, text: String, mtime: Double) async throws -> Double {
+        try decode(JSONValue.self, await call("/api/notes/text", method: "PUT", body: noteBody(project, ["name": name, "text": text, "mtime": mtime])))["mtime"].number ?? 0
+    }
+
+    func includeNote(project: String?, name: String, _ on: Bool) async throws {
+        try await call("/api/notes", method: "PATCH", body: noteBody(project, ["name": name, "include": on]))
+    }
+
+    func deleteNote(project: String?, name: String) async throws {
+        try await call("/api/notes?name=\(Self.q(name))" + (project.map { "&project=\(Self.q($0))" } ?? ""), method: "DELETE")
+    }
+
+    /// A note of no project becomes a project's first note. Returns the project's id and the note's name there.
+    func promoteNote(name: String, projectName: String) async throws -> (project: String, name: String) {
+        let v = try decode(JSONValue.self, await call("/api/notes/promote", method: "POST", body: ["name": name, "projectName": projectName]))
+        return (v["project"]["id"].string ?? "", v["name"].string ?? name)
     }
 
     // MARK: project files

@@ -17,6 +17,8 @@ extension AppModel {
         guard let id, let store else { return nil }
         if id.hasPrefix("project:") { return String(id.dropFirst(8)) }
         if id.hasPrefix("files:") { return String(id.dropFirst(6)) }
+        // Notes of no project count as one place, so stepping through them shares a tab.
+        if let n = NoteRef(tab: id) { return n.project ?? "notes" }
         if id.hasPrefix("task:") { return store.task(String(id.dropFirst(5)))?.project_id }
         return store.session(id)?.project_id
     }
@@ -24,7 +26,7 @@ extension AppModel {
     /// Whether the current tab shows something worth keeping: anything but nothing or a place list.
     private var tabInUse: Bool {
         guard let s = selection else { return false }
-        return Place(rawValue: s) == nil && !["inbox", "ask"].contains(s)
+        return Place(rawValue: s) == nil && !["inbox", "ask", "notes"].contains(s)
     }
 
     /// An existing session, task or project page, from a list. Within the project the current
@@ -67,7 +69,7 @@ extension AppModel {
 
     /// ⌃↑ / ⌃↓: the rail's next or previous entry, Inbox first and Ask Bench last.
     func stepRail(_ step: Int) {
-        let order = ["inbox"] + (store?.projects.map(\.id) ?? []) + ["ask"]
+        let order = ["inbox", "notes"] + (store?.projects.map(\.id) ?? []) + ["ask"]
         let i = order.firstIndex(of: rail) ?? 0
         rail = order[max(0, min(order.count - 1, i + step))]
     }
@@ -183,6 +185,10 @@ private struct TabChip: View {
     private func describe() -> (String, String, Mark) {
         if let p = Place(rawValue: id) { return (p.title, "", .idle) }
         if id.hasPrefix("files:") { return ("Files", store.project(String(id.dropFirst(6)))?.name ?? "", .idle) }
+        if let n = NoteRef(tab: id) {
+            let title = model.notes.title(n) ?? n.fileName.replacingOccurrences(of: ".md", with: "")
+            return (title, n.project.flatMap { store.project($0)?.name } ?? "Notes", .idle)
+        }
         if id.hasPrefix("project:") { return (store.project(String(id.dropFirst(8)))?.name ?? "Project", "", .idle) }
         if id.hasPrefix("task:") {
             let t = store.task(String(id.dropFirst(5)))

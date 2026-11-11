@@ -215,6 +215,10 @@ enum Format {
 
     static func ago(_ s: String?, now: Date = Date()) -> String {
         guard let s, let t = iso.date(from: s) ?? ISO8601DateFormatter().date(from: s) else { return "" }
+        return ago(t, now: now)
+    }
+
+    static func ago(_ t: Date, now: Date = Date()) -> String {
         let m = Int(now.timeIntervalSince(t) / 60)
         switch m {
         case ..<1: return "now"

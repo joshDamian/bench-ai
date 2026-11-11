@@ -56,6 +56,18 @@ struct BenchHighlighter: CodeSyntaxHighlighter {
             }
         }
 
+        // Markdown is prose: colour its structure, never its words as keywords.
+        if ["md", "markdown", "mdx"].contains(language) {
+            paint(#"(?m)^(```|~~~)[\s\S]*?^\1[^\n]*$"#, string)
+            paint(#"`[^`\n]+`"#, string)
+            paint(#"(?m)^#{1,6} [^\n]*$"#, keyword)
+            paint(#"(?m)^>[^\n]*$"#, comment)
+            paint(#"(?m)^\s*([-*+]|\d+[.)])(?= )"#, number)
+            paint(#"\[[^\]\n]*\]\([^)\n]*\)"#, call)
+            paint(#"<!--[\s\S]*?-->"#, comment)
+            return out
+        }
+
         let hashComments = ["python", "py", "sh", "bash", "zsh", "shell", "ruby", "rb", "yaml", "yml", "toml", "dockerfile", "makefile"].contains(language)
         // Comments and strings first, so keywords inside them stay their colour.
         if hashComments { paint(#"#[^\n]*"#, comment) }

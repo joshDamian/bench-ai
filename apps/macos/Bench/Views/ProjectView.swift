@@ -434,8 +434,8 @@ private struct StartTask: View {
 
     var body: some View {
         content
-            .onAppear { if app.focusTaskBox > 0 { focused = true } }
-            .onChange(of: app.focusTaskBox) { _, _ in focused = true }
+            .onAppear { takeDraft(); if app.focusTaskBox > 0 { focused = true } }
+            .onChange(of: app.focusTaskBox) { _, _ in takeDraft(); focused = true }
             .onDisappear { app.focusTaskBox = 0 }
     }
 
@@ -490,6 +490,14 @@ private struct StartTask: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(open ? theme.colors.accent.opacity(0.45) : theme.colors.fill(0.07)))
         .contentShape(Rectangle())
         .onTapGesture { focused = true }
+    }
+
+    /// A note handed over to become a task: its text is the prompt, ready to start or edit.
+    private func takeDraft() {
+        guard let d = app.taskDraft else { return }
+        app.taskDraft = nil
+        text = d
+        open = true
     }
 
     private func chip(_ s: String) -> some View {
