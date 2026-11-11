@@ -13,6 +13,33 @@ struct Attachment: Identifiable, Hashable {
 @MainActor
 @Observable
 final class SessionModel {
+    /// One per session for as long as its app tab is open: switching back to a tab finds
+    /// the transcript as it was, kept current in the background, rather than loading it again.
+    private static var kept: [String: SessionModel] = [:]
+
+    static func of(sessionId: String, store: BenchStore) -> SessionModel {
+        if let m = kept[sessionId], m.store === store { return m }
+        let m = SessionModel(sessionId: sessionId, store: store)
+        kept[sessionId] = m
+        return m
+    }
+
+    /// Where the thread was scrolled when its tab was left: following the end, or the first
+    /// block in view. Kept here because the model outlives the view between tab switches.
+    var followingEnd = true
+    var scrollAnchor: String?
+    /// How far into the anchor block the view was, so it comes back to the exact pixel.
+    var scrollInset: CGFloat = 0
+    @ObservationIgnored var visible: Set<String> = []
+    /// Each drawn block's top, in the scroll view's coordinates, and the scroll offset.
+    @ObservationIgnored var tops: [String: CGFloat] = [:]
+    @ObservationIgnored var offsetY: CGFloat = 0
+
+    /// Stops following a session whose tab closed.
+    static func release(_ sessionId: String) {
+        kept.removeValue(forKey: sessionId)?.close()
+    }
+
     let sessionId: String
     let store: BenchStore
 

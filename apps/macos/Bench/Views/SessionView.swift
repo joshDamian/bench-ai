@@ -35,6 +35,7 @@ struct SessionView: View {
     @State private var seen = 0
     /// Whether the thread has scrolled under the header: then the header shows its edge.
     @State private var scrolled = false
+    @State private var position = ScrollPosition(idType: String.self)
     /// The artifact panel's width, as last dragged.
     @AppStorage("artifactPanelWidth") private var panelWidth: Double = 640
 
@@ -45,8 +46,8 @@ struct SessionView: View {
         self.showsTitle = showsTitle
         self.store = store
         self.sessionId = sessionId
-        _model = State(initialValue: SessionModel(sessionId: sessionId, store: store))
-        _files = State(initialValue: SessionFiles(api: store.api, sessionId: sessionId))
+        _model = State(initialValue: SessionModel.of(sessionId: sessionId, store: store))
+        _files = State(initialValue: SessionFiles.of(api: store.api, sessionId: sessionId))
     }
 
     /// The artifact viewer: beside the conversation, or filling the session with the composer under it.
@@ -60,21 +61,58 @@ struct SessionView: View {
         }
     }
 
-    @ViewBuilder private func artifactSide() -> some View {
-        if files.full {
-            VStack(spacing: 0) {
-                sidePanel()
-                Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: false, focused: $composerFocused)
-                    .frame(maxWidth: 760)
-                    .padding(.horizontal, 24).padding(.bottom, 14).padding(.top, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(theme.colors.bg)
-                    .overlay(alignment: .top) { Rectangle().fill(theme.colors.fill(0.08)).frame(height: 1) }
+    /// The end of a thread, once its rows have been measured: a lazy list estimates the
+    /// heights of rows it hasn't drawn, so one jump lands short of the end on a long thread.
+    private func settleAtEnd(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo("bottom", anchor: .bottom)
+        for delay in [0.05, 0.2, 0.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if model.followingEnd || delay == 0.05 { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+        }
+    }
+
+    private func restoreScroll(_ proxy: ScrollViewProxy) {
+        if !model.followingEnd, let a = model.scrollAnchor {
+            let inset = model.scrollInset
+            DispatchQueue.main.async {
+                proxy.scrollTo(a, anchor: .top)
+                // Then down into it, to where it was: the block's top is at the offset now.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    if inset > 0 { position.scrollTo(y: model.offsetY + inset) }
+                }
             }
         } else {
-            PanelDivider(width: $panelWidth)
+            model.followingEnd = true
+            settleAtEnd(proxy)
+        }
+    }
+
+    /// The start of Claude's last reply, for the floating composer's context line.
+    private var lastReply: String? {
+        for b in model.blocks.reversed() {
+            if case .turn(_, _, let reply, _, _, _) = b, !reply.isEmpty {
+                return reply.replacingOccurrences(of: #"[*_`#>]+"#, with: "", options: .regularExpression)
+                    .components(separatedBy: .newlines).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            }
+        }
+        return nil
+    }
+
+    @ViewBuilder private func artifactSide() -> some View {
+        if files.full {
             sidePanel()
-                .frame(width: panelWidth)
+                .overlay {
+                    FloatingComposer(files: files, lastReply: lastReply) {
+                        Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: true, focused: $composerFocused, floating: true)
+                    } onOpen: { composerFocused = true }
+                }
+        } else {
+            PanelDivider(width: $panelWidth)
+            // As wide as dragged, but never at the conversation's expense: it keeps 420 points.
+            sidePanel()
+                .frame(minWidth: 380, idealWidth: panelWidth, maxWidth: panelWidth)
+                .layoutPriority(1)
         }
     }
 
@@ -115,6 +153,7 @@ struct SessionView: View {
                     conversation
                 }
             }
+            .frame(minWidth: files.hasSide && !embedded ? 420 : nil)
             }
             if !embedded && files.hasSide { artifactSide() }
             if !embedded && showsInspector && app.showInspector && hasInspector(session) && !files.hasSide {
@@ -155,7 +194,13 @@ struct SessionView: View {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
         .onAppear { model.open(); composerFocused = true }
-        .onDisappear { model.close() }
+        // Kept following while the session has a tab; closing the tab lets it go.
+        .onDisappear {
+            let task = model.session?.task_id.map { "task:\($0)" }
+            if !app.tabs.contains(sessionId) && app.split != sessionId && !(task.map(app.tabs.contains) ?? false) {
+                SessionModel.release(sessionId)
+            }
+        }
         .task(id: model.rows.count) {
             let replies: [String] = model.blocks.compactMap { (b: Block) -> String? in
                 if case .turn(_, _, let reply, _, _, _) = b { return reply }
@@ -200,6 +245,9 @@ struct SessionView: View {
                         blockView(b, live: running && b.id == blocks.last?.id, cwd: cwd)
                             .environment(\.findCurrent, currentHit == b.id)
                             .id(b.id)
+                            .onAppear { model.visible.insert(b.id) }
+                            .onDisappear { model.visible.remove(b.id); model.tops[b.id] = nil }
+                            .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .scrollView).minY }) { model.tops[b.id] = $0 }
                     }
                     if !model.streamText.isEmpty || !model.streamThinking.isEmpty {
                         VStack(alignment: .leading, spacing: Space.xs) {
@@ -227,8 +275,8 @@ struct SessionView: View {
                         .id("approval")
                     }
                     Color.clear.frame(height: approvals.isEmpty ? 150 : 24).id("bottom")
-                        .onAppear { follow = true }
-                        .onDisappear { follow = false }
+                        .onAppear { follow = true; model.followingEnd = true }
+                        .onDisappear { follow = false; model.followingEnd = false }
                 }
                 .environment(\.findQuery, finding ? query : "")
                 .frame(maxWidth: 680)
@@ -237,11 +285,24 @@ struct SessionView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollContentBackground(.hidden)
+            .defaultScrollAnchor(.bottom)
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, y in model.offsetY = y }
             .background(theme.colors.bg)
+            // Back to where the tab was left, or to the end on a first open.
+            .onAppear { restoreScroll(proxy) }
+            .onDisappear {
+                // The block crossing the top edge (or the first one below it), and how far
+                // the view had scrolled into it.
+                let shown = model.blocks.filter { model.visible.contains($0.id) }.compactMap { b in model.tops[b.id].map { (b.id, $0) } }
+                let anchor = shown.filter { $0.1 <= 1 }.max { $0.1 < $1.1 } ?? shown.min { $0.1 < $1.1 }
+                model.scrollAnchor = anchor?.0
+                model.scrollInset = max(0, -(anchor?.1 ?? 0))
+            }
             .onChange(of: model.rows.count) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: approvals.first?.id) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
-            .onChange(of: model.loading) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: model.loading) { _, loading in if !loading && model.followingEnd { settleAtEnd(proxy) } }
             .modifier(SessionKeys(proxy: proxy, follow: follow, seen: $seen, finding: $finding, findFocused: $findFocused,
                                   model: model, jump: { jumpTurn($0, proxy) }))
             .overlay(alignment: .bottom) {
@@ -434,6 +495,8 @@ struct Composer: View {
     let running: Bool
     var embedded = false
     var focused: FocusState<Bool>.Binding
+    /// Inside the full view's floating window, which draws the card itself.
+    var floating = false
     @State private var importing = false
     @State private var pasteMonitor: Any?
 
@@ -613,17 +676,14 @@ struct Composer: View {
                     }
                 }
             }
-            .padding(.leading, 18)
-            .padding([.top, .trailing], Space.md)
+            .padding(.leading, floating ? 14 : 18)
+            .padding([.top, .trailing], floating ? Space.sm : Space.md)
             .padding(.bottom, 10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
-            .background(theme.colors.surface3.opacity(0.6), in: RoundedRectangle(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(theme.colors.fill(0.1)))
-            .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+            .modifier(ComposerCard(on: !floating))
         }
         .frame(maxWidth: 720)
-        .padding(.horizontal, 40)
-        .padding(.bottom, 18)
+        .padding(.horizontal, floating ? 0 : 40)
+        .padding(.bottom, floating ? 0 : 18)
         .frame(maxWidth: .infinity)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { model.attach(urls) }
@@ -840,6 +900,23 @@ private struct SessionKeys: ViewModifier {
             model.answer(a, ["allow": true, "mode": "acceptEdits"])
         } else if PanelText.answerable(a) {
             model.answer(a, ["allow": true])
+        }
+    }
+}
+
+/// The composer's card: material, edge and shadow, unless something around it draws one.
+struct ComposerCard: ViewModifier {
+    @Environment(\.theme) private var theme
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+                .background(theme.colors.surface3.opacity(0.6), in: RoundedRectangle(cornerRadius: 22))
+                .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(theme.colors.fill(0.1)))
+                .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+        } else {
+            content
         }
     }
 }

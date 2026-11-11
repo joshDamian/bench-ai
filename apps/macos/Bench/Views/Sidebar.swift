@@ -35,14 +35,6 @@ struct Sidebar: View {
             }
             footer
         }
-        // Opening a session from anywhere (⌘K, Spotlight, a notification) shows its project.
-        .onChange(of: selection) { _, v in
-            guard let v else { return }
-            if let s = store.session(v) { model.rail = s.project_id.flatMap { store.project($0) != nil ? $0 : nil } ?? "ask" }
-            else if v.hasPrefix("task:"), let t = store.task(String(v.dropFirst(5))), let p = t.project_id { model.rail = p }
-            else if v.hasPrefix("project:") { model.rail = String(v.dropFirst(8)) }
-            else if v.hasPrefix("files:") { model.rail = String(v.dropFirst(6)) }
-        }
     }
 
     private func newest(_ a: Session, _ b: Session) -> Bool { (a.updated_at ?? "") > (b.updated_at ?? "") }
@@ -82,24 +74,87 @@ struct Sidebar: View {
         if !recent.isEmpty { Section { ForEach(Array(recent)) { sessionRow($0, showProject: true) } } header: { label("Recent") } }
     }
 
+    /// The selection as the lists set it: through the tab rules in `AppModel.go`.
+    private var nav: Binding<String?> {
+        Binding(get: { selection }, set: { v in if let v { model.go(v) } })
+    }
+
     @ViewBuilder private func projectList(_ p: Project) -> some View {
         let tasks = store.tasks.filter { $0.project_id == p.id && $0.state == "active" }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
         let loose = store.sessions.filter { $0.project_id == p.id && $0.task_id == nil && $0.archived_at == nil }.sorted(by: newest)
-        header(title: p.name, sub: "\(loose.count) session\(loose.count == 1 ? "" : "s")" + (tasks.isEmpty ? "" : " · \(tasks.count) task\(tasks.count == 1 ? "" : "s")"), project: p)
+        header(title: p.name, sub: tasks.isEmpty && loose.isEmpty ? "Nothing open" : "\(loose.count) session\(loose.count == 1 ? "" : "s")" + (tasks.isEmpty ? "" : " · \(tasks.count) task\(tasks.count == 1 ? "" : "s")"), project: p)
         if !tasks.isEmpty {
             Section {
                 ForEach(tasks) { t in
                     twoLine(title: t.title, status: Describe.task(t, store: store), mark: Mark.of(task: t, store: store), age: nil)
-                        .selectable("task:\(t.id)", $selection, theme, rows)
+                        .selectable("task:\(t.id)", nav, theme, rows)
                 }
             } header: { label("Tasks") }
         }
-        Section {
-            if loose.isEmpty {
-                Text("No sessions yet").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+        startActions(p)
+        if tasks.isEmpty && loose.isEmpty {
+            startPoints(p)
+        } else {
+            Section {
+                ForEach(loose) { s in sessionRow(s) }
+            } header: { if !loose.isEmpty { label("Sessions") } }
+        }
+    }
+
+    /// A project with nothing open: what can be started or opened in it, and its last work.
+    /// Every project's list opens with the two ways to start work in it.
+    @ViewBuilder private func startActions(_ p: Project) -> some View {
+        VStack(spacing: 2) {
+            action("plus", "Start a task…", keys: "⌘N", primary: true) { model.startTask(in: p.id) }
+            action("terminal", "Work in the checkout") {
+                Task {
+                    if let s = try? await store.api.createSession(project: p.id, task: nil, mode: Mode(rawValue: store.defaults.mode ?? "") ?? .default) {
+                        store.apply(s); model.openNew(s.id)
+                    }
+                }
             }
-            ForEach(loose) { s in sessionRow(s) }
-        } header: { label("Sessions") }
+        }
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder private func startPoints(_ p: Project) -> some View {
+        label("Go to")
+        action("square.grid.2x2", "Project page") { model.go("project:\(p.id)") }
+        action("folder", "Files", keys: "⌃⇧F") { model.openTab("files:\(p.id)") }
+        action("apple.terminal", "Terminal") { model.go("project:\(p.id)"); model.showTerminal = true }
+        let recent = store.tasks.filter { $0.project_id == p.id && $0.state != "active" }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+        if !recent.isEmpty {
+            label("Recent")
+            ForEach(recent.prefix(3)) { t in
+                Button { model.go("task:\(t.id)") } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark").font(.system(size: 10)).frame(width: 16)
+                        Text(t.title).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(Format.ago(t.updated_at)).font(.system(size: 11))
+                    }
+                    .font(.system(size: 12.5)).foregroundStyle(theme.colors.muted)
+                    .padding(.horizontal, 10).frame(height: 30).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func action(_ icon: String, _ title: String, keys: String? = nil, primary: Bool = false, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 11.5)).frame(width: 16)
+                    .foregroundStyle(primary ? theme.colors.accent : theme.colors.muted)
+                Text(title).font(.system(size: 13))
+                Spacer(minLength: 4)
+                if let keys { Text(keys).font(BenchFont.mono(10.5)).foregroundStyle(theme.colors.muted.opacity(0.7)) }
+            }
+            .padding(.horizontal, 10).frame(height: 34)
+            .background(primary ? theme.colors.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// The list's heading: what the rail has selected. A project's name opens its page.
@@ -149,7 +204,7 @@ struct Sidebar: View {
         }()
         let line = [project, status].compactMap { $0 }.joined(separator: " · ")
         return twoLine(title: s.title, status: line.isEmpty ? nil : line, mark: mark, age: mark == .idle ? Format.ago(s.updated_at) : nil, open: selection == s.id)
-            .selectable(s.id, $selection, theme, rows)
+            .selectable(s.id, nav, theme, rows)
             .contextMenu { SessionMenu(store: store, session: s) }
             .dropDestination(for: URL.self) { urls, _ in drop(urls, on: s.id) }
     }
@@ -247,7 +302,7 @@ struct ProjectRail: View {
                         let mark = projectMark(p)
                         // Neutral tiles: on the rail, colour is kept for what a project is doing.
                         tile(id: p.id, label: p.name, sub: summary(p), keys: i < 9 ? "⌃\(i + 1)" : nil,
-                             fill: nil, mark: mark, badge: 0) {
+                             fill: nil, mark: mark, badge: 0, quiet: !Self.busy(p.id, store)) {
                             Text(Self.initials(p.name)).font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(model.rail == p.id ? Color.white : RailPalette.of(dark: theme.dark).letters)
                         }
@@ -351,10 +406,20 @@ struct ProjectRail: View {
         }
     }
 
+    /// Whether a project has anything open: an active task or a session in its checkout.
+    static func busy(_ id: String, _ store: BenchStore) -> Bool {
+        store.tasks.contains { $0.project_id == id && $0.state == "active" }
+            || store.sessions.contains { $0.project_id == id && $0.task_id == nil && $0.archived_at == nil }
+    }
+
     private func tile<Icon: View>(id: String, label: String, sub: String, keys: String?, fill: Color?, mark: Mark?, badge: Int,
-                                   @ViewBuilder icon: () -> Icon) -> some View {
+                                   quiet: Bool = false, @ViewBuilder icon: () -> Icon) -> some View {
         let on = model.rail == id
-        return Button { withAnimation(.easeOut(duration: 0.26)) { model.rail = id } } label: {
+        return Button {
+            withAnimation(.easeOut(duration: 0.26)) { model.rail = id }
+            // A project with nothing open has nothing to list: go straight to its page.
+            if quiet { model.go("project:\(id)") }
+        } label: {
             ZStack { icon() }
                 .frame(width: 34, height: 34)
                 .background(face(fill, on: on, hovered: hover == id))
@@ -381,6 +446,9 @@ struct ProjectRail: View {
                     }
                 }
                 .contentShape(Rectangle())
+                // Quiet projects recede, so the ones with work stand out.
+                .opacity(quiet && !on && hover != id ? 0.45 : 1)
+                .animation(.easeOut(duration: 0.15), value: hover)
         }
         .buttonStyle(.plain)
         // Selected: a pill on the rail's left edge, Discord's way; hovered: a shorter, fainter one.

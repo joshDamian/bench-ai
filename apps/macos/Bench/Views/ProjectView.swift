@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A project, as the Mac v2 Project board draws it: its tasks as a table, what's in the
-/// checkout, and the checkout's git controls grouped in the toolbar.
+/// A project: its checkout's git state, a box to start a task, and the work in flight -
+/// tasks and checkout sessions in one list, the ones that need you first.
 struct ProjectView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
@@ -60,41 +60,43 @@ struct ProjectView: View {
 
     private var content: some View {
         let all = store.tasks.filter { $0.project_id == projectId }
-        let active = all.filter { $0.state == "active" }.sorted(by: newest)
+        let active = all.filter { $0.state == "active" }
         let done = all.filter { $0.state != "active" }.sorted(by: newest)
         let loose = store.sessions.filter { $0.project_id == projectId && $0.task_id == nil && $0.archived_at == nil }
-            .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+        // Tasks and checkout sessions together, the work that needs you first.
+        var flight: [Flight] = active.map { t in
+            let m = Mark.of(task: t, store: store)
+            return Flight(id: "task:\(t.id)", mark: m, title: t.title, tag: "from \(t.base_branch ?? "main")",
+                          status: m == .idle ? nil : Describe.taskStatus(t, store: store), updated: t.updated_at ?? "")
+        }
+        flight += loose.map { s in
+            let m = Mark.of(s, store: store)
+            return Flight(id: s.id, mark: m, title: s.title, tag: "checkout",
+                          status: m == .idle ? nil : Describe.session(s, store: store), updated: s.updated_at ?? "")
+        }
+        flight.sort { ($0.rank, $1.updated) < ($1.rank, $0.updated) }
         return ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                if active.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("No open tasks").font(.system(size: 15, weight: .semibold))
-                        Text("A task runs on its own branch, so you can review and merge it when it's done.")
-                            .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
+            VStack(alignment: .leading, spacing: 22) {
+                gitStrip
+                StartTask(store: store, projectId: projectId, git: git)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("In flight").font(.system(size: 15, weight: .semibold))
+                        if !flight.isEmpty { Text("\(flight.count)").font(.system(size: 12)).foregroundStyle(theme.colors.muted) }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.top, Space.md)
-                } else {
-                    table(active)
-                }
-                if !loose.isEmpty || !(git?.dirty.isEmpty ?? true) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        GroupLabel("In the checkout")
-                        ForEach(loose) { s in
-                            row(mark: Mark.of(s, store: store), title: s.title, branch: git?.branch ?? "", status: Mark.of(s, store: store) == .idle ? "Idle" : Describe.session(s, store: store),
-                                tint: Mark.of(s, store: store).tint(theme.colors), when: Format.ago(s.updated_at)) { app.selection = s.id }
+                    VStack(spacing: 0) {
+                        if flight.isEmpty {
+                            Text("Nothing in flight. Start a task above, or work in the checkout.")
+                                .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
+                                .frame(maxWidth: .infinity).padding(.vertical, 26)
                         }
-                        if let n = git?.dirty.count, n > 0 {
-                            HStack(spacing: 0) {
-                                RoundedRectangle(cornerRadius: 2).fill(theme.colors.warn).frame(width: 8, height: 8).frame(width: 28)
-                                Text("\(n) uncommitted change\(n == 1 ? "" : "s")").font(.system(size: 13))
-                                Spacer()
-                                Button("Review") { committing = true }.buttonStyle(.link).font(.system(size: 12))
-                            }
-                            .padding(.horizontal, 12)
-                            .frame(height: 38)
+                        ForEach(Array(flight.enumerated()), id: \.element.id) { i, f in
+                            if i > 0 { Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1) }
+                            flightRow(f)
                         }
                     }
+                    .background(theme.colors.fill(0.035), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.colors.fill(0.07)))
                 }
                 if !done.isEmpty {
                     Button { withAnimation(.easeOut(duration: 0.15)) { showDone.toggle() } } label: {
@@ -102,57 +104,117 @@ struct ProjectView: View {
                             Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).rotationEffect(.degrees(showDone ? 90 : 0))
                             Text("Merged and closed · \(done.count)")
                         }
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(theme.colors.muted)
-                        .padding(.leading, 12)
+                        .font(.system(size: 12.5)).foregroundStyle(theme.colors.muted)
                     }
                     .buttonStyle(.plain)
-                    if showDone { table(done, header: false) }
+                    if showDone {
+                        VStack(spacing: 0) {
+                            ForEach(done) { t in
+                                flightRow(Flight(id: "task:\(t.id)", mark: .idle, title: t.title, tag: t.state == "merged" ? "merged" : "closed", status: nil, updated: t.updated_at ?? ""), quiet: true)
+                            }
+                        }
+                    }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, Space.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: 780)
+            .padding(.horizontal, 32).padding(.vertical, 26)
+            .frame(maxWidth: .infinity)
         }
     }
 
-    private func table(_ tasks: [BenchTask], header: Bool = true) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if header {
-                HStack(spacing: 0) {
-                    Spacer().frame(width: 28)
-                    Text("Task").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Branch").frame(width: 210, alignment: .leading)
-                    Text("Status").frame(width: 150, alignment: .leading)
-                    Text("Updated").frame(width: 70, alignment: .trailing)
-                }
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(theme.colors.muted)
-                .padding(.horizontal, 12)
-                .frame(height: 28)
-            }
-            ForEach(tasks) { t in
-                let m = Mark.of(task: t, store: store)
-                row(mark: m, title: t.title, branch: t.branch ?? "", status: Describe.taskStatus(t, store: store),
-                    tint: m == .idle ? theme.colors.muted : m.tint(theme.colors), when: Format.ago(t.updated_at)) { app.selection = "task:\(t.id)" }
-            }
-        }
+    private struct Flight {
+        let id: String
+        let mark: Mark
+        let title: String
+        let tag: String
+        let status: String?
+        let updated: String
+        var rank: Int { mark == .needs ? 0 : mark == .running ? 1 : 2 }
     }
 
-    private func row(mark: Mark, title: String, branch: String, status: String, tint: Color, when: String, open: @escaping () -> Void) -> some View {
-        Button(action: open) {
-            HStack(spacing: 0) {
-                MarkView(mark: mark).frame(width: 28, alignment: .leading)
-                Text(title).font(.system(size: 13)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 12)
-                Text(branch).font(BenchFont.mono(11.5)).foregroundStyle(theme.colors.muted).lineLimit(1).truncationMode(.middle)
-                    .frame(width: 210, alignment: .leading)
-                Text(status).font(.system(size: 12)).foregroundStyle(tint).lineLimit(1).frame(width: 150, alignment: .leading)
-                Text(when).font(.system(size: 12)).foregroundStyle(theme.colors.muted).frame(width: 70, alignment: .trailing)
+    private func flightRow(_ f: Flight, quiet: Bool = false) -> some View {
+        Button { app.selection = f.id } label: {
+            HStack(spacing: 12) {
+                MarkView(mark: f.mark).frame(width: 12)
+                Text(f.title).font(.system(size: 14)).foregroundStyle(quiet ? theme.colors.muted : theme.colors.text).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(f.tag).font(BenchFont.mono(11.5)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                    .padding(.horizontal, 8).frame(height: 24)
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(theme.colors.fill(0.1)))
+                if let s = f.status {
+                    let tint = f.mark.tint(theme.colors)
+                    Text(s).font(.system(size: 12)).foregroundStyle(tint).lineLimit(1)
+                        .padding(.horizontal, 8).frame(height: 24)
+                        .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 6))
+                }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 38)
-            .background(mark == .running ? theme.colors.fill(0.04) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 14).frame(height: 46)
             .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The checkout's git state and what can be done about it, in one row.
+    private var gitStrip: some View {
+        HStack(spacing: 14) {
+            Button { branching = true } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 10.5))
+                    Text(git?.branch ?? "…").font(BenchFont.mono(12.5))
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                }
+                .padding(.horizontal, 10).frame(height: 30)
+                .background(theme.colors.fill(0.07), in: RoundedRectangle(cornerRadius: 7))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $branching, arrowEdge: .bottom) {
+                BranchPopover(store: store, projectId: projectId, git: git) { await load() }.environment(\.theme, theme)
+            }
+            if let git {
+                let n = git.dirty.count
+                if !git.conflicted.isEmpty {
+                    Text("\(git.conflicted.count) conflicted").foregroundStyle(theme.colors.bad)
+                } else if n > 0 {
+                    Button { committing = true } label: {
+                        HStack(spacing: 5) { Circle().fill(theme.colors.warn).frame(width: 7, height: 7); Text("\(n) changed") }
+                    }
+                    .buttonStyle(.plain).foregroundStyle(theme.colors.warn).help("Review and commit")
+                }
+                if git.ahead > 0 { Text("↑\(git.ahead) ahead").foregroundStyle(theme.colors.muted) }
+                if git.behind > 0 { Text("↓\(git.behind) behind").foregroundStyle(theme.colors.muted) }
+                if n == 0 && git.ahead == 0 && git.behind == 0 && git.conflicted.isEmpty {
+                    Text(git.hasRemote == false ? "✓ clean" : "✓ clean · up to date").foregroundStyle(theme.colors.muted)
+                }
+            } else {
+                Text("Reading the repository…").foregroundStyle(theme.colors.muted)
+            }
+            Spacer(minLength: 8)
+            if let busy { ProgressView().controlSize(.small); Text(busy).foregroundStyle(theme.colors.muted) }
+            HStack(spacing: 6) {
+                if git?.hasRemote != false {
+                    stripButton((git?.behind ?? 0) > 0 ? "Pull ↓\(git?.behind ?? 0)" : "Pull") { act("Pulling…") { try await store.api.projectAction(projectId, "pull") } }
+                    if (git?.ahead ?? 0) > 0 {
+                        stripButton("Push ↑\(git?.ahead ?? 0)") { act("Pushing…") { try await store.api.projectAction(projectId, "push") } }
+                    }
+                }
+                if (git?.dirty.count ?? 0) > 0 { stripButton("Commit…") { committing = true } }
+            }
+            .disabled(busy != nil)
+        }
+        .font(.system(size: 12.5))
+        .lineLimit(1)
+        .padding(.horizontal, 10).frame(height: 52)
+        .background(theme.colors.fill(0.035), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.colors.fill(0.07)))
+    }
+
+    private func stripButton(_ title: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 12, weight: .medium)).fixedSize()
+                .padding(.horizontal, 12).frame(height: 30)
+                .background(theme.colors.fill(0.08), in: RoundedRectangle(cornerRadius: 7))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -163,33 +225,8 @@ struct ProjectView: View {
                         sub: (project?.path ?? "").replacingOccurrences(of: #"^/(home|Users)/[^/]+"#, with: "~", options: .regularExpression),
                         mono: true)
         } trailing: {
-            if let busy { HStack(spacing: 6) { ProgressView().controlSize(.small); Text(busy).font(.system(size: TypeScale.xs)).foregroundStyle(theme.colors.muted) } }
-            HStack(spacing: 0) {
-                Button { branching = true } label: {
-                    HStack(spacing: 5) {
-                        Text(git?.branch ?? "…").font(BenchFont.mono(12))
-                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-                    }
-                    .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $branching, arrowEdge: .bottom) {
-                    BranchPopover(store: store, projectId: projectId, git: git) { await load() }.environment(\.theme, theme)
-                }
-                Rectangle().fill(theme.colors.fill(0.15)).frame(width: 1, height: 14)
-                groupButton("Pull", count: git?.behind) { act("Pulling…") { try await store.api.projectAction(projectId, "pull") } }
-                    .disabled(git?.hasRemote == false)
-                groupButton("Push", count: git?.ahead) { act("Pushing…") { try await store.api.projectAction(projectId, "push") } }
-                    .disabled((git?.ahead ?? 0) == 0)
-                groupButton("Commit…", count: git?.dirty.count) { committing = true }
-                    .disabled((git?.dirty.count ?? 0) == 0)
-            }
-            .font(.system(size: 12.5))
-            .foregroundStyle(theme.colors.text)
-            .padding(.horizontal, 2)
-            .background(theme.colors.fill(0.08), in: Capsule())
-            .disabled(busy != nil)
-            .fixedSize()
+            Button("Files") { app.openTab("files:\(projectId)") }.buttonStyle(.plain).font(.system(size: 12.5))
+                .foregroundStyle(theme.colors.muted).padding(.horizontal, 8).help("Browse the project's files (⌃⇧F)")
             HeaderToggle(icon: "terminal", help: "Terminal (⇧⌘T)", on: Binding(get: { app.showTerminal }, set: { app.showTerminal = $0 }))
             Menu {
                 Button("Fetch") { act("Fetching…") { try await store.api.projectAction(projectId, "fetch") } }
@@ -199,9 +236,6 @@ struct ProjectView: View {
             } label: { Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(theme.colors.muted).frame(width: 30, height: 30) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .help("More")
-            Button("New Task") { app.newSession(in: projectId) }
-                .buttonStyle(PrimaryButton(height: 28))
-                .fixedSize()
         }
     }
 
@@ -377,6 +411,122 @@ private struct CommitSheet: View {
                 dismiss()
             } catch { self.error = error.localizedDescription }
             working = false
+        }
+    }
+}
+
+/// The page's main action, on the page: describe a task and start it. Folded it's one line;
+/// it opens to base branch, mode and what done means, with Start task (⌘↵).
+private struct StartTask: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
+    let store: BenchStore
+    let projectId: String
+    let git: GitState?
+    @State private var text = ""
+    @State private var done = ""
+    @State private var base: String?
+    @State private var mode: Mode = .default
+    @State private var open = false
+    @State private var busy = false
+    @State private var error: String?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        content
+            .onAppear { if app.focusTaskBox > 0 { focused = true } }
+            .onChange(of: app.focusTaskBox) { _, _ in focused = true }
+            .onDisappear { app.focusTaskBox = 0 }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: open ? .top : .center, spacing: 12) {
+                if !open { Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.colors.accent) }
+                TextField(open ? "What should it do?" : "Describe a task… it gets its own branch and worktree", text: $text, axis: .vertical)
+                    .textFieldStyle(.plain).font(.system(size: 14.5)).lineLimit(1...8)
+                    .focused($focused)
+                    .onChange(of: focused) { _, f in if f { withAnimation(.snappy(duration: 0.18)) { open = true } } }
+                    .onKeyPress(.escape) { fold(); return .handled }
+                if !open {
+                    Button { checkout() } label: {
+                        HStack(spacing: 4) { Text("or").foregroundStyle(theme.colors.muted); Text("work in the checkout").underline(); Image(systemName: "arrow.right").font(.system(size: 10)) }
+                    }
+                    .buttonStyle(.plain).font(.system(size: 12.5)).fixedSize()
+                    .help("A session in the project's own checkout: no branch, no merge step")
+                }
+            }
+            if open {
+                HStack(spacing: 6) {
+                    Text("Done means").foregroundStyle(theme.colors.muted)
+                    TextField("optional: how Claude knows it's finished", text: $done).textFieldStyle(.plain)
+                }
+                .font(.system(size: 12.5))
+                Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1)
+                HStack(spacing: 8) {
+                    Menu {
+                        ForEach((git?.branches ?? []).map(\.name), id: \.self) { b in Button(b) { base = b } }
+                    } label: { chip("from \(base ?? git?.branch ?? "main")") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    Menu {
+                        ForEach(Mode.allCases) { m in Button(m.label) { mode = m } }
+                    } label: { chip(mode.label) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    if let error { Text(error).font(.system(size: 12)).foregroundStyle(theme.colors.bad).lineLimit(1) }
+                    Spacer(minLength: 8)
+                    Button("Cancel") { fold() }.buttonStyle(TonalButton(height: 30))
+                    Button { start() } label: {
+                        HStack(spacing: 8) { Text(busy ? "Starting…" : "Start task"); Text("⌘↵").font(BenchFont.mono(10.5)).opacity(0.75) }
+                    }
+                    .buttonStyle(PrimaryButton(height: 30))
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
+                }
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, open ? 16 : 0)
+        .frame(minHeight: 56)
+        .background(theme.colors.fill(0.035), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(open ? theme.colors.accent.opacity(0.45) : theme.colors.fill(0.07)))
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+    }
+
+    private func chip(_ s: String) -> some View {
+        HStack(spacing: 5) { Text(s).lineLimit(1); Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)) }
+            .font(.system(size: 12, weight: .medium)).padding(.horizontal, 12).frame(height: 30)
+            .background(theme.colors.fill(0.08), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    private func fold() {
+        focused = false
+        withAnimation(.snappy(duration: 0.18)) { open = false }
+    }
+
+    private func start() {
+        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+        busy = true; error = nil
+        Task {
+            do {
+                let title = String(prompt.split(separator: "\n").first ?? "").prefix(80)
+                let s = try await store.api.createTask(project: projectId, title: String(title), prompt: prompt, mode: mode, base: base, done: done)
+                store.apply(s)
+                await store.refresh()
+                text = ""; done = ""; fold()
+                app.selection = s.task_id.map { "task:\($0)" } ?? s.id
+            } catch { self.error = error.localizedDescription }
+            busy = false
+        }
+    }
+
+    private func checkout() {
+        Task {
+            do {
+                let s = try await store.api.createSession(project: projectId, task: nil, mode: mode)
+                store.apply(s)
+                app.openNew(s.id)
+            } catch { self.error = error.localizedDescription }
         }
     }
 }

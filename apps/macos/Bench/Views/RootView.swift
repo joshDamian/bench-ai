@@ -85,10 +85,6 @@ struct MainView: View {
             if model.selection == nil, let last = UserDefaults.standard.string(forKey: "lastSelection") { model.selection = last }
             if let sel = model.selection, !model.tabs.contains(sel) { model.tabs.append(sel) }
         }
-        .onChange(of: model.selection) { old, v in
-            if let v { UserDefaults.standard.set(v, forKey: "lastSelection") }
-            model.follow(old, v)
-        }
         // A session picked in Spotlight.
         .onContinueUserActivity(CSSearchableItemActionType) { a in
             if let id = a.userInfo?[CSSearchableItemActivityIdentifier] as? String { model.selection = id }

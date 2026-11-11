@@ -153,7 +153,8 @@ struct NewSessionSheet: View {
 }
 
 /// ⌘K: go anywhere or run a command. Actions for what's on screen come first, then
-/// sessions, tasks and projects that match. ↑↓ choose, ↩ runs.
+/// sessions, tasks and projects that match. ↑↓ choose, ↩ runs; a session, task or project
+/// opens in a tab of its own, or the tab it already has.
 struct CommandPalette: View {
     struct Item: Identifiable {
         let id: String
@@ -223,16 +224,16 @@ struct CommandPalette: View {
         }
         let live = store.sessions.filter { $0.archived_at == nil && $0.task_id == nil }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
         for s in live where hit(s.title) || hit(store.project(s.project_id)?.name ?? "") {
-            out.append(Item(id: s.id, group: "Sessions", icon: "bubble.left", title: s.title, sub: store.project(s.project_id)?.name ?? "Ask Bench", keys: "") { app.selection = s.id })
+            out.append(Item(id: s.id, group: "Sessions", icon: "bubble.left", title: s.title, sub: store.project(s.project_id)?.name ?? "Ask Bench", keys: "") { app.openTab(s.id) })
             if out.filter({ $0.group == "Sessions" }).count >= 6 { break }
         }
         let tasks = store.tasks.filter { $0.state == "active" }.sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
         for t in tasks where hit(t.title) || hit(t.branch ?? "") {
-            out.append(Item(id: "task:\(t.id)", group: "Tasks", icon: "arrow.triangle.branch", title: t.title, sub: store.project(t.project_id)?.name ?? "", keys: "") { app.selection = "task:\(t.id)" })
+            out.append(Item(id: "task:\(t.id)", group: "Tasks", icon: "arrow.triangle.branch", title: t.title, sub: store.project(t.project_id)?.name ?? "", keys: "") { app.openTab("task:\(t.id)") })
             if out.filter({ $0.group == "Tasks" }).count >= 5 { break }
         }
         for p in store.projects where !q.isEmpty && hit(p.name) {
-            out.append(Item(id: "project:\(p.id)", group: "Projects", icon: "folder", title: p.name, sub: "", keys: "") { app.selection = "project:\(p.id)" })
+            out.append(Item(id: "project:\(p.id)", group: "Projects", icon: "folder", title: p.name, sub: "", keys: "") { app.openTab("project:\(p.id)") })
         }
         return out
     }

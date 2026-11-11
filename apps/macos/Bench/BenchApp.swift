@@ -6,17 +6,45 @@ import UserNotifications
 @Observable
 final class AppModel {
     var store: BenchStore?
-    var selection: String?
+    /// What the current tab shows. Opening anything from anywhere - ⌘K, Spotlight, a
+    /// notification, the sidebar - also shows its project in the rail, sidebar open or not.
+    var selection: String? {
+        didSet {
+            guard selection != oldValue else { return }
+            syncRail()
+            // The tab strip and "open where you left off" follow too, whichever window is open.
+            follow(oldValue, selection)
+            if let v = selection { UserDefaults.standard.set(v, forKey: "lastSelection") }
+        }
+    }
+
+    private func syncRail() {
+        guard let v = selection, let store else { return }
+        if let s = store.session(v) { rail = s.project_id.flatMap { store.project($0) != nil ? $0 : nil } ?? "ask" }
+        else if v.hasPrefix("task:"), let t = store.task(String(v.dropFirst(5))), let p = t.project_id { rail = p }
+        else if v.hasPrefix("project:") { rail = String(v.dropFirst(8)) }
+        else if v.hasPrefix("files:") { rail = String(v.dropFirst(6)) }
+    }
     var showNewSession = false
     /// The project the next New Session sheet starts on.
     var newSessionProject: String?
     var showAddProject = false
     var showQuickOpen = false
-    /// ⌘J and ⇧⌘T: the session's inspector and terminal, remembered across sessions.
-    var showInspector = UserDefaults.standard.object(forKey: "inspector") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(showInspector, forKey: "inspector") }
+    /// ⌘J and ⇧⌘T, per tab: each tab keeps its own inspector and terminal. A tab that hasn't
+    /// chosen shows the inspector as it was last left anywhere, and no terminal.
+    private var inspectorFor: [String: Bool] = [:]
+    private var terminalFor: Set<String> = []
+    private var inspectorDefault = UserDefaults.standard.object(forKey: "inspector") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(inspectorDefault, forKey: "inspector") }
     }
-    var showTerminal = false
+    var showInspector: Bool {
+        get { inspectorFor[selection ?? ""] ?? inspectorDefault }
+        set { inspectorFor[selection ?? ""] = newValue; inspectorDefault = newValue }
+    }
+    var showTerminal: Bool {
+        get { terminalFor.contains(selection ?? "") }
+        set { if newValue { terminalFor.insert(selection ?? "") } else { terminalFor.remove(selection ?? "") } }
+    }
     var showSidebar = true
     /// Asks the task on screen to open its ship sheet (⇧⌘M).
     var shipRequest = 0
@@ -88,6 +116,16 @@ final class AppModel {
     func unpair() {
         SavedServer.forget()
         use(nil)
+    }
+
+    /// Bumped to put the cursor in the project page's task box.
+    var focusTaskBox = 0
+
+    /// A new task in a project: its page, with the task box ready to type in.
+    func startTask(in project: String) {
+        // A project page already showing this project keeps its tab; otherwise a new one.
+        if selection == "project:\(project)" { } else { openNew("project:\(project)") }
+        focusTaskBox += 1
     }
 
     func newSession(in project: String? = nil) {
@@ -227,8 +265,11 @@ struct BenchCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("New Session…") { model.newSession() }
-                .keyboardShortcut("n", modifiers: [.command])
+            // With a project in the rail, ⌘N is a task in it; elsewhere, a session.
+            Button(model.store?.project(model.rail) != nil ? "New Task" : "New Session…") {
+                if let p = model.store?.project(model.rail) { model.startTask(in: p.id) } else { model.newSession() }
+            }
+            .keyboardShortcut("n", modifiers: [.command])
             Button("Add Project…") { model.showAddProject = true }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model.store == nil)
