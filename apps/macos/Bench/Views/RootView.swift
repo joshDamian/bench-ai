@@ -82,7 +82,7 @@ struct MainView: View {
         .onAppear {
             model.panel.hide()
             // Open where you left off.
-            if model.selection == nil, let last = UserDefaults.standard.string(forKey: "lastSelection") { model.selection = last }
+            if model.primary, model.selection == nil, let last = UserDefaults.standard.string(forKey: "lastSelection") { model.selection = last }
             if let sel = model.selection, !model.tabs.contains(sel) { model.tabs.append(sel) }
         }
         // A session picked in Spotlight.

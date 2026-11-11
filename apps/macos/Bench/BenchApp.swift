@@ -1,11 +1,30 @@
 import SwiftUI
 import UserNotifications
 
-/// Holds the store for the saved server and swaps it when the server changes.
+/// What every window shares: the server's store, the notes lists, the approval panel.
+@MainActor
+@Observable
+final class AppCore {
+    var store: BenchStore?
+    let notes = NotesStore()
+    @ObservationIgnored let panel = ApprovalPanel()
+    /// Whether a main window is using the first window's model, the one that is saved.
+    @ObservationIgnored var primaryInUse = false
+}
+
+/// One main window's navigation - its tabs, rail, panels - over the data every window shares.
+/// The first main window's is saved between launches; a further window starts at the Inbox.
 @MainActor
 @Observable
 final class AppModel {
-    var store: BenchStore?
+    let core: AppCore
+    /// Whether this is the first window's model: the one that is saved, and serves the menu
+    /// bar, Settings and session windows.
+    let primary: Bool
+    var store: BenchStore? {
+        get { core.store }
+        set { core.store = newValue }
+    }
     /// What the current tab shows. Opening anything from anywhere - ⌘K, Spotlight, a
     /// notification, the sidebar - also shows its project in the rail, sidebar open or not.
     var selection: String? {
@@ -14,7 +33,7 @@ final class AppModel {
             syncRail()
             // The tab strip and "open where you left off" follow too, whichever window is open.
             follow(oldValue, selection)
-            if let v = selection { UserDefaults.standard.set(v, forKey: "lastSelection") }
+            if primary, let v = selection { UserDefaults.standard.set(v, forKey: "lastSelection") }
         }
     }
 
@@ -49,21 +68,22 @@ final class AppModel {
     var showSidebar = true
     /// Asks the task on screen to open its ship sheet (⇧⌘M).
     var shipRequest = 0
-    @ObservationIgnored let panel = ApprovalPanel()
+    var panel: ApprovalPanel { core.panel }
 
-    /// The one model, for App Intents, Services and the quick prompt.
+    /// The model of the main window last in front, for App Intents, Services, the quick
+    /// prompt and notifications: what they open goes there.
     static weak var shared: AppModel?
 
     /// The main window's tabs: what each shows (a session, task, project or place), in order.
     /// The selected one is `selection`; picking something in the sidebar changes that tab.
-    var tabs: [String] = UserDefaults.standard.stringArray(forKey: "tabs") ?? [] {
-        didSet { UserDefaults.standard.set(tabs, forKey: "tabs") }
+    var tabs: [String] = [] {
+        didSet { if primary { UserDefaults.standard.set(tabs, forKey: "tabs") } }
     }
     /// A second session beside the first, in the same window.
     var split: String?
     /// What the sidebar's list shows: "inbox", "ask", or a project's id (the rail's selection).
-    var rail: String = UserDefaults.standard.string(forKey: "rail") ?? "inbox" {
-        didSet { UserDefaults.standard.set(rail, forKey: "rail") }
+    var rail: String = "inbox" {
+        didSet { if primary { UserDefaults.standard.set(rail, forKey: "rail") } }
     }
 
     /// Files dropped on a sidebar row, waiting for that session's composer to take them.
@@ -75,9 +95,20 @@ final class AppModel {
     var approveRequest = 0
     var stopRequest = 0
 
+    /// The first window's model, which loads the saved server.
     init() {
+        core = AppCore()
+        primary = true
+        tabs = UserDefaults.standard.stringArray(forKey: "tabs") ?? []
+        rail = UserDefaults.standard.string(forKey: "rail") ?? "inbox"
         if let c = SavedServer.load() { use(c) }
         AppModel.shared = self
+    }
+
+    /// Another main window's, over the same data.
+    init(core: AppCore) {
+        self.core = core
+        primary = false
     }
 
     func use(_ c: ServerConfig?) {
@@ -124,7 +155,7 @@ final class AppModel {
     /// Text for that box to start with: a note handed over as a task's prompt.
     var taskDraft: String?
     /// The notes the sidebar lists.
-    let notes = NotesStore()
+    var notes: NotesStore { core.notes }
     /// The tab of a note just made, which opens in Edit.
     var editingNote: String?
 
@@ -177,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             case Notifications.approvePlan:
                 Task { try? await store.api.answer(approvalId, ["allow": true, "mode": "acceptEdits"]) }
             default:
-                model.selection = sessionId
+                (AppModel.shared ?? model).go(sessionId)
                 NSApp.activate(ignoringOtherApps: true)
             }
         }
@@ -198,8 +229,7 @@ struct BenchMacApp: App {
 
     var body: some Scene {
         WindowGroup("Bench", id: "main") {
-            RootView()
-                .environment(model)
+            MainWindow(first: model)
                 .themed()
                 .onAppear { delegate.model = model }
                 // bench:// links (the widget) bring this window forward instead of opening another.
@@ -207,7 +237,7 @@ struct BenchMacApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1320, height: 840)
-        .commands { BenchCommands(model: model) }
+        .commands { BenchCommands(first: model) }
 
         // A session in its own window (or tab, with Window › Merge All Windows). Windows come
         // back on relaunch showing the same session.
@@ -259,8 +289,13 @@ struct MenuBarLabel: View {
 }
 
 struct BenchCommands: Commands {
-    let model: AppModel
+    /// The first window's model, for when no main window is in front.
+    let first: AppModel
+    @FocusedValue(\.windowModel) private var focused
     @Environment(\.openWindow) private var openWindow
+
+    /// The main window in front: its tabs and rail are the ones the menus act on.
+    private var model: AppModel { focused ?? AppModel.shared ?? first }
 
     private var selectedSession: String? {
         guard let id = model.selection, model.store?.session(id) != nil else { return nil }
@@ -399,5 +434,45 @@ struct SessionWindow: View {
         }
         .frame(minWidth: 560, minHeight: 480)
         .background(theme.colors.bg)
+    }
+}
+
+/// A main window: the first one uses the saved model; each further one gets its own tabs,
+/// rail and panels over the same data, so two windows are two workspaces.
+struct MainWindow: View {
+    let first: AppModel
+    @State private var mine: AppModel?
+    @Environment(\.controlActiveState) private var active
+
+    var body: some View {
+        Group {
+            if let mine {
+                RootView()
+                    .environment(mine)
+                    .focusedSceneValue(\.windowModel, mine)
+            }
+        }
+        .onAppear {
+            guard mine == nil else { return }
+            if !first.core.primaryInUse {
+                first.core.primaryInUse = true
+                mine = first
+            } else {
+                mine = AppModel(core: first.core)
+            }
+        }
+        .onDisappear { if mine === first { first.core.primaryInUse = false } }
+        // What opens from outside the windows - a notification, the quick prompt - goes to
+        // the window last in front.
+        .onChange(of: active) { _, a in if a == .key, let mine { AppModel.shared = mine } }
+    }
+}
+
+private struct WindowModelKey: FocusedValueKey { typealias Value = AppModel }
+
+extension FocusedValues {
+    var windowModel: AppModel? {
+        get { self[WindowModelKey.self] }
+        set { self[WindowModelKey.self] = newValue }
     }
 }

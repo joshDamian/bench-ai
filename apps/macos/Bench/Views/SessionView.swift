@@ -35,6 +35,7 @@ struct SessionView: View {
     @State private var seen = 0
     /// Whether the thread has scrolled under the header: then the header shows its edge.
     @State private var scrolled = false
+    @State private var composerHeight: CGFloat = 110
     @State private var position = ScrollPosition(idType: String.self)
     /// The artifact panel's width, as last dragged.
     @AppStorage("artifactPanelWidth") private var panelWidth: Double = 640
@@ -274,7 +275,7 @@ struct SessionView: View {
                         }
                         .id("approval")
                     }
-                    Color.clear.frame(height: approvals.isEmpty ? 150 : 24).id("bottom")
+                    Color.clear.frame(height: approvals.isEmpty ? max(150, composerHeight + 40) : 24).id("bottom")
                         .onAppear { follow = true; model.followingEnd = true }
                         .onDisappear { follow = false; model.followingEnd = false }
                 }
@@ -302,12 +303,16 @@ struct SessionView: View {
             .onChange(of: model.rows.count) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: approvals.first?.id) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+            // A taller composer: the end of the thread stays in view if that's where you were.
+            .onChange(of: composerHeight) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: model.loading) { _, loading in if !loading && model.followingEnd { settleAtEnd(proxy) } }
             .modifier(SessionKeys(proxy: proxy, follow: follow, seen: $seen, finding: $finding, findFocused: $findFocused,
                                   model: model, jump: { jumpTurn($0, proxy) }))
             .overlay(alignment: .bottom) {
                 if approvals.isEmpty {
                     Composer(model: model, draft: $draft, running: running, embedded: embedded, focused: $composerFocused)
+                        // The thread keeps room for the composer however tall it grows.
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { composerHeight = $0 }
                         .padding(.top, 28)
                         .background(alignment: .bottom) {
                             VStack(spacing: 0) {

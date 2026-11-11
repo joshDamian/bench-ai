@@ -60,9 +60,16 @@ struct TaskView: View {
         self.store = store
         self.taskId = taskId
         _model = State(initialValue: TaskModel(taskId: taskId, store: store))
-        _pane = State(initialValue: sessionId == nil ? .overview : .conversation)
-        _sessionId = State(initialValue: sessionId)
+        // Back to the pane and session it was left on; a task still open starts on its
+        // conversation, where the work is, and a finished one on its overview.
+        let kept = TaskView.kept[taskId]
+        let open = (store.task(taskId)?.state ?? "active") == "active"
+        _pane = State(initialValue: sessionId != nil ? .conversation : kept?.pane ?? (open ? .conversation : .overview))
+        _sessionId = State(initialValue: sessionId ?? kept?.session)
     }
+
+    /// Each task's pane and session as last left, for as long as the app runs.
+    @MainActor static var kept: [String: (pane: Pane, session: String?)] = [:]
 
     private var sessions: [Session] {
         // A merged task's sessions are archived and may not be in the store's list; the
@@ -91,6 +98,8 @@ struct TaskView: View {
         .navigationTitle(model.task?.title ?? "Task")
         .task(id: store.task(taskId)) { await model.load() }
         .onChange(of: app.shipRequest) { _, _ in if model.task?.state == "active" { shipping = true } }
+        .onChange(of: pane) { _, p in TaskView.kept[taskId] = (p, sessionId) }
+        .onChange(of: sessionId) { _, s in TaskView.kept[taskId] = (pane, s) }
         .sheet(isPresented: $shipping) { ShipSheet(model: model).environment(\.theme, theme) }
         .alert("Rename task", isPresented: $renaming) {
             TextField("Title", text: $newTitle)
