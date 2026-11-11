@@ -28,7 +28,12 @@ final class SessionModel {
     /// block in view. Kept here because the model outlives the view between tab switches.
     var followingEnd = true
     var scrollAnchor: String?
+    /// How far into the anchor block the view was, so it comes back to the exact pixel.
+    var scrollInset: CGFloat = 0
     @ObservationIgnored var visible: Set<String> = []
+    /// Each drawn block's top, in the scroll view's coordinates, and the scroll offset.
+    @ObservationIgnored var tops: [String: CGFloat] = [:]
+    @ObservationIgnored var offsetY: CGFloat = 0
 
     /// Stops following a session whose tab closed.
     static func release(_ sessionId: String) {

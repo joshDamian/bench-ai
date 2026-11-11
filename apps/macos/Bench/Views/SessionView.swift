@@ -35,6 +35,7 @@ struct SessionView: View {
     @State private var seen = 0
     /// Whether the thread has scrolled under the header: then the header shows its edge.
     @State private var scrolled = false
+    @State private var position = ScrollPosition(idType: String.self)
     /// The artifact panel's width, as last dragged.
     @AppStorage("artifactPanelWidth") private var panelWidth: Double = 640
 
@@ -73,7 +74,14 @@ struct SessionView: View {
 
     private func restoreScroll(_ proxy: ScrollViewProxy) {
         if !model.followingEnd, let a = model.scrollAnchor {
-            DispatchQueue.main.async { proxy.scrollTo(a, anchor: .top) }
+            let inset = model.scrollInset
+            DispatchQueue.main.async {
+                proxy.scrollTo(a, anchor: .top)
+                // Then down into it, to where it was: the block's top is at the offset now.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    if inset > 0 { position.scrollTo(y: model.offsetY + inset) }
+                }
+            }
         } else {
             model.followingEnd = true
             settleAtEnd(proxy)
@@ -238,7 +246,8 @@ struct SessionView: View {
                             .environment(\.findCurrent, currentHit == b.id)
                             .id(b.id)
                             .onAppear { model.visible.insert(b.id) }
-                            .onDisappear { model.visible.remove(b.id) }
+                            .onDisappear { model.visible.remove(b.id); model.tops[b.id] = nil }
+                            .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .scrollView).minY }) { model.tops[b.id] = $0 }
                     }
                     if !model.streamText.isEmpty || !model.streamThinking.isEmpty {
                         VStack(alignment: .leading, spacing: Space.xs) {
@@ -277,12 +286,18 @@ struct SessionView: View {
             }
             .scrollContentBackground(.hidden)
             .defaultScrollAnchor(.bottom)
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, y in model.offsetY = y }
             .background(theme.colors.bg)
             // Back to where the tab was left, or to the end on a first open.
             .onAppear { restoreScroll(proxy) }
             .onDisappear {
-                let blocks = model.blocks
-                model.scrollAnchor = blocks.first { model.visible.contains($0.id) }?.id
+                // The block crossing the top edge (or the first one below it), and how far
+                // the view had scrolled into it.
+                let shown = model.blocks.filter { model.visible.contains($0.id) }.compactMap { b in model.tops[b.id].map { (b.id, $0) } }
+                let anchor = shown.filter { $0.1 <= 1 }.max { $0.1 < $1.1 } ?? shown.min { $0.1 < $1.1 }
+                model.scrollAnchor = anchor?.0
+                model.scrollInset = max(0, -(anchor?.1 ?? 0))
             }
             .onChange(of: model.rows.count) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
