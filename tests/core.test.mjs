@@ -420,7 +420,8 @@ test('attached files are saved where the session can read them, and named in the
   assert.ok(saved.every((f) => !f.includes('/')), 'a name cannot climb out of the folder');
   assert.ok(saved.some((f) => f.endsWith('-notes.md')));
   assert.equal(fs.readFileSync(path.join(dir, saved.find((f) => f.endsWith('.pdf')))).toString(), '%PDF-1.4 fake');
-  assert.deepEqual(calls.at(-1).options.additionalDirectories, [dir, svc.runtime.scratchDir(s.id)]);
+  // The session's attachments and scratch, then the person's notes: its project's and the rest.
+  assert.deepEqual(calls.at(-1).options.additionalDirectories, [dir, svc.runtime.scratchDir(s.id), svc.runtime.notes.global, svc.runtime.notes.dir(project.path)]);
   const user = svc.events(s.id).find((e) => e.kind === 'user');
   assert.deepEqual(user.data.files.map((f) => f.name), ['notes.md', 'spec.pdf']);
   assert.equal(user.data.text, 'summarise these', 'the stored message is what the person typed');

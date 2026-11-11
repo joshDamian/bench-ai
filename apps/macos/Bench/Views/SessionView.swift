@@ -572,9 +572,16 @@ struct Composer: View {
                     ForEach(Array(files.enumerated()), id: \.element) { i, p in
                         Button { choose(path: p) } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(theme.colors.muted)
-                                Text((p as NSString).lastPathComponent).font(BenchFont.mono(13)).fixedSize()
-                                Text((p as NSString).deletingLastPathComponent).font(BenchFont.mono(12)).foregroundStyle(theme.colors.muted).lineLimit(1).truncationMode(.head)
+                                if p.hasPrefix("note:") {
+                                    // One of the person's notes, by its title.
+                                    Image(systemName: "note.text").font(.system(size: 11)).foregroundStyle(theme.colors.accent)
+                                    Text(model.noteTitles[p] ?? String(p.dropFirst(5))).font(.system(size: 13)).lineLimit(1)
+                                    Text("note").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                                } else {
+                                    Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(theme.colors.muted)
+                                    Text((p as NSString).lastPathComponent).font(BenchFont.mono(13)).fixedSize()
+                                    Text((p as NSString).deletingLastPathComponent).font(BenchFont.mono(12)).foregroundStyle(theme.colors.muted).lineLimit(1).truncationMode(.head)
+                                }
                                 Spacer(minLength: 0)
                             }
                             .padding(.horizontal, 10).frame(height: 30)

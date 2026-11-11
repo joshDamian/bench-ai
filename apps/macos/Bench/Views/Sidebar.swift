@@ -22,6 +22,10 @@ struct Sidebar: View {
     @Binding var selection: String?
     /// The open session's highlight moves between rows rather than jumping.
     @Namespace private var rows
+    /// The new-note prompt: where the note goes ("" for no project) and what to call it.
+    @State private var newNoteIn: String?
+    @State private var newNoteTitle = ""
+    @State private var noteFilter = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,6 +38,99 @@ struct Sidebar: View {
                 list.frame(maxWidth: .infinity)
             }
             footer
+        }
+        // The notes for the place the rail is on, again whenever a session stops: Claude
+        // may have written one.
+        .task(id: "\(model.rail)|\(store.runningSince.count)") {
+            if model.rail == "notes" { await model.notes.load(store.api, project: nil) }
+            else if store.project(model.rail) != nil { await model.notes.load(store.api, project: model.rail) }
+        }
+        .alert("New note", isPresented: Binding(get: { newNoteIn != nil }, set: { if !$0 { newNoteIn = nil } })) {
+            TextField("Title", text: $newNoteTitle)
+            Button("Create") {
+                let project = newNoteIn.flatMap { $0.isEmpty ? nil : $0 }
+                model.newNote(project: project, title: newNoteTitle.trimmingCharacters(in: .whitespaces))
+                newNoteTitle = ""
+            }
+            Button("Cancel", role: .cancel) { newNoteTitle = "" }
+        } message: {
+            Text(newNoteIn?.isEmpty == false ? "A Markdown file in this project's notes folder." : "A note that belongs to no project yet.")
+        }
+    }
+
+    // MARK: notes
+
+    /// A section heading with a + on its right.
+    private func notesLabel(_ title: String, project: String?) -> some View {
+        HStack {
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.colors.muted)
+            Spacer()
+            Button { newNoteIn = project ?? "" } label: {
+                Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).frame(width: 20, height: 20).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(theme.colors.muted)
+            .help("New Note").accessibilityLabel("New note")
+        }
+        .padding(.leading, 6).padding(.trailing, 4).padding(.top, 12).padding(.bottom, 2)
+    }
+
+    /// A project's notes under its sessions, its CLAUDE.md first when it has one.
+    @ViewBuilder private func projectNotes(_ p: Project) -> some View {
+        let list = model.notes.list(p.id)
+        notesLabel("Notes", project: p.id)
+        if list.instructions {
+            NoteRow(icon: "pin", title: "CLAUDE.md", sub: "Every session reads this")
+                .selectable(NoteRef.instructions(project: p.id).tab, nav, theme, rows)
+        }
+        ForEach(list.notes) { n in
+            NoteRow(icon: "note.text", title: n.title, sub: NoteRow.sub(n))
+                .selectable(NoteRef.note(project: p.id, name: n.name).tab, nav, theme, rows)
+        }
+        if list.notes.isEmpty && !list.instructions {
+            Text("Plans, specs, things to remember.").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+        }
+    }
+
+    /// The notes that belong to no project: work that isn't a project yet.
+    @ViewBuilder private var globalNotes: some View {
+        let list = model.notes.list(nil)
+        let shown = noteFilter.isEmpty ? list.notes : list.notes.filter { $0.title.localizedCaseInsensitiveContains(noteFilter) || $0.name.localizedCaseInsensitiveContains(noteFilter) }
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Notes").font(.system(size: 14, weight: .semibold))
+                Text("Not tied to a project").font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+            }
+            Spacer()
+            Button { newNoteIn = "" } label: {
+                Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
+                    .background(theme.colors.fill(0.07), in: RoundedRectangle(cornerRadius: 7)).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(theme.colors.muted).help("New Note").accessibilityLabel("New note")
+        }
+        .padding(.horizontal, 6).padding(.top, 4).padding(.bottom, 6)
+        if list.notes.count > 5 {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 10.5)).foregroundStyle(theme.colors.muted)
+                TextField("Filter notes", text: $noteFilter).textFieldStyle(.plain).font(.system(size: 12.5))
+            }
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(theme.colors.fill(0.07), in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 2).padding(.bottom, 4)
+        }
+        ForEach(shown) { n in
+            NoteRow(icon: "note.text", title: n.title, sub: NoteRow.sub(n))
+                .selectable(NoteRef.note(project: nil, name: n.name).tab, nav, theme, rows)
+        }
+        if list.notes.isEmpty {
+            Text("For work that isn't a project yet. A note can become one later.")
+                .font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                .padding(.horizontal, 8).padding(.vertical, 6)
+        }
+        if list.elsewhere > 0 {
+            Text("\(list.elsewhere) more note\(list.elsewhere == 1 ? "" : "s") in projects")
+                .font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
+                .padding(.horizontal, 8).padding(.top, 10)
         }
     }
 
@@ -52,6 +149,8 @@ struct Sidebar: View {
                 let known = Set(store.projects.map(\.id))
                 let ask = store.sessions.filter { ($0.project_id == nil || !known.contains($0.project_id!)) && $0.archived_at == nil }.sorted(by: newest)
                 Section { ForEach(ask) { s in sessionRow(s) } }
+            } else if rail == "notes" {
+                globalNotes
             } else if let p = store.project(rail) {
                 projectList(p)
             } else {
@@ -93,11 +192,13 @@ struct Sidebar: View {
         }
         startActions(p)
         if tasks.isEmpty && loose.isEmpty {
+            projectNotes(p)
             startPoints(p)
         } else {
             Section {
                 ForEach(loose) { s in sessionRow(s) }
             } header: { if !loose.isEmpty { label("Sessions") } }
+            projectNotes(p)
         }
     }
 
@@ -294,6 +395,10 @@ struct ProjectRail: View {
                  fill: nil, mark: nil, badge: needs) {
                 Image(systemName: "tray").font(.system(size: 14, weight: .medium))
                     .foregroundStyle(model.rail == "inbox" ? Color.white : theme.colors.text)
+            }
+            tile(id: "notes", label: "Notes", sub: "Not tied to a project", keys: nil, fill: nil, mark: nil, badge: 0) {
+                Image(systemName: "note.text").font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(model.rail == "notes" ? Color.white : theme.colors.text)
             }
             Rectangle().fill(theme.colors.fill(0.1)).frame(width: 22, height: 1)
             ScrollView(.vertical, showsIndicators: false) {

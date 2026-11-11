@@ -51,6 +51,24 @@ struct TaskGit: Codable, Hashable {
     var canMerge: CanMerge?
 }
 
+/// A note: a Markdown file, a project's or of no project.
+struct Note: Identifiable, Hashable {
+    var id: String { name }
+    let name: String
+    var title: String
+    var mtime: Double
+    /// Whether it goes into every session's instructions.
+    var include: Bool
+}
+
+struct NoteList {
+    var notes: [Note] = []
+    /// Whether the project has a CLAUDE.md to show with its notes.
+    var instructions = false
+    /// For the notes of no project: how many notes sit in projects.
+    var elsewhere = 0
+}
+
 struct GitState: Codable, Hashable {
     var branch: String?
     var head: String?

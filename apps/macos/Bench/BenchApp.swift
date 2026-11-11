@@ -24,6 +24,7 @@ final class AppModel {
         else if v.hasPrefix("task:"), let t = store.task(String(v.dropFirst(5))), let p = t.project_id { rail = p }
         else if v.hasPrefix("project:") { rail = String(v.dropFirst(8)) }
         else if v.hasPrefix("files:") { rail = String(v.dropFirst(6)) }
+        else if let n = NoteRef(tab: v) { rail = n.project ?? "notes" }
     }
     var showNewSession = false
     /// The project the next New Session sheet starts on.
@@ -120,6 +121,12 @@ final class AppModel {
 
     /// Bumped to put the cursor in the project page's task box.
     var focusTaskBox = 0
+    /// Text for that box to start with: a note handed over as a task's prompt.
+    var taskDraft: String?
+    /// The notes the sidebar lists.
+    let notes = NotesStore()
+    /// The tab of a note just made, which opens in Edit.
+    var editingNote: String?
 
     /// A new task in a project: its page, with the task box ready to type in.
     func startTask(in project: String) {

@@ -62,6 +62,9 @@ final class SessionModel {
     private var pathQuery: String?
     private var pathTask: Task<Void, Never>?
 
+    /// What to call each `note:name` in `paths`.
+    var noteTitles: [String: String] = [:]
+
     func lookUpPaths(_ q: String?) {
         guard q != pathQuery else { return }
         pathQuery = q
@@ -70,8 +73,8 @@ final class SessionModel {
         pathTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(90))
             guard let self, !Task.isCancelled else { return }
-            let found = (try? await self.store.api.paths(self.sessionId, query: q)) ?? []
-            if !Task.isCancelled && self.pathQuery == q { self.paths = Array(found.prefix(8)) }
+            let found: (paths: [String], titles: [String: String]) = (try? await self.store.api.paths(self.sessionId, query: q)) ?? (paths: [], titles: [:])
+            if !Task.isCancelled && self.pathQuery == q { self.paths = Array(found.paths.prefix(8)); self.noteTitles = found.titles }
         }
     }
     var attachments: [Attachment] = []

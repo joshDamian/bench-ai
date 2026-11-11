@@ -97,6 +97,8 @@ struct MainView: View {
         } else if let id = model.selection, id.hasPrefix("project:") {
             let pid = String(id.dropFirst("project:".count))
             ProjectView(store: store, projectId: pid).id(pid)
+        } else if let id = model.selection, let note = NoteRef(tab: id) {
+            NoteView(store: store, ref: note).id(id)
         } else if let id = model.selection, id.hasPrefix("files:") {
             let pid = String(id.dropFirst("files:".count))
             FilesView(store: store, projectId: pid).id(pid)

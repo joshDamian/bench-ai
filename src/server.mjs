@@ -728,11 +728,38 @@ route('GET', '/api/sessions/:id/events', ({ params, u }) =>
 route('GET', '/api/sessions/:id/events/:event/thinking', ({ params }) => svc.eventThinking(params[0], Number(params[1])));
 route('POST', '/api/sessions/:id/messages', ({ params, body }) => svc.send(params[0], body.text, { images: body.images, files: body.files, uploads: body.uploads }));
 route('GET', '/api/sessions/:id/files', ({ req, res, params, u }) => sendSessionFile(req, res, params[0], u));
+// Notes: Markdown files, a project's own (`?project=`) or the ones that belong to none.
+/** @param {unknown} id */
+const notesIn = (id) => (id ? svc.project(String(id)).path : null);
+route('GET', '/api/notes', ({ u }) => {
+  const id = u.searchParams.get('project');
+  const where = notesIn(id);
+  // A project's CLAUDE.md sits with its notes in the app: say whether there is one to open.
+  return { notes: svc.runtime.notes.list(where), instructions: where ? fs.existsSync(path.join(where, 'CLAUDE.md')) : false,
+    elsewhere: id ? 0 : svc.store.listProjects().reduce((n, p) => n + svc.runtime.notes.list(p.path).length, 0) };
+});
+route('GET', '/api/notes/text', ({ u }) => svc.runtime.notes.read(notesIn(u.searchParams.get('project')), u.searchParams.get('name')));
+route('POST', '/api/notes', ({ body }) => svc.runtime.notes.create(notesIn(body.project), body.title, typeof body.text === 'string' ? body.text : undefined));
+route('PUT', '/api/notes/text', ({ body }) => svc.runtime.notes.write(notesIn(body.project), body.name, body.text, Number(body.mtime) || undefined));
+route('PATCH', '/api/notes', ({ body }) => svc.runtime.notes.setInclude(notesIn(body.project), body.name, !!body.include));
+route('DELETE', '/api/notes', ({ u }) => (svc.runtime.notes.remove(notesIn(u.searchParams.get('project')), u.searchParams.get('name')), { ok: true }));
+// An idea that became work: a new project, and the note moved into it.
+route('POST', '/api/notes/promote', async ({ body }) => {
+  svc.runtime.notes.read(null, body.name);
+  const project = await svc.createProject({ name: String(body.projectName || '') });
+  return { project, name: svc.runtime.notes.move(body.name, project.path) };
+});
+
 // Paths for the composer's @ suggestions: the session's files, git's list where there is
 // one, else a shallow walk. Ranked by how well the name matches; at most 30.
 route('GET', '/api/sessions/:id/paths', async ({ params, u }) => {
   const s = svc.session(params[0]);
-  return { paths: rankPaths(await listPaths(s.cwd), String(u.searchParams.get('q') || '')).slice(0, 30) };
+  const q = String(u.searchParams.get('q') || '');
+  const project = s.project_id ? svc.store.getProject(s.project_id) : null;
+  const notes = svc.runtime.notes.suggest(project?.path, q);
+  // A project note is also a file in the checkout: list it once, as the note.
+  const asFiles = new Set(notes.map((n) => `notes/${n.token.slice(5)}.md`));
+  return { paths: rankPaths(await listPaths(s.cwd), q).filter((p) => !asFiles.has(p)).slice(0, 30), notes };
 });
 
 // Which of the paths a transcript mentions are files, and what each is. The client
