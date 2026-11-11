@@ -73,7 +73,7 @@ final class SessionModel {
         pathTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(90))
             guard let self, !Task.isCancelled else { return }
-            let found = (try? await self.store.api.paths(self.sessionId, query: q)) ?? ([], [:])
+            let found: (paths: [String], titles: [String: String]) = (try? await self.store.api.paths(self.sessionId, query: q)) ?? (paths: [], titles: [:])
             if !Task.isCancelled && self.pathQuery == q { self.paths = Array(found.paths.prefix(8)); self.noteTitles = found.titles }
         }
     }
