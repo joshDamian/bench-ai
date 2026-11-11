@@ -9,6 +9,7 @@ import { Transform } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import { cleanEnv, providerEnv, invocationId, priceUsage } from './providers.mjs';
+import { Notes } from './notes.mjs';
 import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
@@ -402,6 +403,11 @@ export class Runtime extends EventEmitter {
     this.emit('commands', { session_id: id, commands: live.commands });
   }
 
+  /** The person's notes: a project's own, and the ones that belong to none. */
+  get notes() {
+    return (this.notesStore ??= new Notes(this.store.dir));
+  }
+
   /** Where a session's attached files are kept. It is opened to the session, so reading them asks nothing. @param {string} id */
   attachmentsDir(id) {
     return path.join(this.store.dir, 'attachments', id);
@@ -527,7 +533,8 @@ export class Runtime extends EventEmitter {
     const note = saved.length ? `\n\nAttached file${saved.length === 1 ? '' : 's'} (read ${saved.length === 1 ? 'it' : 'them'} as needed):\n${saved.map((f) => `- ${f.path}`).join('\n')}` : '';
     const archive = saved.some((f) => /\.(apk|aab|apks|xapk|ipa|jar|aar|zip)$/i.test(f.name));
     const hint = archive ? '\n(An .apk, .aab, .ipa, .jar or .zip is a zip archive: inspect it with Bash - unzip -l, unzip -p, aapt or apkanalyzer where installed - rather than Read.)' : '';
-    const body = `${text}${note}${hint}${mentionedFiles(s.cwd, text)}`.trim();
+    const notesOf = s.project_id ? this.store.getProject(s.project_id)?.path : null;
+    const body = `${text}${note}${hint}${mentionedFiles(s.cwd, text, (name) => this.notes.resolve(notesOf, name))}`.trim();
     const live = this.live.get(id) || this.#start(s);
     live.checkTries = 0;
     live.writeUp = !!o.writeUp;
@@ -598,7 +605,8 @@ export class Runtime extends EventEmitter {
       CLAUDE_AGENT_SDK_CLIENT_APP: 'bench',
     };
     const attach = attachNote(this.attachmentsDir(s.id));
-    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
+    const notes = ask ? null : this.notes.brief(project?.path);
+    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
     const memory = project && path.resolve(project.path) !== path.resolve(s.cwd) ? memoryDir(project.path) : null;
     fs.mkdirSync(this.attachmentsDir(s.id), { recursive: true });
     const live = new Live(s.id);
@@ -608,7 +616,8 @@ export class Runtime extends EventEmitter {
     /** @type {import('@anthropic-ai/claude-agent-sdk').Options} */
     const options = {
       cwd: s.cwd,
-      additionalDirectories: ask ? [this.attachmentsDir(s.id)] : [this.attachmentsDir(s.id), scratch],
+      // Notes too: a task's worktree is not the checkout its project's notes are in.
+      additionalDirectories: ask ? [this.attachmentsDir(s.id)] : [this.attachmentsDir(s.id), scratch, this.notes.global, ...(project ? [this.notes.dir(project.path)] : [])],
       env,
       settingSources: ask ? [] : ['project', 'local'],
       plugins: ask ? [] : this.#plugins(),
@@ -1084,9 +1093,10 @@ export class Runtime extends EventEmitter {
  * The files a message names as `@path`, inside the session's folder, with their text, so
  * Claude need not spend a turn reading them. Each up to 1,500 lines or 100 KB, 300 KB in all;
  * anything bigger, binary or outside the folder stays a path for Claude to read as needed.
- * @param {string} cwd @param {string} text
+ * `@note:name` is one of the person's notes, wherever it is kept.
+ * @param {string} cwd @param {string} text @param {(name:string) => string|null} [note]
  */
-export function mentionedFiles(cwd, text) {
+export function mentionedFiles(cwd, text, note) {
   const root = path.resolve(cwd);
   const seen = new Set();
   let total = 0, out = '';
@@ -1094,19 +1104,21 @@ export function mentionedFiles(cwd, text) {
   const big = [];
   for (const m of text.matchAll(/(?:^|\s)@([\w./~+-][^\s]*)/g)) {
     const rel = m[1].replace(/[.,;:!?)]+$/, '');
-    const full = path.resolve(root, rel);
-    if (seen.has(full) || (full !== root && !full.startsWith(root + path.sep))) continue;
+    const noted = rel.startsWith('note:') ? note?.(rel.slice(5)) ?? null : null;
+    if (rel.startsWith('note:') && !noted) continue;
+    const full = noted ?? path.resolve(root, rel);
+    if (seen.has(full) || (!noted && full !== root && !full.startsWith(root + path.sep))) continue;
     seen.add(full);
     let st; try { st = fs.statSync(full); } catch { continue; }
     if (!st.isFile()) continue;
-    if (st.size > 100 * 1024 || total + st.size > 300 * 1024) { big.push(`${rel} (${Math.round(st.size / 1024)} KB)`); continue; }
+    if (st.size > 100 * 1024 || total + st.size > 300 * 1024) { big.push(`${noted ?? rel} (${Math.round(st.size / 1024)} KB)`); continue; }
     const data = fs.readFileSync(full);
     if (data.includes(0)) continue;
     const t = data.toString('utf8');
     const lines = t.split('\n').length;
-    if (lines > 1500) { big.push(`${rel} (${lines} lines)`); continue; }
+    if (lines > 1500) { big.push(`${noted ?? rel} (${lines} lines)`); continue; }
     total += st.size;
-    out += `\n\n<file path="${rel}">\n${t}${t.endsWith('\n') ? '' : '\n'}</file>`;
+    out += `\n\n<file path="${noted ?? rel}">\n${t}${t.endsWith('\n') ? '' : '\n'}</file>`;
   }
   if (big.length) out += `\n\nToo large to attach, so read only the parts you need (grep, or Read with an offset):\n${big.map((b) => `- ${b}`).join('\n')}`;
   return out;
