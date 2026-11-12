@@ -374,7 +374,8 @@ private struct TaskOverview: View {
         card("Shipped") {
             Text("Merged into \(model.base)" + (t?.merged_at.map { " " + when($0) } ?? "") + ".")
                 .font(.system(size: 15))
-            stats.padding(.top, 10)
+            // Zero files after a merge means the record is gone, not that it changed nothing.
+            if (model.git?.files ?? model.diff.count) > 0 { stats.padding(.top, 10) }
         }
     }
 
@@ -418,13 +419,13 @@ private struct TaskOverview: View {
     }
 
     private var changes: some View {
-        card("What changed", extra: {
+        card(merged ? "What it brought in" : "What changed", extra: {
             if !model.diff.isEmpty {
                 Button("Review changes →", action: showChanges).buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(theme.colors.text)
             }
         }) {
             if model.diff.isEmpty {
-                Text(merged ? "Nothing left to compare: it's in \(model.base)." : "Nothing changed yet.")
+                Text(merged ? "Merged before Bench kept a record of what it changed. The commits are in \(model.base)'s history." : "Nothing changed yet.")
                     .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
             } else {
                 if !merged { stats.padding(.bottom, 8) }

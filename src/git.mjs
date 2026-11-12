@@ -347,6 +347,33 @@ export function workingStat(dir, ref) {
   return out;
 }
 
+/** What `to` changed since `from`, both commits. @param {string} dir @param {string} from @param {string} to */
+export function committedStat(dir, from, to) {
+  const out = { files: 0, added: 0, removed: 0 };
+  let rows = '';
+  try {
+    rows = git(dir, ['diff', '--numstat', from, to]);
+  } catch {
+    return out;
+  }
+  for (const row of rows.split('\n').filter(Boolean)) {
+    const [a, r] = row.split('\t');
+    out.files++;
+    out.added += Number(a) || 0;
+    out.removed += Number(r) || 0;
+  }
+  return out;
+}
+
+/** @param {string} dir @param {string} from @param {string} to */
+export function committedDiff(dir, from, to) {
+  try {
+    return git(dir, ['diff', from, to]);
+  } catch {
+    return '';
+  }
+}
+
 // -- merging --------------------------------------------------------------------
 
 /**

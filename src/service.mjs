@@ -328,14 +328,32 @@ export class Service extends EventEmitter {
       const m = g.mergeTree(repo, base, tip);
       if (!m.clean) canMerge = { ok: false, reason: `Conflicts with ${t.base_branch}`, conflicts: m.conflicts };
     }
-    return { ahead, behind, dirty: st.dirty, conflicted: st.conflicted, ...stat, merged, canMerge };
+    // Once it is merged there is nothing left between branch and base; what it changed is
+    // what it brought in, so the stat reads the same after the merge as before it.
+    const landed = merged ? this.#landedRange(t, repo, tip) : null;
+    return { ahead, behind, dirty: st.dirty, conflicted: st.conflicted, ...(landed ? g.committedStat(repo, landed.from, landed.to) : stat), merged, canMerge };
+  }
+
+  /**
+   * The commits a merged task brought into its base: its merge commit against the base it
+   * landed on, else its branch against where it started, while the branch is still there.
+   * @param {Task} t @param {string} repo @param {string|null} tip
+   */
+  #landedRange(t, repo, tip) {
+    if (t.merge_commit && g.revParse(repo, `${t.merge_commit}^1`)) return { from: `${t.merge_commit}^1`, to: t.merge_commit };
+    if (tip && t.base_commit && tip !== t.base_commit) return { from: t.base_commit, to: tip };
+    return null;
   }
 
   /** Everything the task changed since it left its base, uncommitted work included. @param {string} id */
   taskDiff(id) {
     const t = this.task(id);
-    if (!fs.existsSync(t.worktree)) return { diff: '' };
     const repo = this.project(t.project_id).path;
+    if (t.state === 'merged') {
+      const landed = this.#landedRange(t, repo, g.revParse(repo, `refs/heads/${t.branch}`));
+      return { diff: landed ? g.committedDiff(repo, landed.from, landed.to) : '' };
+    }
+    if (!fs.existsSync(t.worktree)) return { diff: '' };
     const base = g.revParse(repo, `refs/heads/${t.base_branch}`);
     const from = (base && g.mergeBase(t.worktree, 'HEAD', base)) || t.base_commit;
     return { diff: g.workingDiff(t.worktree, from) };
