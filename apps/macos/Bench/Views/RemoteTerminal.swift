@@ -219,7 +219,9 @@ struct RemoteTerminalView: View {
 
     private func connect(_ id: String) {
         let key = "\(query)&tab=\(id)"
-        if let s = RemoteShell.kept[key] {
+        // A kept shell already on screen in another window can't be in two places: this
+        // window gets a connection of its own to the same shell.
+        if let s = RemoteShell.kept[key], s.view.superview == nil {
             s.onState = { problems[id] = $0 }
             s.onTitle = { titles[id] = $0 }
             if let t = s.title { titles[id] = t }
@@ -228,7 +230,7 @@ struct RemoteTerminalView: View {
             return
         }
         let s = RemoteShell(api: store.api, query: key)
-        RemoteShell.kept[key] = s
+        if RemoteShell.kept[key] == nil { RemoteShell.kept[key] = s }
         s.onState = { problems[id] = $0 }
         s.onTitle = { titles[id] = $0 }
         let pal = TerminalPalette.of(dark: theme.dark, bg: theme.colors.bg)
