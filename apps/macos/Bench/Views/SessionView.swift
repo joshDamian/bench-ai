@@ -75,24 +75,28 @@ struct SessionView: View {
 
     private func restoreScroll(_ proxy: ScrollViewProxy) {
         if !model.followingEnd, let a = model.scrollAnchor {
-            let inset = model.scrollInset
-            DispatchQueue.main.async {
-                proxy.scrollTo(a, anchor: .top)
-                // Then down into it, to where it was: the block's top is at the offset now.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    if inset > 0 { position.scrollTo(y: model.offsetY + inset) }
-                }
-            }
+            DispatchQueue.main.async { proxy.scrollTo(a, anchor: .top) }
         } else {
             model.followingEnd = true
             settleAtEnd(proxy)
         }
-        // A lazy list can land on an offset where it has drawn nothing yet - an estimate it
-        // got wrong - and shows a blank thread until something makes it lay out again. If no
-        // row is on screen once it has settled, go to the end, where there is always one.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-            if !model.rows.isEmpty && model.visible.isEmpty { model.followingEnd = true; settleAtEnd(proxy) }
+        // A lazy list can land on an offset where it has drawn nothing - its estimate of the
+        // rows it hasn't measured was wrong - and stays blank until something lays it out
+        // again. If no row is in view once it has settled, try the place again, then the end.
+        for (delay, last) in [(0.35, false), (0.9, true)] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard !model.rows.isEmpty, !nothingInView else { return }
+                if !last, !model.followingEnd, let a = model.scrollAnchor { proxy.scrollTo(a, anchor: .top) }
+                else { model.followingEnd = true; settleAtEnd(proxy) }
+            }
         }
+    }
+
+    /// No drawn block reaches into the visible part of the thread.
+    private var nothingInView: Bool {
+        let h = model.viewport > 0 ? model.viewport : 800
+        return !model.tops.values.contains { $0 < h && $0 > -6000 } && !model.atEnd
+    }
     }
 
     /// The start of Claude's last reply, for the floating composer's context line.
@@ -283,7 +287,7 @@ struct SessionView: View {
                     }
                     Color.clear.frame(height: approvals.isEmpty ? max(150, composerHeight + 40) : 24).id("bottom")
                         .onAppear { follow = true; model.followingEnd = true }
-                        .onDisappear { follow = false; model.followingEnd = false }
+                        .onDisappear { follow = false; model.followingEnd = model.atEnd }
                 }
                 .environment(\.findQuery, finding ? query : "")
                 .frame(maxWidth: 680)
@@ -295,6 +299,10 @@ struct SessionView: View {
             .defaultScrollAnchor(.bottom)
             .scrollPosition($position)
             .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, y in model.offsetY = y }
+            .onScrollGeometryChange(for: [CGFloat].self, of: { [$0.contentOffset.y + $0.containerSize.height, $0.contentSize.height, $0.containerSize.height] }) { _, g in
+                model.atEnd = g[0] >= g[1] - 80
+                model.viewport = g[2]
+            }
             .background(theme.colors.bg)
             // Back to where the tab was left, or to the end on a first open.
             .onAppear { restoreScroll(proxy) }
@@ -304,7 +312,7 @@ struct SessionView: View {
                 let shown = model.blocks.filter { model.visible.contains($0.id) }.compactMap { b in model.tops[b.id].map { (b.id, $0) } }
                 let anchor = shown.filter { $0.1 <= 1 }.max { $0.1 < $1.1 } ?? shown.min { $0.1 < $1.1 }
                 model.scrollAnchor = anchor?.0
-                model.scrollInset = max(0, -(anchor?.1 ?? 0))
+                model.followingEnd = model.atEnd
             }
             .onChange(of: model.rows.count) { was, _ in
                 // The rows came in after the tab opened: place the thread now they are here.
