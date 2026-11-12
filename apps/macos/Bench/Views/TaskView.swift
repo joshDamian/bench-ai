@@ -264,6 +264,7 @@ private struct TaskOverview: View {
     @State private var makeDefault = false
     @State private var suggestions: [(command: String, from: String)] = []
     @State private var writingOwn = false
+    @State private var wide = true
 
     private var t: BenchTask? { model.task }
     private var merged: Bool { t?.state == "merged" || model.git?.merged == true }
@@ -271,21 +272,25 @@ private struct TaskOverview: View {
 
     var body: some View {
         ScrollView {
-            HStack(alignment: .top, spacing: 22) {
+            // Two columns when there is room: the main one takes what is left after a side
+            // column of fixed width. Narrower than that, the side cards go under the main ones.
+            let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 22)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 22))
+            layout {
                 VStack(alignment: .leading, spacing: 22) {
                     if merged { shipped } else { progress }
                     if !merged || !(t?.done ?? "").isEmpty { doneMeans }
                     changes
                 }
-                .frame(minWidth: 0, maxWidth: .infinity)
-                .layoutPriority(1.35)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 22) {
                     if !merged { checkCard }
                     sessionsCard
                     if merged { nextCard } else { loopCard }
                 }
-                .frame(minWidth: 0, maxWidth: .infinity)
+                .frame(width: wide ? 320 : nil)
+                .frame(maxWidth: wide ? 320 : .infinity, alignment: .leading)
             }
+            .onGeometryChange(for: Bool.self) { $0.size.width >= 820 } action: { wide = $0 }
             .frame(maxWidth: 1060)
             .padding(.horizontal, 32)
             .padding(.vertical, 26)
