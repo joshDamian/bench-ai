@@ -23,14 +23,14 @@ final class TaskModel {
             for s in detail?.sessions ?? [] where store.session(s.id) == nil { store.apply(s) }
             diff = DiffFile.parse(try await store.api.taskDiff(taskId))
             log = try await store.api.taskLog(taskId)
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = error.shown }
     }
 
     /// Runs a server action, then reloads what it may have changed.
     func run(_ label: String, _ op: @escaping () async throws -> Void) {
         busy = label
         Task {
-            do { try await op() } catch { self.error = error.localizedDescription }
+            do { try await op() } catch { self.error = error.shown }
             busy = nil
             await load()
         }
@@ -287,10 +287,10 @@ private struct TaskOverview: View {
                     sessionsCard
                     if merged { nextCard } else { loopCard }
                 }
-                .frame(width: wide ? 320 : nil)
-                .frame(maxWidth: wide ? 320 : .infinity, alignment: .leading)
+                .frame(width: wide ? 340 : nil)
+                .frame(maxWidth: wide ? 340 : .infinity, alignment: .leading)
             }
-            .onGeometryChange(for: Bool.self) { $0.size.width >= 820 } action: { wide = $0 }
+            .onGeometryChange(for: Bool.self) { $0.size.width >= 900 } action: { wide = $0 }
             .frame(maxWidth: 1060)
             .padding(.horizontal, 32)
             .padding(.vertical, 26)
@@ -487,7 +487,12 @@ private struct TaskOverview: View {
                         .padding(10)
                 }
                 .defaultScrollAnchor(.bottom)
-                .frame(maxHeight: status == "failed" ? 260 : 64)
+                .frame(maxHeight: status == "failed" ? 240 : 64)
+                .mask(VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 14)
+                    Color.black
+                })
+                .padding(.top, 2)
                 .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: 8))
             }
             if status == "failed" && active {
@@ -608,12 +613,13 @@ private struct TaskOverview: View {
                 Button { open(s.id) } label: {
                     HStack(spacing: 10) {
                         MarkView(mark: Mark.of(s, store: model.store)).frame(width: 10)
-                        Text(s.title).font(.system(size: 13)).lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text([model.store.modelLine(s), s.cost.map(Format.cost), Format.ago(s.updated_at)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                        Text(s.title).font(.system(size: 13)).lineLimit(1).truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .help(s.title)
+                        Text([s.cost.map(Format.cost), Format.ago(s.updated_at)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1).fixedSize()
                     }
-                    .frame(height: 40).contentShape(Rectangle())
+                    .frame(height: 36).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -647,11 +653,17 @@ private struct TaskOverview: View {
                 .disabled(!hasCheck || !active)
                 .help(hasCheck ? "" : "Needs a check first")
             }
-            HStack(spacing: 14) {
-                HStack(spacing: 6) { Text("Attempts").foregroundStyle(theme.colors.muted); PlusMinus(value: $attempts, range: 1...50, step: 1, unit: "") }
-                HStack(spacing: 6) { Text("Time limit").foregroundStyle(theme.colors.muted); PlusMinus(value: $minutes, range: 5...600, step: 5, unit: "m") }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow {
+                    Text("Attempts").foregroundStyle(theme.colors.muted).fixedSize()
+                    PlusMinus(value: $attempts, range: 1...50, step: 1, unit: "")
+                }
+                GridRow {
+                    Text("Time limit").foregroundStyle(theme.colors.muted).fixedSize()
+                    PlusMinus(value: $minutes, range: 5...600, step: 5, unit: "m")
+                }
             }
-            .font(.system(size: 12)).padding(.top, 10)
+            .font(.system(size: 12)).padding(.top, 12)
             if let l = t?.loop {
                 Text("Attempt \(l.attempts ?? 0) of \(l.max_attempts ?? attempts) · \(LoopState.label(l.state))")
                     .font(.system(size: 12)).foregroundStyle(theme.colors.muted).padding(.top, 6)
@@ -1057,7 +1069,7 @@ struct ShipSheet: View {
                 }
                 await model.load()
                 dismiss()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.shown }
             working = false
         }
     }

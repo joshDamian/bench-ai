@@ -155,7 +155,7 @@ struct AddProjectSheet: View {
                 await store.refresh()
                 if let p = try? JSONDecoder().decode(Project.self, from: d) { onAdded(p.id) }
                 dismiss()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.shown }
             busy = false
         }
     }

@@ -1,6 +1,14 @@
 import Foundation
 
 /// A refusal from the server, in its own words.
+extension Error {
+    /// What to tell the person, or nothing for work that was only cancelled.
+    var shown: String? {
+        if self is CancellationError || (self as? URLError)?.code == .cancelled { return nil }
+        return localizedDescription
+    }
+}
+
 struct BenchError: LocalizedError {
     let status: Int
     let message: String
@@ -51,6 +59,9 @@ final class BenchAPI: @unchecked Sendable {
         do {
             (data, res) = try await session.data(for: r)
         } catch {
+            // A request dropped because the view that asked went away - a tab closed or
+            // switched, a refresh replaced it - is not the server being unreachable.
+            if (error as? URLError)?.code == .cancelled || Task.isCancelled { throw CancellationError() }
             throw BenchError(status: 0, message: "Can't reach the server: \(error.localizedDescription)")
         }
         let code = (res as? HTTPURLResponse)?.statusCode ?? 0

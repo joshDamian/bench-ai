@@ -315,7 +315,7 @@ struct NoteView: View {
         } catch let e as BenchError where e.status == 409 {
             conflict = true
         } catch {
-            problem = error.localizedDescription
+            problem = error.shown
         }
     }
 
@@ -326,7 +326,7 @@ struct NoteView: View {
             do {
                 try await store.api.includeNote(project: p, name: name, on)
                 await app.notes.load(store.api, project: p)
-            } catch { include = !on; problem = error.localizedDescription }
+            } catch { include = !on; problem = error.shown }
         }
     }
 
@@ -352,7 +352,7 @@ struct NoteView: View {
                 let old = ref.tab
                 app.selection = NoteRef.note(project: made.project, name: made.name).tab
                 app.tabs.removeAll { $0 == old }
-            } catch { problem = error.localizedDescription }
+            } catch { problem = error.shown }
         }
     }
 
@@ -365,7 +365,7 @@ struct NoteView: View {
                 await app.notes.load(store.api, project: p)
                 missing = "This note was deleted."
                 if app.tabs.count > 1 { app.closeTab(ref.tab) }
-            } catch { problem = error.localizedDescription }
+            } catch { problem = error.shown }
         }
     }
 }

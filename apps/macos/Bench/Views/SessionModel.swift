@@ -126,7 +126,7 @@ final class SessionModel {
             if after == nil { hasOlder = d.events.count >= page }
             if d.events.contains(where: { Transcript.finishing.contains($0.kind) }) { clearStream() }
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.shown
         }
         loading = false
     }
@@ -139,7 +139,7 @@ final class SessionModel {
             var seen = Set<Int>()
             events = (older + events).filter { seen.insert($0.id).inserted }.sorted { $0.id < $1.id }
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.shown
         }
     }
 
@@ -236,7 +236,7 @@ final class SessionModel {
             attachments = []
             return true
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.shown
             return false
         }
     }
@@ -248,7 +248,7 @@ final class SessionModel {
         Task {
             do { try await store.answer(a, body) } catch {
                 busyApprovals.remove(a.id)
-                self.error = error.localizedDescription
+                self.error = error.shown
             }
         }
     }
@@ -269,7 +269,7 @@ final class SessionModel {
                     }
                     update(id) { $0.ref = ref; $0.progress = 1 }
                 } catch {
-                    update(id) { $0.error = error.localizedDescription }
+                    update(id) { $0.error = error.shown }
                 }
             }
         }

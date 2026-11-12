@@ -145,7 +145,7 @@ struct NewSessionSheet: View {
                 onCreated(s.id)
                 dismiss()
             } catch {
-                self.error = error.localizedDescription
+                self.error = error.shown
             }
             busy = false
         }
