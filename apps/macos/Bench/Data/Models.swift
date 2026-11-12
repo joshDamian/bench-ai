@@ -22,6 +22,7 @@ struct BenchTask: Codable, Identifiable, Hashable {
     var done: String?
     var check_command: String?
     var check_output: String?
+    var check_at: String?
     var loop: TaskLoop?
     var merged_at: String?
     var created_at: String?

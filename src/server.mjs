@@ -18,6 +18,7 @@ import { collect } from './metrics.mjs';
 import { worktreeRoot } from './git.mjs';
 import { releaseInfo, updateStatus, startUpdate } from './update.mjs';
 import { sessionPath } from './tools.mjs';
+import { suggestChecks } from './checks.mjs';
 
 /** @typedef {import('./contract.mjs').ServerMessage} ServerMessage */
 
@@ -699,6 +700,12 @@ route('POST', '/api/tasks/:id/close', async ({ params, body }) => {
 });
 route('POST', '/api/tasks/:id/reopen', ({ params }) => svc.reopenTask(params[0]));
 route('POST', '/api/tasks/:id/check', ({ params }) => svc.checkTask(params[0]));
+// Checks the task's worktree suggests: its package.json's scripts, a Cargo.toml, a go.mod...
+route('GET', '/api/tasks/:id/check-suggestions', ({ params }) => {
+  const t = svc.task(params[0]);
+  const where = t.worktree && fs.existsSync(t.worktree) ? t.worktree : svc.project(t.project_id).path;
+  return { suggestions: suggestChecks(where) };
+});
 route('GET', '/api/tasks/:id/log', ({ params }) => svc.taskLog(params[0]));
 
 route('GET', '/api/sessions', ({ u }) =>

@@ -116,7 +116,9 @@ struct TaskView: View {
             ConflictsView(model: model, files: g.conflicted, ask: askToResolve)
         } else {
             switch pane {
-            case .overview: TaskOverview(model: model, sessions: sessions) { id in sessionId = id; pane = .conversation } newSession: { newSession() }
+            case .overview:
+                TaskOverview(model: model, sessions: sessions, open: { id in sessionId = id; pane = .conversation },
+                             newSession: { newSession() }, showChanges: { pane = .changes }, ask: ask)
             case .conversation: conversation
             case .changes: ChangesView(files: model.diff)
             case .log: LogView(entries: model.log)
@@ -219,6 +221,16 @@ struct TaskView: View {
         }
     }
 
+    /// Something for Claude to do in the task's latest session, which then shows.
+    private func ask(_ text: String) {
+        guard let s = sessions.last else { return newSession() }
+        model.run("Asking Claude…") {
+            try await store.api.send(s.id, text: text)
+            sessionId = s.id
+            pane = .conversation
+        }
+    }
+
     private func askToResolve(_ files: [String]) {
         guard let s = sessions.last else { return newSession() }
         model.run("Asking Claude…") {
@@ -231,134 +243,451 @@ struct TaskView: View {
 
 // MARK: Overview
 
+/// A task at a glance: where it is on the way to merging, what done means, what it has
+/// changed, and its check - the thing that says whether it's done. Once merged, what it
+/// shipped and where to go from there.
 private struct TaskOverview: View {
+    @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     let model: TaskModel
     let sessions: [Session]
     let open: (String) -> Void
     let newSession: () -> Void
+    let showChanges: () -> Void
+    let ask: (String) -> Void
     @State private var done = ""
     @State private var check = ""
     @State private var attempts = 5
     @State private var minutes = 30
     @State private var editingDone = false
+    @State private var editingCheck = false
+    @State private var makeDefault = false
+    @State private var suggestions: [(command: String, from: String)] = []
+    @State private var writingOwn = false
+
+    private var t: BenchTask? { model.task }
+    private var merged: Bool { t?.state == "merged" || model.git?.merged == true }
+    private var active: Bool { t?.state == "active" }
 
     var body: some View {
-        let t = model.task
-        let looping = t?.loop?.state == "looping"
         ScrollView {
-            HStack(alignment: .top, spacing: 28) {
-                VStack(alignment: .leading, spacing: 24) {
-                    section("Done means") {
-                        Group2 {
-                            if editingDone {
-                                GrowingEditor(text: $done, placeholder: "What does done look like?", size: 13.5, minLines: 3, maxLines: 8)
-                                    .padding(12)
-                                GroupRow(title: "") {
-                                    Button("Cancel") { editingDone = false; done = t?.done ?? "" }.buttonStyle(TonalButton(height: 24))
-                                    Button("Save") { save(["done": done]); editingDone = false }.buttonStyle(TonalButton(height: 24))
-                                }
-                            } else {
-                                Text(done.isEmpty ? "Not set. Say what finished looks like and Claude checks its work against it." : done)
-                                    .font(.system(size: 13.5)).lineSpacing(3)
-                                    .foregroundStyle(done.isEmpty ? theme.colors.muted : theme.colors.text)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(12)
-                                GroupRow(title: "") { Button("Edit") { editingDone = true }.buttonStyle(TonalButton(height: 24)) }
-                            }
-                        }
-                    }
-                    section("Check") {
-                        Group2 {
-                            GroupRow(title: "Command", first: true, muted: true) {
-                                TextField("", text: $check, prompt: Text("npm test"))
-                                    .textFieldStyle(.plain).font(BenchFont.mono(12.5))
-                                    .multilineTextAlignment(.trailing).frame(maxWidth: 220)
-                                    .onSubmit { save(["check": check]) }
-                            }
-                            GroupRow(title: "Last run", muted: true) {
-                                HStack(spacing: 6) {
-                                    MarkView(mark: t?.check_status == "passed" ? .ready : t?.check_status == "failed" ? .failed : t?.check_status == "running" ? .running : .idle)
-                                    Text(lastRun(t)).foregroundStyle(theme.colors.muted)
-                                }
-                            }
-                            GroupRow(title: "") {
-                                Button("Run Check") {
-                                    model.run("Checking…") {
-                                        try await model.store.api.editTask(model.taskId, ["check": check])
-                                        try await model.store.api.taskAction(model.taskId, "check")
-                                    }
-                                }
-                                .buttonStyle(TonalButton(height: 24))
-                                .disabled(check.trimmingCharacters(in: .whitespaces).isEmpty)
-                            }
-                        }
-                        if let out = t?.check_output, !out.isEmpty, t?.check_status == "failed" {
-                            Text(out.suffix(1200))
-                                .font(BenchFont.mono(11.5))
-                                .foregroundStyle(theme.colors.wellText)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
-                                .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: 10))
-                                .padding(.top, Space.sm)
-                        }
-                    }
+            HStack(alignment: .top, spacing: 22) {
+                VStack(alignment: .leading, spacing: 22) {
+                    if merged { shipped } else { progress }
+                    if !merged || !(t?.done ?? "").isEmpty { doneMeans }
+                    changes
                 }
-                .frame(maxWidth: .infinity)
-                VStack(alignment: .leading, spacing: 24) {
-                    section("Loop until done") {
-                        Group2 {
-                            GroupRow(title: "Keep going until the check passes", first: true) {
-                                Toggle("", isOn: Binding(get: { looping }, set: { on in
-                                    if on { save(["done": done, "check": check, "loop": ["max_attempts": attempts, "max_minutes": minutes]]) }
-                                    else { save(["loop": NSNull()]) }
-                                }))
-                                .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                                .disabled(check.trimmingCharacters(in: .whitespaces).isEmpty || t?.state != "active")
-                            }
-                            GroupRow(title: "Attempts", muted: true) { PlusMinus(value: $attempts, range: 1...50, step: 1, unit: "") }
-                            GroupRow(title: "Time limit", muted: true) { PlusMinus(value: $minutes, range: 5...600, step: 5, unit: "m") }
-                            if let l = t?.loop {
-                                GroupRow(title: "This run", muted: true) {
-                                    Text("Attempt \(l.attempts ?? 0) of \(l.max_attempts ?? attempts) · \(LoopState.label(l.state))").foregroundStyle(theme.colors.muted)
-                                }
-                            }
-                        }
-                    }
-                    section("Sessions") {
-                        Group2 {
-                            ForEach(Array(sessions.enumerated()), id: \.element.id) { i, s in
-                                Button { open(s.id) } label: {
-                                    GroupRow(title: s.title, first: i == 0) {
-                                        Text([model.store.modelLine(s), s.cost.map(Format.cost)].compactMap { $0 }.joined(separator: " · "))
-                                            .font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1)
-                                    }
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            GroupRow(title: "", first: sessions.isEmpty) {
-                                Button("New Session in This Task", action: newSession).buttonStyle(.link)
-                            }
-                        }
-                    }
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .layoutPriority(1.35)
+                VStack(alignment: .leading, spacing: 22) {
+                    if !merged { checkCard }
+                    sessionsCard
+                    if merged { nextCard } else { loopCard }
                 }
-                .frame(maxWidth: .infinity)
+                .frame(minWidth: 0, maxWidth: .infinity)
             }
-            .frame(maxWidth: 1000)
+            .frame(maxWidth: 1060)
             .padding(.horizontal, 32)
-            .padding(.vertical, 20)
+            .padding(.vertical, 26)
             .frame(maxWidth: .infinity)
         }
         .onAppear { reset() }
         .onChange(of: model.task?.updated_at) { _, _ in reset() }
+        .task(id: model.taskId) {
+            suggestions = (try? await model.store.api.checkSuggestions(model.taskId)) ?? []
+        }
+    }
+
+    // MARK: cards
+
+    private func card<C: View, X: View>(_ title: String, @ViewBuilder extra: () -> X = { EmptyView() }, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.colors.muted)
+                Spacer(minLength: 8)
+                extra()
+            }
+            VStack(alignment: .leading, spacing: 0) { content() }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.colors.fill(0.035), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.colors.fill(0.07)))
+        }
+    }
+
+    private enum Step { case done, now, todo, bad }
+
+    /// Started → Working → Check → Merge, each with the detail that matters.
+    private var progress: some View {
+        let commits = model.git?.ahead ?? 0
+        let status = t?.check_status
+        let hasCheck = !(t?.check_command ?? "").isEmpty
+        let checkStep: (Step, String) = !hasCheck ? (.todo, "none yet") : status == "passed" ? (.done, "passed" + ago(t?.check_at))
+            : status == "failed" ? (.bad, "failed" + ago(t?.check_at)) : status == "running" ? (.now, "running…") : (.todo, "not run yet")
+        let mergeOK = model.git?.canMerge?.ok ?? false
+        let mergeStep: (Step, String) = (status == "failed" ? .todo : mergeOK ? .now : .todo, status == "failed" ? "waits for the check" : "into \(model.base)")
+        let steps: [(String, Step, String)] = [
+            ("Started", .done, "from \(model.base)" + ago(t?.created_at)),
+            ("Working", commits > 0 ? .done : .now, "\(sessions.count) session\(sessions.count == 1 ? "" : "s") · \(commits) commit\(commits == 1 ? "" : "s")"),
+            ("Check", checkStep.0, checkStep.1),
+            ("Merge", mergeStep.0, mergeStep.1),
+        ]
+        return card("Where it is") {
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { i, s in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 0) {
+                            stepDot(s.1)
+                            if i < steps.count - 1 {
+                                Rectangle().fill(s.1 == .done ? theme.colors.good.opacity(0.6) : theme.colors.fill(0.1)).frame(height: 2).padding(.horizontal, 8)
+                            }
+                        }
+                        Text(s.0).font(.system(size: 13, weight: .medium))
+                        Text(s.2).font(.system(size: 11.5)).foregroundStyle(s.1 == .bad ? theme.colors.bad : theme.colors.muted)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func stepDot(_ s: Step) -> some View {
+        let tint: Color = switch s { case .done: theme.colors.good; case .now: theme.colors.accent; case .bad: theme.colors.bad; case .todo: theme.colors.muted.opacity(0.5) }
+        ZStack {
+            Circle().strokeBorder(tint, lineWidth: 2).frame(width: 22, height: 22)
+            switch s {
+            case .done: Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(tint)
+            case .bad: Text("!").font(.system(size: 11, weight: .bold)).foregroundStyle(tint)
+            case .now: Circle().fill(tint).frame(width: 8, height: 8)
+            case .todo: EmptyView()
+            }
+        }
+    }
+
+    private var shipped: some View {
+        card("Shipped") {
+            Text("Merged into \(model.base)" + (t?.merged_at.map { " " + when($0) } ?? "") + ".")
+                .font(.system(size: 15))
+            stats.padding(.top, 10)
+        }
+    }
+
+    private var stats: some View {
+        let g = model.git
+        let files = g?.files ?? model.diff.count
+        let added = g?.added ?? model.diff.reduce(0) { $0 + $1.added }
+        let removed = g?.removed ?? model.diff.reduce(0) { $0 + $1.removed }
+        let cost = sessions.compactMap(\.cost).reduce(0, +)
+        return HStack(spacing: 16) {
+            Text("\(files) file\(files == 1 ? "" : "s")")
+            Text("+\(added)").foregroundStyle(theme.colors.good)
+            Text("−\(removed)").foregroundStyle(theme.colors.bad)
+            if let a = g?.ahead, a > 0 { Text("\(a) commit\(a == 1 ? "" : "s")") }
+            if cost > 0 { Text("\(sessions.count) session\(sessions.count == 1 ? "" : "s") · \(Format.cost(cost))") }
+        }
+        .font(.system(size: 12.5)).foregroundStyle(theme.colors.muted)
+    }
+
+    private var doneMeans: some View {
+        card("Done means", extra: {
+            if !editingDone && !merged {
+                Button("Edit") { editingDone = true }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+            }
+        }) {
+            if editingDone {
+                GrowingEditor(text: $done, placeholder: "What does done look like?", size: 14, minLines: 3, maxLines: 10)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { editingDone = false; done = t?.done ?? "" }.buttonStyle(TonalButton(height: 26))
+                    Button("Save") { save(["done": done]); editingDone = false }.buttonStyle(PrimaryButton(height: 26))
+                }
+                .padding(.top, 10)
+            } else {
+                Text(done.isEmpty ? "Not set. Say what finished looks like and Claude checks its work against it." : done)
+                    .font(.system(size: 14)).lineSpacing(4)
+                    .foregroundStyle(done.isEmpty ? theme.colors.muted : theme.colors.text)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var changes: some View {
+        card("What changed", extra: {
+            if !model.diff.isEmpty {
+                Button("Review changes →", action: showChanges).buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(theme.colors.text)
+            }
+        }) {
+            if model.diff.isEmpty {
+                Text(merged ? "Nothing left to compare: it's in \(model.base)." : "Nothing changed yet.")
+                    .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
+            } else {
+                if !merged { stats.padding(.bottom, 8) }
+                ForEach(model.diff.prefix(10)) { f in
+                    HStack(spacing: 10) {
+                        Text(f.path).font(BenchFont.mono(12)).lineLimit(1).truncationMode(.head)
+                        Spacer(minLength: 8)
+                        Text("+\(f.added)").font(BenchFont.mono(12)).foregroundStyle(theme.colors.good)
+                        Text("−\(f.removed)").font(BenchFont.mono(12)).foregroundStyle(theme.colors.bad).frame(minWidth: 34, alignment: .trailing)
+                    }
+                    .frame(height: 28)
+                }
+                if model.diff.count > 10 {
+                    Text("and \(model.diff.count - 10) more").font(.system(size: 12)).foregroundStyle(theme.colors.muted).padding(.top, 4)
+                }
+            }
+        }
+    }
+
+    // MARK: the check
+
+    @ViewBuilder private var checkCard: some View {
+        let command = (t?.check_command ?? "").trimmingCharacters(in: .whitespaces)
+        card("Check") {
+            if editingCheck || (command.isEmpty && writingOwn) {
+                checkEditor(was: command)
+            } else if command.isEmpty {
+                noCheck
+            } else {
+                checkResult(command)
+            }
+        }
+    }
+
+    private func checkResult(_ command: String) -> some View {
+        let status = t?.check_status
+        let tint: Color = status == "passed" ? theme.colors.good : status == "failed" ? theme.colors.bad : theme.colors.muted
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if status == "running" { ProgressView().controlSize(.mini) } else { Circle().fill(tint).frame(width: 8, height: 8) }
+                Text(lastRun(status)).font(.system(size: 13, weight: .semibold))
+                if let s = failSummary, status == "failed" { Text(s).font(.system(size: 12.5)).foregroundStyle(theme.colors.muted).lineLimit(1) }
+                else if let at = t?.check_at, status != nil, status != "running" { Text(when(at)).font(.system(size: 12.5)).foregroundStyle(theme.colors.muted) }
+                Spacer(minLength: 8)
+                Button(status == nil ? "Run" : "Run Again") { runCheck() }.buttonStyle(TonalButton(height: 26)).disabled(status == "running" || !active)
+            }
+            HStack(spacing: 8) {
+                Text(command).font(BenchFont.mono(11.5)).foregroundStyle(theme.colors.muted).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                Spacer(minLength: 8)
+                if active {
+                    Button("Edit") { check = command; editingCheck = true }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(theme.colors.text)
+                }
+            }
+            if let out = t?.check_output, !out.isEmpty, status == "failed" || status == "passed" {
+                ScrollView {
+                    Text(status == "passed" ? String(out.suffix(400)) : out)
+                        .font(BenchFont.mono(11.5)).foregroundStyle(status == "failed" ? theme.colors.bad : theme.colors.good)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                }
+                .defaultScrollAnchor(.bottom)
+                .frame(maxHeight: status == "failed" ? 260 : 64)
+                .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: 8))
+            }
+            if status == "failed" && active {
+                HStack(spacing: 8) {
+                    Button("Ask Claude to Fix It") {
+                        ask("The check failed (`\(command)`). Here is the end of its output:\n\n```\n\(String((t?.check_output ?? "").suffix(3000)))\n```\n\nFix what's failing, then run the check again.")
+                    }
+                    .buttonStyle(PrimaryButton(height: 28))
+                    Button("Copy Output") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(t?.check_output ?? "", forType: .string)
+                    }
+                    .buttonStyle(TonalButton(height: 28))
+                }
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    /// "2 of 41 tests" and the like, when the runner printed a summary line.
+    private var failSummary: String? {
+        guard let out = t?.check_output else { return nil }
+        let patterns = [#"Tests?:\s+(\d+) failed[^\n]*?(\d+) total"#, #"(\d+) failed,\s*(\d+) passed"#, #"(\d+) failing"#, #"Found (\d+) errors?"#, #"error TS\d+"#]
+        if let m = out.range(of: patterns[0], options: .regularExpression) {
+            let nums = out[m].matches(of: /\d+/).map { String($0.output) }
+            if nums.count >= 2 { return "\(nums[0]) of \(nums[nums.count - 1]) tests" }
+        }
+        if let m = out.range(of: #"Found (\d+) errors?"#, options: .regularExpression) { return String(out[m]).replacingOccurrences(of: "Found ", with: "") }
+        let tsErrors = out.matches(of: /error TS\d+/).count
+        if tsErrors > 0 { return "\(tsErrors) type error\(tsErrors == 1 ? "" : "s")" }
+        if let m = out.range(of: #"\d+ failing"#, options: .regularExpression) { return String(out[m]) }
+        return nil
+    }
+
+    private var noCheck: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            (Text("No check yet. ").fontWeight(.medium)
+             + Text("Without one, Claude can't tell when the task is done, and “Keep going until done” can't run.").foregroundColor(theme.colors.muted))
+                .font(.system(size: 13.5)).lineSpacing(3)
+            if active {
+                if !suggestions.isEmpty {
+                    Text("From this project").font(.system(size: 12)).foregroundStyle(theme.colors.muted).padding(.top, 2)
+                    ForEach(suggestions, id: \.command) { s in
+                        Button { saveCheck(s.command, run: true) } label: {
+                            HStack(spacing: 10) {
+                                Text(s.command).font(BenchFont.mono(12)).lineLimit(1)
+                                Spacer(minLength: 8)
+                                Text(s.from).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                                Text("Use").font(.system(size: 12, weight: .medium)).foregroundStyle(theme.colors.accent)
+                            }
+                            .padding(.horizontal, 10).frame(height: 32)
+                            .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                HStack {
+                    Button("Write your own…") { check = ""; writingOwn = true }.buttonStyle(.plain).font(.system(size: 12.5))
+                    Spacer()
+                    Button("Ask Claude to suggest one") {
+                        ask("This task has no check yet. Look at the project and suggest one shell command that tells whether this task is done (its tests, a type check, a build), run it once to show it works, and tell me the command. Don't set it yourself.")
+                    }
+                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                }
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    private func checkEditor(was: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !was.isEmpty, let s = t?.check_status {
+                Text("\(lastRun(s)) with the old command").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+            }
+            TextField("npm test", text: $check)
+                .textFieldStyle(.plain).font(BenchFont.mono(12.5))
+                .padding(.horizontal, 10).frame(height: 34)
+                .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.colors.accent.opacity(0.5)))
+                .onSubmit { saveCheck(check, run: true) }
+            HStack(spacing: 8) {
+                Toggle("Make this the project's default", isOn: $makeDefault)
+                    .toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                Spacer(minLength: 8)
+                Button("Cancel") { editingCheck = false; writingOwn = false; check = was }.buttonStyle(TonalButton(height: 26))
+                Button("Save and Run") { saveCheck(check, run: true) }
+                    .buttonStyle(PrimaryButton(height: 26))
+                    .disabled(check.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+    }
+
+    private func saveCheck(_ command: String, run: Bool) {
+        let c = command.trimmingCharacters(in: .whitespaces)
+        guard !c.isEmpty else { return }
+        editingCheck = false; writingOwn = false
+        check = c
+        let pid = t?.project_id
+        let asDefault = makeDefault
+        model.run(run ? "Checking…" : "Saving…") {
+            try await model.store.api.editTask(model.taskId, ["check": c])
+            if asDefault, let pid { try await model.store.api.setProjectCheck(pid, c) }
+            if run { try await model.store.api.taskAction(model.taskId, "check") }
+        }
+    }
+
+    private func runCheck() {
+        model.run("Checking…") { try await model.store.api.taskAction(model.taskId, "check") }
+    }
+
+    // MARK: right column
+
+    private var sessionsCard: some View {
+        card("Sessions") {
+            ForEach(Array(sessions.enumerated()), id: \.element.id) { i, s in
+                if i > 0 { Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1) }
+                Button { open(s.id) } label: {
+                    HStack(spacing: 10) {
+                        MarkView(mark: Mark.of(s, store: model.store)).frame(width: 10)
+                        Text(s.title).font(.system(size: 13)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text([model.store.modelLine(s), s.cost.map(Format.cost), Format.ago(s.updated_at)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                    }
+                    .frame(height: 40).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            if active {
+                if !sessions.isEmpty { Rectangle().fill(theme.colors.fill(0.07)).frame(height: 1) }
+                HStack {
+                    Spacer()
+                    Button("＋ New session in this task", action: newSession).buttonStyle(.plain)
+                        .font(.system(size: 12.5)).foregroundStyle(theme.colors.accent)
+                }
+                .padding(.top, 10)
+            } else if sessions.isEmpty {
+                Text("No sessions.").font(.system(size: 13)).foregroundStyle(theme.colors.muted)
+            }
+        }
+    }
+
+    private var loopCard: some View {
+        let looping = t?.loop?.state == "looping"
+        let hasCheck = !(t?.check_command ?? "").isEmpty
+        return card("Keep going until done") {
+            HStack {
+                Text(looping ? "On · Claude reruns until the check passes" : "Off · when on, Claude reruns until the check passes")
+                    .font(.system(size: 13)).foregroundStyle(theme.colors.text.opacity(0.85))
+                Spacer(minLength: 8)
+                Toggle("", isOn: Binding(get: { looping }, set: { on in
+                    if on { save(["done": done, "check": t?.check_command ?? check, "loop": ["max_attempts": attempts, "max_minutes": minutes]]) }
+                    else { save(["loop": NSNull()]) }
+                }))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                .disabled(!hasCheck || !active)
+                .help(hasCheck ? "" : "Needs a check first")
+            }
+            HStack(spacing: 14) {
+                HStack(spacing: 6) { Text("Attempts").foregroundStyle(theme.colors.muted); PlusMinus(value: $attempts, range: 1...50, step: 1, unit: "") }
+                HStack(spacing: 6) { Text("Time limit").foregroundStyle(theme.colors.muted); PlusMinus(value: $minutes, range: 5...600, step: 5, unit: "m") }
+            }
+            .font(.system(size: 12)).padding(.top, 10)
+            if let l = t?.loop {
+                Text("Attempt \(l.attempts ?? 0) of \(l.max_attempts ?? attempts) · \(LoopState.label(l.state))")
+                    .font(.system(size: 12)).foregroundStyle(theme.colors.muted).padding(.top, 6)
+            }
+        }
+    }
+
+    private var nextCard: some View {
+        card("Next") {
+            Button {
+                guard let pid = t?.project_id else { return }
+                app.taskDraft = "Follow-up to “\(t?.title ?? "the last task")”: "
+                app.startTask(in: pid)
+            } label: {
+                HStack { Image(systemName: "plus").font(.system(size: 11)); Text("Follow-up task from here"); Spacer() }
+                    .font(.system(size: 13)).padding(.horizontal, 12).frame(height: 34)
+                    .background(theme.colors.fill(0.07), in: RoundedRectangle(cornerRadius: 8))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(t?.project_id == nil)
+        }
+    }
+
+    // MARK: helpers
+
+    private func ago(_ s: String?) -> String {
+        guard let s, !s.isEmpty else { return "" }
+        let a = when(s)
+        return a.isEmpty ? "" : " · \(a)"
+    }
+
+    /// "4m ago", "just now".
+    private func when(_ s: String?) -> String {
+        let a = Format.ago(s)
+        return a.isEmpty ? "" : a == "now" ? "just now" : "\(a) ago"
     }
 
     private func reset() {
-        let t = model.task
         if !editingDone { done = t?.done ?? "" }
-        check = t?.check_command ?? check
+        if !editingCheck { check = t?.check_command ?? check }
         attempts = t?.loop?.max_attempts ?? attempts
         minutes = t?.loop?.max_minutes ?? minutes
     }
@@ -367,19 +696,12 @@ private struct TaskOverview: View {
         model.run("Saving…") { try await model.store.api.editTask(model.taskId, body) }
     }
 
-    private func lastRun(_ t: BenchTask?) -> String {
-        switch t?.check_status {
+    private func lastRun(_ s: String?) -> String {
+        switch s {
         case "passed": "Passed"
         case "failed": "Failed"
         case "running": "Running…"
         default: "Not run yet"
-        }
-    }
-
-    private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            GroupLabel(title)
-            content()
         }
     }
 }
