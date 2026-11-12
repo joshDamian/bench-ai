@@ -247,6 +247,9 @@ test("a task's diff includes new files, and merging lands it on a base branch no
   assert.ok(!fs.existsSync(task.worktree), 'cleanup removed the worktree');
   assert.ok(svc.session(session.id).archived_at, 'and archived the session');
   assert.throws(() => git(dir, 'rev-parse', '--verify', task.branch));
+  // What it brought in still reads after the merge, worktree and branch gone.
+  assert.equal(svc.taskGit(task.id).files, 1);
+  assert.match(svc.taskDiff(task.id).diff, /\+bee/);
   svc.shutdown();
 });
 

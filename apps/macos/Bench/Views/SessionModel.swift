@@ -28,12 +28,14 @@ final class SessionModel {
     /// block in view. Kept here because the model outlives the view between tab switches.
     var followingEnd = true
     var scrollAnchor: String?
-    /// How far into the anchor block the view was, so it comes back to the exact pixel.
-    var scrollInset: CGFloat = 0
     @ObservationIgnored var visible: Set<String> = []
     /// Each drawn block's top, in the scroll view's coordinates, and the scroll offset.
     @ObservationIgnored var tops: [String: CGFloat] = [:]
     @ObservationIgnored var offsetY: CGFloat = 0
+    /// Whether the end of the thread is in view, read from the scroll geometry - unlike the
+    /// end marker's appear and disappear, it doesn't flip when the whole view goes away.
+    @ObservationIgnored var atEnd = true
+    @ObservationIgnored var viewport: CGFloat = 0
 
     /// Stops following a session whose tab closed.
     static func release(_ sessionId: String) {
@@ -126,7 +128,7 @@ final class SessionModel {
             if after == nil { hasOlder = d.events.count >= page }
             if d.events.contains(where: { Transcript.finishing.contains($0.kind) }) { clearStream() }
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.shown
         }
         loading = false
     }
@@ -139,7 +141,7 @@ final class SessionModel {
             var seen = Set<Int>()
             events = (older + events).filter { seen.insert($0.id).inserted }.sorted { $0.id < $1.id }
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.shown
         }
     }
 
@@ -236,7 +238,7 @@ final class SessionModel {
             attachments = []
             return true
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.shown
             return false
         }
     }
@@ -248,7 +250,7 @@ final class SessionModel {
         Task {
             do { try await store.answer(a, body) } catch {
                 busyApprovals.remove(a.id)
-                self.error = error.localizedDescription
+                self.error = error.shown
             }
         }
     }
@@ -269,7 +271,7 @@ final class SessionModel {
                     }
                     update(id) { $0.ref = ref; $0.progress = 1 }
                 } catch {
-                    update(id) { $0.error = error.localizedDescription }
+                    update(id) { $0.error = error.shown }
                 }
             }
         }

@@ -104,7 +104,7 @@ struct PairView: View {
         error = nil
         Task {
             do { model.pair(try await BenchAPI.pair(parsed, name: name.isEmpty ? "Mac" : name)) }
-            catch { self.error = error.localizedDescription }
+            catch { self.error = error.shown }
             busy = false
         }
     }

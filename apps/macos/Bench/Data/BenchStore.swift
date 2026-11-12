@@ -122,7 +122,7 @@ final class BenchStore {
             error = e.unauthorized ? nil : e.message
         } catch {
             ready = true
-            self.error = error.localizedDescription
+            self.error = error.shown
         }
     }
 

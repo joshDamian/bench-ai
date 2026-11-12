@@ -251,13 +251,13 @@ struct ProjectView: View {
     }
 
     private func load() async {
-        do { git = try await store.api.projectGit(projectId) } catch { self.error = error.localizedDescription }
+        do { git = try await store.api.projectGit(projectId) } catch { self.error = error.shown }
     }
 
     private func act(_ label: String, _ op: @escaping () async throws -> Void) {
         busy = label
         Task {
-            do { try await op() } catch { self.error = error.localizedDescription }
+            do { try await op() } catch { self.error = error.shown }
             busy = nil
             await load()
         }
@@ -341,7 +341,7 @@ private struct BranchPopover: View {
                 _ = try await store.api.call("/api/projects/\(BenchAPI.enc(projectId))/checkout", method: "POST", body: body)
                 await reload()
                 dismiss()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.shown }
             working = false
         }
     }
@@ -409,7 +409,7 @@ private struct CommitSheet: View {
                 if push { try await store.api.projectAction(projectId, "push") }
                 await reload()
                 dismiss()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.shown }
             working = false
         }
     }
@@ -523,7 +523,7 @@ private struct StartTask: View {
                 await store.refresh()
                 text = ""; done = ""; fold()
                 app.selection = s.task_id.map { "task:\($0)" } ?? s.id
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.shown }
             busy = false
         }
     }
@@ -534,7 +534,7 @@ private struct StartTask: View {
                 let s = try await store.api.createSession(project: projectId, task: nil, mode: mode)
                 store.apply(s)
                 app.openNew(s.id)
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.shown }
         }
     }
 }

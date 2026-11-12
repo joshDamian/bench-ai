@@ -23,14 +23,14 @@ final class TaskModel {
             for s in detail?.sessions ?? [] where store.session(s.id) == nil { store.apply(s) }
             diff = DiffFile.parse(try await store.api.taskDiff(taskId))
             log = try await store.api.taskLog(taskId)
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = error.shown }
     }
 
     /// Runs a server action, then reloads what it may have changed.
     func run(_ label: String, _ op: @escaping () async throws -> Void) {
         busy = label
         Task {
-            do { try await op() } catch { self.error = error.localizedDescription }
+            do { try await op() } catch { self.error = error.shown }
             busy = nil
             await load()
         }
@@ -264,6 +264,7 @@ private struct TaskOverview: View {
     @State private var makeDefault = false
     @State private var suggestions: [(command: String, from: String)] = []
     @State private var writingOwn = false
+    @State private var wide = true
 
     private var t: BenchTask? { model.task }
     private var merged: Bool { t?.state == "merged" || model.git?.merged == true }
@@ -271,21 +272,25 @@ private struct TaskOverview: View {
 
     var body: some View {
         ScrollView {
-            HStack(alignment: .top, spacing: 22) {
+            // Two columns when there is room: the main one takes what is left after a side
+            // column of fixed width. Narrower than that, the side cards go under the main ones.
+            let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 22)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 22))
+            layout {
                 VStack(alignment: .leading, spacing: 22) {
                     if merged { shipped } else { progress }
                     if !merged || !(t?.done ?? "").isEmpty { doneMeans }
                     changes
                 }
-                .frame(minWidth: 0, maxWidth: .infinity)
-                .layoutPriority(1.35)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 22) {
                     if !merged { checkCard }
                     sessionsCard
                     if merged { nextCard } else { loopCard }
                 }
-                .frame(minWidth: 0, maxWidth: .infinity)
+                .frame(width: wide ? 340 : nil)
+                .frame(maxWidth: wide ? 340 : .infinity, alignment: .leading)
             }
+            .onGeometryChange(for: Bool.self) { $0.size.width >= 900 } action: { wide = $0 }
             .frame(maxWidth: 1060)
             .padding(.horizontal, 32)
             .padding(.vertical, 26)
@@ -369,7 +374,8 @@ private struct TaskOverview: View {
         card("Shipped") {
             Text("Merged into \(model.base)" + (t?.merged_at.map { " " + when($0) } ?? "") + ".")
                 .font(.system(size: 15))
-            stats.padding(.top, 10)
+            // Zero files after a merge means the record is gone, not that it changed nothing.
+            if (model.git?.files ?? model.diff.count) > 0 { stats.padding(.top, 10) }
         }
     }
 
@@ -413,13 +419,13 @@ private struct TaskOverview: View {
     }
 
     private var changes: some View {
-        card("What changed", extra: {
+        card(merged ? "What it brought in" : "What changed", extra: {
             if !model.diff.isEmpty {
                 Button("Review changes →", action: showChanges).buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(theme.colors.text)
             }
         }) {
             if model.diff.isEmpty {
-                Text(merged ? "Nothing left to compare: it's in \(model.base)." : "Nothing changed yet.")
+                Text(merged ? "Merged before Bench kept a record of what it changed. The commits are in \(model.base)'s history." : "Nothing changed yet.")
                     .font(.system(size: 13)).foregroundStyle(theme.colors.muted)
             } else {
                 if !merged { stats.padding(.bottom, 8) }
@@ -482,7 +488,12 @@ private struct TaskOverview: View {
                         .padding(10)
                 }
                 .defaultScrollAnchor(.bottom)
-                .frame(maxHeight: status == "failed" ? 260 : 64)
+                .frame(maxHeight: status == "failed" ? 240 : 64)
+                .mask(VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 14)
+                    Color.black
+                })
+                .padding(.top, 2)
                 .background(theme.colors.wellBg, in: RoundedRectangle(cornerRadius: 8))
             }
             if status == "failed" && active {
@@ -603,12 +614,13 @@ private struct TaskOverview: View {
                 Button { open(s.id) } label: {
                     HStack(spacing: 10) {
                         MarkView(mark: Mark.of(s, store: model.store)).frame(width: 10)
-                        Text(s.title).font(.system(size: 13)).lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text([model.store.modelLine(s), s.cost.map(Format.cost), Format.ago(s.updated_at)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1)
+                        Text(s.title).font(.system(size: 13)).lineLimit(1).truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .help(s.title)
+                        Text([s.cost.map(Format.cost), Format.ago(s.updated_at)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.system(size: 12)).foregroundStyle(theme.colors.muted).lineLimit(1).fixedSize()
                     }
-                    .frame(height: 40).contentShape(Rectangle())
+                    .frame(height: 36).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -642,11 +654,17 @@ private struct TaskOverview: View {
                 .disabled(!hasCheck || !active)
                 .help(hasCheck ? "" : "Needs a check first")
             }
-            HStack(spacing: 14) {
-                HStack(spacing: 6) { Text("Attempts").foregroundStyle(theme.colors.muted); PlusMinus(value: $attempts, range: 1...50, step: 1, unit: "") }
-                HStack(spacing: 6) { Text("Time limit").foregroundStyle(theme.colors.muted); PlusMinus(value: $minutes, range: 5...600, step: 5, unit: "m") }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow {
+                    Text("Attempts").foregroundStyle(theme.colors.muted).fixedSize()
+                    PlusMinus(value: $attempts, range: 1...50, step: 1, unit: "")
+                }
+                GridRow {
+                    Text("Time limit").foregroundStyle(theme.colors.muted).fixedSize()
+                    PlusMinus(value: $minutes, range: 5...600, step: 5, unit: "m")
+                }
             }
-            .font(.system(size: 12)).padding(.top, 10)
+            .font(.system(size: 12)).padding(.top, 12)
             if let l = t?.loop {
                 Text("Attempt \(l.attempts ?? 0) of \(l.max_attempts ?? attempts) · \(LoopState.label(l.state))")
                     .font(.system(size: 12)).foregroundStyle(theme.colors.muted).padding(.top, 6)
@@ -1052,7 +1070,7 @@ struct ShipSheet: View {
                 }
                 await model.load()
                 dismiss()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.shown }
             working = false
         }
     }
