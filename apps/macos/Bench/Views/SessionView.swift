@@ -87,6 +87,12 @@ struct SessionView: View {
             model.followingEnd = true
             settleAtEnd(proxy)
         }
+        // A lazy list can land on an offset where it has drawn nothing yet - an estimate it
+        // got wrong - and shows a blank thread until something makes it lay out again. If no
+        // row is on screen once it has settled, go to the end, where there is always one.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            if !model.rows.isEmpty && model.visible.isEmpty { model.followingEnd = true; settleAtEnd(proxy) }
+        }
     }
 
     /// The start of Claude's last reply, for the floating composer's context line.
@@ -300,7 +306,10 @@ struct SessionView: View {
                 model.scrollAnchor = anchor?.0
                 model.scrollInset = max(0, -(anchor?.1 ?? 0))
             }
-            .onChange(of: model.rows.count) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: model.rows.count) { was, _ in
+                // The rows came in after the tab opened: place the thread now they are here.
+                if was == 0 { restoreScroll(proxy) } else if follow { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
             .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: approvals.first?.id) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             // A taller composer: the end of the thread stays in view if that's where you were.
