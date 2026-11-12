@@ -35,6 +35,11 @@ struct SessionView: View {
     @State private var seen = 0
     /// Whether the thread has scrolled under the header: then the header shows its edge.
     @State private var scrolled = false
+    /// How many of the newest blocks are drawn. The thread is a plain stack, not a lazy
+    /// one: a lazy list guesses the heights of rows it hasn't drawn, and when it guesses
+    /// wrong after a jump it shows a blank pane until something makes it lay out again.
+    /// Drawing everything is only affordable for a bounded tail, so older ones wait for a tap.
+    @State private var shown = 80
     @State private var composerHeight: CGFloat = 110
     @State private var position = ScrollPosition(idType: String.self)
     /// The artifact panel's width, as last dragged.
@@ -229,13 +234,15 @@ struct SessionView: View {
             VStack(spacing: 0) {
             if finding { findBar(proxy) }
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 22) {
                     // At the very top of the thread: visible means nothing is under the header.
                     Color.clear.frame(height: 1).padding(.bottom, -22)
                         .onAppear { scrolled = false }
                         .onDisappear { scrolled = true }
-                    if model.hasOlder {
-                        Button("Show earlier messages") { Task { await model.loadOlder() } }
+                    if model.blocks.count > shown || model.hasOlder {
+                        Button("Show earlier messages") {
+                            if model.blocks.count > shown { shown += 80 } else { Task { await model.loadOlder() } }
+                        }
                             .buttonStyle(.link)
                             .frame(maxWidth: .infinity)
                     }
@@ -247,7 +254,7 @@ struct SessionView: View {
                             .frame(maxWidth: .infinity)
                             .padding(Space.xl)
                     }
-                    let blocks = model.blocks
+                    let blocks = Array(model.blocks.suffix(shown))
                     let currentHit = currentMatch
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { i, b in
                         // A time at the top, and wherever the session paused for an hour or more.
@@ -317,6 +324,8 @@ struct SessionView: View {
                 // The rows came in after the tab opened: place the thread now they are here.
                 if was == 0 { restoreScroll(proxy) } else if follow { proxy.scrollTo("bottom", anchor: .bottom) }
             }
+            // Find searches the whole thread, so draw all of it while the bar is open.
+            .onChange(of: finding) { _, on in if on { shown = max(shown, model.blocks.count) } }
             .onChange(of: model.streamText.count / 120) { _, _ in if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: approvals.first?.id) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             // A taller composer: the end of the thread stays in view if that's where you were.
