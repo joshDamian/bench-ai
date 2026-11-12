@@ -107,6 +107,18 @@ final class BenchAPI: @unchecked Sendable {
         return (out + v["paths"].array.compactMap(\.string), titles)
     }
 
+    /// Checks the task's project suggests, from its package.json, Cargo.toml, go.mod...
+    func checkSuggestions(_ task: String) async throws -> [(command: String, from: String)] {
+        try decode(JSONValue.self, await call("/api/tasks/\(Self.enc(task))/check-suggestions"))["suggestions"].array.compactMap { v in
+            v["command"].string.map { ($0, v["from"].string ?? "") }
+        }
+    }
+
+    /// The check new tasks in a project start with.
+    func setProjectCheck(_ project: String, _ command: String) async throws {
+        try await call("/api/projects/\(Self.enc(project))", method: "PATCH", body: ["check_command": command])
+    }
+
     // MARK: notes
 
     private static func q(_ s: String) -> String {
