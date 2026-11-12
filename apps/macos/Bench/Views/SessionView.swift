@@ -97,7 +97,6 @@ struct SessionView: View {
         let h = model.viewport > 0 ? model.viewport : 800
         return !model.tops.values.contains { $0 < h && $0 > -6000 } && !model.atEnd
     }
-    }
 
     /// The start of Claude's last reply, for the floating composer's context line.
     private var lastReply: String? {
