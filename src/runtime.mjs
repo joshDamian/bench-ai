@@ -9,6 +9,7 @@ import { Transform } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import { cleanEnv, providerEnv, invocationId, priceUsage } from './providers.mjs';
+import { env as benchEnv } from './env.mjs';
 import { Notes } from './notes.mjs';
 import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
@@ -71,6 +72,10 @@ const COMMANDS_FRESH_MS = 10 * 60 * 1000;
 // A probe starts Claude Code only to ask for its commands; one that takes longer than
 // this has something wrong, and the composer goes without suggestions.
 const COMMANDS_PROBE_MS = 20 * 1000;
+
+// BENCH_CLAUDE_BIN runs sessions on another Claude Code executable - the stream-json fake
+// in server-go/conformance, for tests and benchmarks that must not call a model.
+export const claudeBin = () => (benchEnv('CLAUDE_BIN') ? { pathToClaudeCodeExecutable: /** @type {string} */ (benchEnv('CLAUDE_BIN')) } : {});
 
 /** @param {any[]} list @returns {SlashCommand[]} */
 const commandList = (list) => (list || []).map((c) => ({ name: String(c.name), description: String(c.description || ''), argumentHint: String(c.argumentHint || '') }));
@@ -375,7 +380,7 @@ export class Runtime extends EventEmitter {
       /* a provider missing its key still has commands to list */
     }
     /** @type {any} */
-    const q = this.query({ prompt: /** @type {any} */ (idle), options: { cwd: s.cwd, env, ...(s.project_id ? { settingSources: ['project', 'local'], plugins: this.#plugins() } : { settingSources: [], plugins: [] }) } });
+    const q = this.query({ prompt: /** @type {any} */ (idle), options: { cwd: s.cwd, env, ...claudeBin(), ...(s.project_id ? { settingSources: ['project', 'local'], plugins: this.#plugins() } : { settingSources: [], plugins: [] }) } });
     /** @type {ReturnType<typeof setTimeout>|undefined} */
     let timer;
     try {
@@ -615,6 +620,7 @@ export class Runtime extends EventEmitter {
     this.live.set(s.id, live);
     /** @type {import('@anthropic-ai/claude-agent-sdk').Options} */
     const options = {
+      ...claudeBin(),
       cwd: s.cwd,
       // Notes too: a task's worktree is not the checkout its project's notes are in.
       additionalDirectories: ask ? [this.attachmentsDir(s.id)] : [this.attachmentsDir(s.id), scratch, this.notes.global, ...(project ? [this.notes.dir(project.path)] : [])],

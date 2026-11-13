@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { env } from './env.mjs';
 import { Store } from './store.mjs';
-import { Runtime, MODES } from './runtime.mjs';
+import { Runtime, MODES, claudeBin } from './runtime.mjs';
 import { providerReady } from './providers.mjs';
 import { benchServer } from './tools.mjs';
 import { askServer } from './ask.mjs';
@@ -959,7 +959,7 @@ export class Service extends EventEmitter {
     try {
       const q = query({
         prompt: 'Reply with exactly OK.',
-        options: { cwd: this.store.dir, env: { ...cleanEnv(), ...providerEnv(provider, m) }, settingSources: [], maxTurns: 1, permissionMode: 'dontAsk', ...(m ? { model: invocationId(m) } : {}) },
+        options: { ...claudeBin(), cwd: this.store.dir, env: { ...cleanEnv(), ...providerEnv(provider, m) }, settingSources: [], maxTurns: 1, permissionMode: 'dontAsk', ...(m ? { model: invocationId(m) } : {}) },
       });
       let text = '';
       for await (const msg of q) {
