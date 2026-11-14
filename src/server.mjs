@@ -498,7 +498,8 @@ const real = (p) => {
 function sessionFile(sessionId, p) {
   const s = svc.store.getSession(sessionId);
   if (!s || !p) return null;
-  for (const base of [s.cwd, svc.runtime.attachmentsDir(s.id)]) {
+  // The reports folder last, so a report named only by its file name ("hackathons.md") is found.
+  for (const base of [s.cwd, svc.runtime.attachmentsDir(s.id), path.join(svc.runtime.attachmentsDir(s.id), 'reports')]) {
     const full = within(base, p);
     const realBase = full && real(base);
     const realFull = realBase && real(full);

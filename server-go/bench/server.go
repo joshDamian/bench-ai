@@ -673,7 +673,8 @@ func (s *Server) sessionFile(sessionID, p string) *sessFile {
 	if ss == nil || p == "" {
 		return nil
 	}
-	for _, base := range []string{ss.Str("cwd"), s.Svc.Runtime.AttachmentsDir(sessionID)} {
+	// The reports folder last, so a report named only by its file name ("hackathons.md") is found.
+	for _, base := range []string{ss.Str("cwd"), s.Svc.Runtime.AttachmentsDir(sessionID), ReportsDir(s.Svc.Runtime.AttachmentsDir(sessionID))} {
 		full := within(base, p)
 		if full == "" {
 			continue
