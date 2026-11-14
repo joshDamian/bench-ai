@@ -14,10 +14,10 @@ export const reportsDir = (attachmentsDir) => path.join(attachmentsDir, 'reports
 
 export const REPORTS_NOTE = (/** @type {string} */ dir) => `# Reports for the person
 
-When the person asked for something to read or use - research, a shortlist, a comparison, a plan, emails to send - put it in this session's reports folder, ${dir} (create it if it is not there), and name the file in your reply. Bench lists it on the person's phone and Mac, where they read it later, often away from you. Pick the format by what they will do with it:
+When the person asked for something to read or use - research, a shortlist, a comparison, a plan, emails to send - put it in this session's reports folder, ${dir} (create it if it is not there), and give its full path in your reply, so the person can open it from there. Bench lists it on the person's phone and Mac, where they read it later, often away from you. Pick the format by what they will do with it:
 
 - To read: Markdown (.md). Lead with the answer, then the detail; links inline.
-- To use: one self-contained HTML page (.html) when it needs sorting, filtering, checkboxes or a chart. Inline its CSS and script; it gets no network. Use the CSS variables --bg, --surface, --text, --muted, --accent, --line for colours, so it matches the person's light or dark theme, and keep state in localStorage.
+- To use: one self-contained HTML page (.html) when it needs sorting, filtering, checkboxes or a chart. Inline its CSS and script; it gets no network. Use the CSS variables --bg, --surface, --text, --muted, --accent, --line for colours, so it matches the person's light or dark theme, and keep state in localStorage. For choices use buttons or chips, not <select>: a select opens the phone's own unstyled picker.
 - Emails to send: a drafts file (name.drafts.json): {"title": "...", "drafts": [{"to": "address", "subject": "...", "body": "plain text", "why": "one line on why this person"}]}. Bench never sends them; the person opens each in their own email app. Never send email yourself.
 
 One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file.`;

@@ -234,15 +234,18 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     val working = live.filter { it.status == "running" }.sortedByDescending { it.updated_at }
     // Stopped with an error and not looked at: a decision, so it sits with what needs you.
     val failed = live.filter { it.status == "error" && it.unseen && it.id !in waitingOn }.sortedByDescending { it.updated_at }
-    val fresh = reports.filter { !it.seen }
-    val reads = fresh.filter { it.kind == "report" || it.kind == "page" }
-    val drafts = fresh.filter { it.kind == "drafts" }
-    val finished = live.filter { it.status == "idle" && it.unseen && it.id !in waitingOn }.sortedByDescending { it.updated_at }
+    // Reports and pages leave once read. Drafts are things to do, so they stay until each is sent,
+    // even when you watched the session write them.
+    val reads = reports.filter { !it.seen && (it.kind == "report" || it.kind == "page") }
+    val drafts = reports.filter { it.kind == "drafts" && (it.unsent ?: 0) > 0 }
+    val carded = (reads + drafts).map { it.session_id }.toSet()
+    // A session whose output is already a card is not listed again under it.
+    val finished = live.filter { it.status == "idle" && it.unseen && it.id !in waitingOn && it.id !in carded }.sortedByDescending { it.updated_at }
     val readyCards = (if (reads.isNotEmpty()) 1 else 0) + (if (drafts.isNotEmpty()) 1 else 0)
     val readyCount = readyCards + finished.size
     val needCount = s.approvals.size + failed.size
     val next = schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at }
-    val shown = (working + failed + finished).map { it.id }.toSet() + waitingOn
+    val shown = (working + failed + finished).map { it.id }.toSet() + waitingOn + carded
     val pinned = live.filter { it.pinned && it.id !in shown }
     val quiet = live.count { it.id !in shown && !it.pinned }
 
@@ -299,14 +302,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             }
         },
         floatingActionButton = {
-            // Material's own FAB shape: a rounded rectangle, not a pill like the buttons.
-            ExtendedFloatingActionButton(
-                onClick = onNew,
-                expanded = fabOpen,
-                icon = { Icon(Icons.Default.Add, "New session") },
-                text = { Text("New session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
-                containerColor = c.accent, contentColor = c.onAccent,
-            )
+            LabelFab("New", fabOpen, onNew)
         },
     ) { pad ->
         PullToRefreshBox(
@@ -438,6 +434,24 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     listing?.let { list -> ReportList(list, s.sessions, onDismiss = { listing = null }) { listing = null; opened = it } }
 }
 
+/**
+ * The floating button: a + and a short label, sized to its label. Material's extended FAB has
+ * a fixed gap after the icon and a minimum width, which leaves a short word like "New" adrift.
+ * Folds to its + while the list scrolls down.
+ */
+@Composable
+fun LabelFab(label: String, expanded: Boolean, onClick: () -> Unit) {
+    val c = Bench.colors
+    androidx.compose.material3.FloatingActionButton(onClick = onClick, containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.padding(start = 16.dp, end = if (expanded) 20.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Add, if (expanded) null else label, modifier = Modifier.size(22.dp))
+            androidx.compose.animation.AnimatedVisibility(expanded, enter = androidx.compose.animation.expandHorizontally() + androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.shrinkHorizontally() + androidx.compose.animation.fadeOut()) {
+                Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+    }
+}
+
 /** "Mon 8:00", "Tomorrow 9:00", "Today 18:30": when a schedule next runs, from the phone's clock. */
 private fun whenNext(iso: String?): String {
     val t = runCatching { java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault()) }.getOrNull() ?: return ""
@@ -446,7 +460,9 @@ private fun whenNext(iso: String?): String {
     return when (t.toLocalDate()) {
         today -> "Today $time"
         today.plusDays(1) -> "Tomorrow $time"
-        else -> t.format(java.time.format.DateTimeFormatter.ofPattern("EEE")) + " $time"
+        // Within the week a weekday is enough; a week away, "Sat" would read as today.
+        in today.plusDays(2)..today.plusDays(5) -> t.format(java.time.format.DateTimeFormatter.ofPattern("EEE")) + " $time"
+        else -> t.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM")) + ", $time"
     }
 }
 
@@ -632,8 +648,7 @@ fun ProjectsScreen(store: BenchStore, onOpen: (String) -> Unit, onAdd: () -> Uni
         containerColor = c.bg,
         topBar = { TabTitle("Projects") },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add project", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
-                containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(18.dp))
+            LabelFab("Add project", true, onAdd)
         },
     ) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 112.dp)) {

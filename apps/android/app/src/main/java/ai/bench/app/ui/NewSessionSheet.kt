@@ -89,13 +89,15 @@ private fun fieldColors() = OutlinedTextFieldDefaults.colors(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String) -> Unit) {
+fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String) -> Unit, research: Boolean = false) {
     val s by store.state.collectAsState()
     val c = Bench.colors
     val scope = rememberCoroutineScope()
     val recent = s.sessions.maxByOrNull { it.updated_at }?.project_id
-    var projectId by remember { mutableStateOf(recent ?: s.projects.firstOrNull()?.id) }
-    var where by remember { mutableStateOf("task") }
+    var projectId by remember { mutableStateOf(if (research) s.projects.firstOrNull { it.name == "Research" }?.id else recent ?: s.projects.firstOrNull()?.id) }
+    // Research works in the Research project's own folder: no branch, a report at the end.
+    var where by remember { mutableStateOf(if (research) "checkout" else "task") }
+    LaunchedEffect(research) { if (research) runCatching { store.api.research() }.onSuccess { projectId = it.id; store.refresh() } }
     var prompt by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf(Mode.of(s.defaults.mode)) }
     var modelId by remember { mutableStateOf(s.defaults.modelId) }
@@ -160,11 +162,11 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
                 Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("New session", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp))
+                Text(if (research) "Research" else "New session", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp))
                 // Where it goes, as chips: the project (last used first) and how it works there.
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill(Icons.Outlined.Folder, s.projects.firstOrNull { it.id == projectId }?.name ?: "Ask Bench") { page = "project" }
-                    if (projectId != null) {
+                    if (projectId != null && !research) {
                         var whereMenu by remember { mutableStateOf(false) }
                         Box {
                             Pill(Icons.Outlined.AccountTree, if (where == "task") "New branch" else "Checkout") { whereMenu = true }
@@ -180,8 +182,9 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 17.sp, lineHeight = 25.sp, color = c.text),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp).padding(horizontal = 4.dp, vertical = 4.dp).focusRequester(focus),
-                    decorationBox = { inner -> androidx.compose.foundation.layout.Box { if (prompt.isEmpty()) Text(if (live.listening) "Listening…" else if (projectId == null) "Ask about Bench: what's running, what it costs…" else "What should Claude do?", fontSize = 17.sp, color = c.muted); inner() } },
+                    decorationBox = { inner -> androidx.compose.foundation.layout.Box { if (prompt.isEmpty()) Text(if (live.listening) "Listening…" else if (research) "What should Claude find out?" else if (projectId == null) "Ask about Bench: what's running, what it costs…" else "What should Claude do?", fontSize = 17.sp, color = c.muted); inner() } },
                 )
+                if (research) Text("Claude writes a report you can read later. It shows on Home under Ready for you.", fontSize = 13.5.sp, lineHeight = 19.sp, color = c.muted, modifier = Modifier.padding(horizontal = 4.dp))
                 if (picked.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     picked.forEach { f -> AttachmentTile(f.name, f.uri, f.type.startsWith("image/"), f.size, null, null) { picked = picked - f } }
                 }
@@ -206,7 +209,7 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
                             else -> askMic.launch(android.Manifest.permission.RECORD_AUDIO)
                         }
                     }) { androidx.compose.material3.Icon(Icons.Default.Mic, if (live.listening) "Stop dictating" else "Dictate", tint = if (live.listening) c.accent else c.muted) }
-                    val canStart = !busy && (projectId == null || where == "checkout" || prompt.isNotBlank() || picked.isNotEmpty())
+                    val canStart = !busy && (!research || (projectId != null && prompt.isNotBlank())) && (projectId == null || where == "checkout" || prompt.isNotBlank() || picked.isNotEmpty())
                     androidx.compose.material3.FilledIconButton(
                         enabled = canStart,
                         modifier = Modifier.size(52.dp),

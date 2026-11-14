@@ -65,16 +65,21 @@ private data class DraftsFile(val title: String = "", val drafts: List<Draft> = 
  * person's own email app, filled in, and they mark it sent when it is gone.
  */
 @Composable
-fun DraftsScreen(store: BenchStore, report: Report, onDismiss: () -> Unit) {
+fun DraftsScreen(store: BenchStore, report: Report, onDismiss: () -> Unit) =
+    DraftsScreen(store.api, report.session_id, report.path, report.name, report.title, report.size, { store.loadExtras() }, onDismiss)
+
+/** The same, from a file a session named (its card in the conversation). */
+@Composable
+fun DraftsScreen(api: ai.bench.app.data.BenchApi, sessionId: String, path: String, name: String, title: String, size: Long, onChanged: () -> Unit, onDismiss: () -> Unit) {
     val c = Bench.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val files = remember(report.session_id) { SessionFiles(store.api, report.session_id) }
-    var file by remember(report.path) { mutableStateOf<DraftsFile?>(null) }
-    var failed by remember(report.path) { mutableStateOf(false) }
-    var open by remember(report.path) { mutableStateOf(-1) }
-    LaunchedEffect(report.path) {
-        val b = files.bytes(FileInfo(report.path, report.path, report.name, "application/json", report.size, true, "text", true))
+    val files = remember(sessionId) { SessionFiles(api, sessionId) }
+    var file by remember(path) { mutableStateOf<DraftsFile?>(null) }
+    var failed by remember(path) { mutableStateOf(false) }
+    var open by remember(path) { mutableStateOf(-1) }
+    LaunchedEffect(path) {
+        val b = files.bytes(FileInfo(path, path, name, "application/json", size, true, "text", true))
         file = b?.let { runCatching { BenchJson.decodeFromString(DraftsFile.serializer(), it.decodeToString()) }.getOrNull() }
         failed = file == null
     }
@@ -83,18 +88,19 @@ fun DraftsScreen(store: BenchStore, report: Report, onDismiss: () -> Unit) {
         val before = f.drafts[i]
         file = f.copy(drafts = f.drafts.toMutableList().also { it[i] = before.copy(sent_at = if (sent) java.time.Instant.now().toString() else null) })
         scope.launch {
-            runCatching { store.api.markDraft(report.session_id, report.name, i, sent) }
+            runCatching { api.markDraft(sessionId, name, i, sent) }
                 .onFailure { file = file?.let { g -> g.copy(drafts = g.drafts.toMutableList().also { it[i] = before }) } }
-            store.loadExtras()
+            onChanged()
         }
     }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides c.text) {
         Column(Modifier.fillMaxSize().background(c.bg)) {
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Close, "Close") }
                 Column(Modifier.weight(1f)) {
-                    Text(file?.title?.ifBlank { null } ?: report.title, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(file?.title?.ifBlank { null } ?: title, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     file?.let { f ->
                         val left = f.drafts.count { it.sent_at == null }
                         Text(if (left == 0) "All sent" else "$left of ${f.drafts.size} to send", fontSize = 12.sp, color = c.muted)
@@ -119,6 +125,7 @@ fun DraftsScreen(store: BenchStore, report: Report, onDismiss: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }
@@ -148,7 +155,10 @@ private fun DraftCard(d: Draft, expanded: Boolean, onToggle: () -> Unit, onOpenM
 
 /** Opens the draft in Gmail, filled in; any email app when Gmail is not installed. */
 private fun openInMail(context: Context, d: Draft) {
-    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:" + Uri.encode(d.to).replace("%40", "@")))
+    // Gmail reads the subject and body from the mailto address itself and ignores the extras,
+    // so both go in the query; the extras stay for apps that read those instead.
+    val mailto = "mailto:" + Uri.encode(d.to, "@,") + "?subject=" + Uri.encode(d.subject) + "&body=" + Uri.encode(d.body)
+    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse(mailto))
         .putExtra(Intent.EXTRA_EMAIL, arrayOf(d.to))
         .putExtra(Intent.EXTRA_SUBJECT, d.subject)
         .putExtra(Intent.EXTRA_TEXT, d.body)

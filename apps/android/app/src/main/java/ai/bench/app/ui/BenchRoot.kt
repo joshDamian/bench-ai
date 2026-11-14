@@ -100,6 +100,8 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     val tabs = listOf("home", "projects", "settings")
     var newSession by remember { mutableStateOf(false) }
     var addProject by remember { mutableStateOf(false) }
+    var newMenu by remember { mutableStateOf(false) }
+    var research by remember { mutableStateOf(false) }
     val askedNew by BenchApp.instance.requestNew.collectAsState()
     LaunchedEffect(askedNew) { if (askedNew) { newSession = true; BenchApp.instance.requestNew.value = false } }
     // Tablets and unfolded foldables: Home stays docked on the left, what you open shows beside it.
@@ -116,7 +118,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
     if (wide) {
         Box(Modifier.width(380.dp).fillMaxHeight()) {
-            HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
+            HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
         }
         androidx.compose.material3.VerticalDivider(color = Bench.colors.line)
     }
@@ -132,14 +134,18 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         ) {
             composable("home") {
                 if (wide) EmptyDetail() else androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
-                    HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") })
+                    HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") })
                 }
             }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }, onAsk = { nav.navigate("ask") }) }
             composable("ask") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }, askOnly = true) }
             composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
-            composable("schedules") { SchedulesScreen(store, onBack = { nav.popBackStack() }, onOpen = open) }
+            composable("schedules") { SchedulesScreen(store, onBack = { nav.popBackStack() }, onEdit = { nav.navigate("schedule/${it ?: "new"}") }) }
+            composable("schedule/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { e ->
+                val id = e.arguments?.getString("id")?.takeIf { it != "new" }
+                ScheduleScreen(store, id, onBack = { nav.popBackStack() }, onOpen = { nav.popBackStack(); open(it) })
+            }
             composable("devices") { DevicesScreen(store, onBack = { nav.popBackStack() }) }
             composable("dashboard") { DashboardScreen(store, onBack = { nav.popBackStack() }) }
             composable("diagnostics") { DiagnosticsScreen(store, onBack = { nav.popBackStack() }) }
@@ -196,7 +202,17 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     }
     }
 
+    if (newMenu) NewMenu(onDismiss = { newMenu = false }) { pick ->
+        newMenu = false
+        when (pick) {
+            "session" -> newSession = true
+            "research" -> research = true
+            "schedule" -> nav.navigate("schedule/new")
+            "project" -> addProject = true
+        }
+    }
     if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) })
+    if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true)
     if (addProject) AddProjectSheet(store, onDismiss = { addProject = false }, onAdded = { addProject = false; nav.navigate("project/$it") })
 }
 
