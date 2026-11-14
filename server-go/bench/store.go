@@ -48,6 +48,11 @@ const schema = `
   CREATE TABLE IF NOT EXISTS artifacts(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,task_id TEXT,project_id TEXT,path TEXT NOT NULL,tool TEXT,
     created_at TEXT NOT NULL,removed_at TEXT,removed_by TEXT,UNIQUE(session_id,path));
   CREATE INDEX IF NOT EXISTS artifacts_by_path ON artifacts(path);
+  -- A schedule starts a session on its own: on the listed weekdays (0 Sunday .. 6 Saturday,
+  -- comma-separated) at time (HH:MM) in tz, in project_id, with prompt as its first message.
+  -- last_run_at is when it last started one, so a day is never run twice.
+  CREATE TABLE IF NOT EXISTS schedules(id TEXT PRIMARY KEY,title TEXT NOT NULL,project_id TEXT NOT NULL,prompt TEXT NOT NULL,days TEXT NOT NULL,time TEXT NOT NULL,tz TEXT NOT NULL,
+    mode TEXT,model_id TEXT,provider_id TEXT,effort TEXT,enabled INTEGER NOT NULL DEFAULT 1,last_run_at TEXT,created_at TEXT NOT NULL);
 `
 
 //go:embed providers.json
@@ -176,6 +181,13 @@ func NewStore(root string) (*Store, error) {
 		s.addColumn("sessions", col, "TEXT")
 	}
 	s.addColumn("sessions", "auto_resume", "INTEGER")
+	// seen_at: when the person last looked; sessions from before it start as seen.
+	if !s.columns("sessions")["seen_at"] {
+		s.addColumn("sessions", "seen_at", "TEXT")
+		s.exec("UPDATE sessions SET seen_at=updated_at")
+	}
+	s.addColumn("sessions", "pinned", "INTEGER")
+	s.addColumn("sessions", "schedule_id", "TEXT")
 	s.addColumn("projects", "routing", "TEXT")
 	s.addColumn("tasks", "routing", "TEXT")
 	if err := s.projectlessSessions(); err != nil {
@@ -764,6 +776,7 @@ func (s *Store) session(r *Obj) *Obj {
 	} else {
 		r.Set("auto_resume", truthy(r.Get("auto_resume")))
 	}
+	r.Set("pinned", truthy(r.Get("pinned")))
 	return r
 }
 

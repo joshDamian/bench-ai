@@ -802,6 +802,16 @@ route('GET', '/api/sessions/:id/routing', ({ params }) => svc.sessionRouting(par
 route('POST', '/api/sessions/:id/limit', ({ params, body }) => svc.sessionLimit(params[0], body));
 route('POST', '/api/sessions/:id/interrupt', async ({ params }) => ({ ok: await svc.interrupt(params[0]) }));
 route('PATCH', '/api/sessions/:id', ({ params, body }) => svc.updateSession(params[0], body));
+route('POST', '/api/sessions/:id/seen', ({ params }) => svc.markSeen(params[0]));
+// What sessions made for the person: reports, pages and email drafts, newest first.
+route('GET', '/api/reports', () => svc.reports());
+route('POST', '/api/reports/drafts', ({ body }) => svc.markDraft(String(body.sessionId || ''), String(body.file || ''), Number(body.index), body.sent !== false));
+route('GET', '/api/schedules', () => svc.schedules());
+route('POST', '/api/schedules', ({ body }) => svc.addSchedule(body));
+route('PATCH', '/api/schedules/:id', ({ params, body }) => svc.updateSchedule(params[0], body));
+route('DELETE', '/api/schedules/:id', ({ params }) => svc.deleteSchedule(params[0]));
+route('POST', '/api/schedules/:id/run', ({ params }) => svc.runSchedule(params[0]));
+route('POST', '/api/research', () => svc.research());
 // Archiving or deleting a session ends the shells opened beside it; closing a task, its own.
 route('POST', '/api/sessions/:id/archive', async ({ params, body }) => {
   const r = await svc.archiveSession(params[0], body.archived !== false);

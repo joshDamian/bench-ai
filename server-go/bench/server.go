@@ -1307,6 +1307,17 @@ func (s *Server) routesInit() {
 		return O("ok", ok), nil
 	})
 	s.route("PATCH", "/api/sessions/:id", func(c *ctxt) (any, error) { return svc.UpdateSession(c.params[0], c.body) })
+	s.route("POST", "/api/sessions/:id/seen", func(c *ctxt) (any, error) { return svc.MarkSeen(c.params[0]) })
+	s.route("GET", "/api/reports", func(c *ctxt) (any, error) { return svc.Reports(), nil })
+	s.route("POST", "/api/reports/drafts", func(c *ctxt) (any, error) {
+		return svc.MarkDraft(str(c.body.Get("sessionId")), str(c.body.Get("file")), int(num(c.body.Get("index"))), c.body.Get("sent") != false)
+	})
+	s.route("GET", "/api/schedules", func(c *ctxt) (any, error) { return svc.Schedules(), nil })
+	s.route("POST", "/api/schedules", func(c *ctxt) (any, error) { return svc.AddSchedule(c.body) })
+	s.route("PATCH", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.UpdateSchedule(c.params[0], c.body) })
+	s.route("DELETE", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.DeleteSchedule(c.params[0]) })
+	s.route("POST", "/api/schedules/:id/run", func(c *ctxt) (any, error) { return svc.RunSchedule(c.params[0]) })
+	s.route("POST", "/api/research", func(c *ctxt) (any, error) { return svc.Research() })
 	s.route("POST", "/api/sessions/:id/archive", func(c *ctxt) (any, error) {
 		archived := c.body.Get("archived") != false
 		r, err := svc.ArchiveSession(c.params[0], archived)
