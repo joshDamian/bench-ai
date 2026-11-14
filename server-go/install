@@ -109,6 +109,21 @@ else
   say "Data: $DATA (kept; --recopy takes a fresh copy of $LIVE)"
 fi
 
+# The PATH sessions get. A shell without nvm loaded has no node or npm on it, and every
+# session would inherit that; the Node server's own unit has the PATH it was installed
+# with, so that one is used, with the newest nvm node added if node is still missing.
+SERVICE_PATH="$PATH"
+NODE_UNIT="$HOME/.config/systemd/user/bench.service"
+if [ -f "$NODE_UNIT" ]; then
+  P="$(sed -n 's/^Environment="PATH=\(.*\)"$/\1/p' "$NODE_UNIT" | head -1)"
+  [ -n "$P" ] && SERVICE_PATH="$P"
+fi
+if ! PATH="$SERVICE_PATH" command -v node >/dev/null 2>&1; then
+  NVM_BIN="$(ls -1d "${NVM_DIR:-$HOME/.nvm}"/versions/node/*/bin 2>/dev/null | sort -V | tail -1)"
+  [ -n "$NVM_BIN" ] && SERVICE_PATH="$NVM_BIN:$SERVICE_PATH"
+fi
+PATH="$SERVICE_PATH" command -v node >/dev/null 2>&1 || say "Note: no node on the sessions' PATH ($SERVICE_PATH); Claude's shell commands won't find node or npm."
+
 # -- the command and the service -------------------------------------------------------------
 cat > "$BIN_DIR/bench-go" <<EOF
 #!/bin/sh
@@ -135,7 +150,7 @@ Environment="BENCH_ROOT=$DATA"
 Environment="PORT=$PORT"
 Environment="BENCH_APP_ROOT=$RELEASE"
 Environment="BENCH_SERVICE=systemd"
-Environment="PATH=$PATH"
+Environment="PATH=$SERVICE_PATH"
 
 [Install]
 WantedBy=default.target
