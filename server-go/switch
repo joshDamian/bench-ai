@@ -16,7 +16,10 @@ case "${1:-status}" in
     # Wait until it has really let go of the database and the port.
     i=0; while on "$from" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done
     on "$from" && { echo "switch: $from didn't stop; leaving it as it is" >&2; exit 1; }
-    systemctl --user enable --now "$to"
+    systemctl --user enable "$to"
+    # restart, not start: a unit already running (bench-go on its old port and copy) must
+    # pick up the shared settings.
+    systemctl --user restart "$to"
     echo "Now on: $1 ($to). Running sessions pick up again on their own."
     ;;
   status)
