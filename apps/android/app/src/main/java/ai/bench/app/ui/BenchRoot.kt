@@ -116,7 +116,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
     if (wide) {
         Box(Modifier.width(380.dp).fillMaxHeight()) {
-            HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
+            HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
         }
         androidx.compose.material3.VerticalDivider(color = Bench.colors.line)
     }
@@ -132,13 +132,14 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         ) {
             composable("home") {
                 if (wide) EmptyDetail() else androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
-                    HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") })
+                    HomeScreen(store, onOpen = open, onNew = { newSession = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") })
                 }
             }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }, onAsk = { nav.navigate("ask") }) }
             composable("ask") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }, askOnly = true) }
             composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
+            composable("schedules") { SchedulesScreen(store, onBack = { nav.popBackStack() }, onOpen = open) }
             composable("devices") { DevicesScreen(store, onBack = { nav.popBackStack() }) }
             composable("dashboard") { DashboardScreen(store, onBack = { nav.popBackStack() }) }
             composable("diagnostics") { DiagnosticsScreen(store, onBack = { nav.popBackStack() }) }

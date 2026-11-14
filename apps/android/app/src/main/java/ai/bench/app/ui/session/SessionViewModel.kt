@@ -43,6 +43,9 @@ private const val PAGE = 400
 class SessionViewModel(val sessionId: String, private val store: BenchStore) : ViewModel() {
     val api = store.api
 
+    /** Looking at a session clears it from Home's "Ready for you". */
+    fun markSeen() = store.markSeen(sessionId)
+
     private val events = MutableStateFlow<List<SessionEvent>>(emptyList())
     private val _stream = MutableStateFlow(Stream())
     val stream: StateFlow<Stream> = _stream.asStateFlow()
@@ -203,6 +206,8 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
     }
 
     fun rename(title: String) = viewModelScope.launch { runCatching { api.rename(sessionId, title) }.onFailure { _errors.tryEmit(it.message ?: "") } }
+
+    fun setPinned(on: Boolean) = store.setPinned(sessionId, on)
 
     fun archive(done: () -> Unit) = viewModelScope.launch {
         runCatching { api.archive(sessionId) }.onSuccess { done() }.onFailure { _errors.tryEmit(it.message ?: "") }

@@ -156,6 +156,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                     NavRow("Default mode", mode.label) { page = "mode" }
                     NavRow("Models", "${providers.count { it.enabled }} providers") { page = "models" }
                     NavRow("Subagents", if (routing["all"].str() != null) "One model" else "By tier") { onOpen("subagents/default") }
+                    NavRow("Schedules", store.schedules.collectAsState().value.count { it.enabled }.takeIf { it > 0 }?.toString() ?: "None") { onOpen("schedules") }
                     NavRow("Usage limit", if (defaults["limits"]["autoResume"].let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "false" }) "Wait" else "Resume") { onOpen("limit") }
                 }
             }

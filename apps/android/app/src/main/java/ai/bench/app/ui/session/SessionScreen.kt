@@ -121,6 +121,11 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     var providers by remember { mutableStateOf<List<ai.bench.app.data.ProviderInfo>>(emptyList()) }
     var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { providers = vm.providers() }
+    // Seen on the way in and on the way out, so what arrived while it was open counts as seen too.
+    DisposableEffect(vm.sessionId) {
+        vm.markSeen()
+        onDispose { vm.markSeen() }
+    }
     val session by vm.session.collectAsState()
     val rows by vm.rows.collectAsState()
     val stream by vm.stream.collectAsState()
@@ -559,6 +564,7 @@ private fun SessionSheet(
                 }
                 if (s.claude_session_id != null) NavRow("Open in Claude Code", null, "Its own terminal UI, resumed on the server") { onResume() }
                 SwitchRow("Resume after the usage limit", s.pause?.let { "Paused: ${it.message}" } ?: "Picks up where it stopped when the limit lifts", s.auto_resume ?: true) { vm.setAutoResume(it) }
+                SwitchRow("Keep on Home", "Stays on Home after you've looked at it", s.pinned) { vm.setPinned(it) }
                 if (s.pause != null) NavRow("Resume now", labelColor = c.accent, chevron = false) { vm.resumeNow(); onDismiss() }
             }
             val usage = s.model_usage?.entries?.mapNotNull { (k, v) -> (v as? kotlinx.serialization.json.JsonObject)?.get("cost")?.let { k to (it.toString().toDoubleOrNull() ?: 0.0) } }.orEmpty().sortedByDescending { it.second }

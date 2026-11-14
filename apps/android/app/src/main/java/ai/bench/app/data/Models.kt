@@ -78,6 +78,50 @@ data class Session(
     val auto_resume: Boolean? = null,
     /** Spend by model, subagents included. */
     val model_usage: kotlinx.serialization.json.JsonObject? = null,
+    /** When the person last looked at it; Home lists what changed after it. */
+    val seen_at: String? = null,
+    /** Kept on Home whatever its state. */
+    val pinned: Boolean = false,
+    /** The schedule that started it, if one did. */
+    val schedule_id: String? = null,
+) {
+    /** Changed since the person last looked: a reply, a finish, an error. */
+    val unseen get() = seen_at == null || updated_at > seen_at
+}
+
+/** Something a session made for the person (GET /api/reports): a report, a page, or email drafts. */
+@Serializable
+data class Report(
+    val session_id: String,
+    val path: String,
+    val name: String,
+    /** report (.md), page (.html), drafts (.drafts.json) or file. */
+    val kind: String,
+    val title: String,
+    val size: Long = 0,
+    val modified: String = "",
+    val seen: Boolean = false,
+    val drafts: Int? = null,
+    val unsent: Int? = null,
+)
+
+/** A session that starts on its own (GET /api/schedules). days: 0 Sunday .. 6 Saturday. */
+@Serializable
+data class Schedule(
+    val id: String,
+    val title: String,
+    val project_id: String,
+    val prompt: String,
+    val days: String,
+    val time: String,
+    val tz: String,
+    val mode: String? = null,
+    val model_id: String? = null,
+    val provider_id: String? = null,
+    val effort: String? = null,
+    val enabled: Boolean = true,
+    val last_run_at: String? = null,
+    val next_run_at: String? = null,
 )
 
 @Serializable

@@ -68,6 +68,18 @@ class BenchApi(val config: ServerConfig) {
         call(request(path).post(body.toString().toRequestBody(jsonType)).build())
     suspend fun patch(path: String, body: JsonElement) =
         call(request(path).patch(body.toString().toRequestBody(jsonType)).build())
+    suspend fun seen(id: String) = runCatching { post("/api/sessions/${enc(id)}/seen") }
+    suspend fun pin(id: String, on: Boolean) = patch("/api/sessions/${enc(id)}", buildJsonObject { put("pinned", on) })
+    suspend fun reports(): List<Report> = get("/api/reports").lossy()
+    suspend fun markDraft(sessionId: String, file: String, index: Int, sent: Boolean) = post("/api/reports/drafts", kotlinx.serialization.json.buildJsonObject {
+        put("sessionId", kotlinx.serialization.json.JsonPrimitive(sessionId)); put("file", kotlinx.serialization.json.JsonPrimitive(file))
+        put("index", kotlinx.serialization.json.JsonPrimitive(index)); put("sent", kotlinx.serialization.json.JsonPrimitive(sent))
+    })
+    suspend fun schedules(): List<Schedule> = get("/api/schedules").lossy()
+    suspend fun saveSchedule(id: String?, body: JsonObject): Schedule = (if (id == null) post("/api/schedules", body) else patch("/api/schedules/${enc(id)}", body)).decode()
+    suspend fun deleteSchedule(id: String) = delete("/api/schedules/${enc(id)}")
+    suspend fun runSchedule(id: String): Session = post("/api/schedules/${enc(id)}/run").decode()
+    suspend fun research(): Project = post("/api/research").decode()
     suspend fun delete(path: String) = call(request(path).delete().build())
 
     /** A shape this client cannot read is a BenchError the screen shows, never a crash. */
