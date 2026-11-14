@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -201,12 +202,24 @@ private fun Preview(a: Approval, cwd: String, big: Boolean) {
     val c = Bench.colors
     val i = a.input
     when (a.tool) {
-        "Bash" -> Box(
-            Modifier.fillMaxWidth().background(c.wellBg, RoundedCornerShape(if (big) 16.dp else 14.dp))
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = if (big) 14.dp else 12.dp, vertical = if (big) 12.dp else 10.dp),
-        ) {
-            Text(i["command"].str().orEmpty(), fontFamily = Mono, fontSize = if (big) 13.5.sp else 12.5.sp, lineHeight = if (big) 20.sp else 18.sp, color = c.wellText)
+        // The command with where it runs, then Claude's own reason for it (richer context
+        // cards, as Tactic Remote's approvals show them).
+        "Bash" -> {
+            Column(Modifier.fillMaxWidth().background(c.wellBg, RoundedCornerShape(if (big) 16.dp else 14.dp))) {
+                if (big && cwd.isNotBlank()) Text(
+                    "in " + cwd.replace(Regex("^/(home|Users)/[^/]+"), "~"), fontFamily = Mono, fontSize = 11.5.sp, color = c.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp),
+                )
+                Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = if (big) 14.dp else 12.dp, vertical = if (big) 12.dp else 10.dp)) {
+                    Text(i["command"].str().orEmpty(), fontFamily = Mono, fontSize = if (big) 14.sp else 12.5.sp, lineHeight = if (big) 21.sp else 18.sp, color = c.wellText)
+                }
+            }
+            if (big) i["description"].str()?.takeIf { it.isNotBlank() }?.let { why ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Why", fontSize = 14.sp, color = c.muted, modifier = Modifier.width(40.dp))
+                    Text(why, fontSize = 14.sp, lineHeight = 20.sp)
+                }
+            }
         }
         "Edit", "MultiEdit" -> {
             MutedText(Transcript.rel(i["file_path"].str(), cwd))

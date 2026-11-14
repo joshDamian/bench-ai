@@ -211,9 +211,12 @@ object Transcript {
         val parts = mutableListOf(if (calls.isEmpty()) "Thought" else "${calls.size} step${if (calls.size == 1) "" else "s"}")
         val cmds = calls.count { it.name == "Bash" }
         val edits = calls.count { it.name in setOf("Edit", "MultiEdit", "Write", "NotebookEdit") }
-        val failed = calls.count { it.failed }
+        // A failure that a later call of the same tool got past was retried, not a dead end.
+        val retried = calls.withIndex().count { (i, c) -> c.failed && calls.drop(i + 1).any { it.name == c.name && !it.failed && !it.pending } }
+        val failed = calls.count { it.failed } - retried
         if (cmds > 0) parts += "$cmds command${if (cmds == 1) "" else "s"}"
         if (edits > 0) parts += "$edits edit${if (edits == 1) "" else "s"}"
+        if (retried > 0) parts += "$retried retried"
         if (failed > 0) parts += "$failed error${if (failed == 1) "" else "s"}"
         return parts.joinToString(" · ")
     }

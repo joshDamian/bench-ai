@@ -173,8 +173,34 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
     fun edit(body: JsonObject) = act("Saving…") { store.api.patch("/api/tasks/${BenchApi.enc(taskId)}", body) }
     val sessions = s.sessions.filter { it.task_id == taskId && it.archived_at == null }.sortedBy { it.created_at }
     val base = t?.base_branch?.ifBlank { null } ?: "main"
+    // A diff line tapped: a note on it goes to the task's latest session (as Linear and Codex steer).
+    var commenting by remember { mutableStateOf<DiffLine?>(null) }
     val active = t?.state == "active"
     val g = git
+    commenting?.let { line ->
+        var note by remember(line) { mutableStateOf("") }
+        val target = sessions.maxByOrNull { it.updated_at }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { commenting = null },
+            title = { Text("${line.path.substringAfterLast('/')}:${line.line}", fontFamily = Mono, fontSize = 15.sp) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(line.text.trim(), fontFamily = Mono, fontSize = 12.5.sp, color = c.muted, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    androidx.compose.material3.OutlinedTextField(note, { note = it }, placeholder = { Text("What should change here?") }, modifier = Modifier.fillMaxWidth())
+                    target?.let { Text("Goes to ${it.title}", fontSize = 12.5.sp, color = c.muted) }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(enabled = note.isNotBlank() && target != null, onClick = {
+                    val to = target ?: return@TextButton
+                    val msg = "In `${line.path}` line ${line.line}:\n> ${line.text.trim()}\n\n${note.trim()}"
+                    commenting = null
+                    act("Sending…") { store.api.send(to.id, msg); onOpen(to.id) }
+                }) { Text("Send") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { commenting = null }) { Text("Cancel") } },
+        )
+    }
 
     Scaffold(
         containerColor = c.bg,
@@ -299,7 +325,7 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
                 }
                 "changes" -> {
                     if (files.isEmpty()) item { Text("No changes yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(22.dp)) }
-                    else item("files") { Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) { Grouped(files) { f -> FileDiff(f, openFile == f.path) { openFile = if (openFile == f.path) null else f.path } } } }
+                    else item("files") { Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) { Grouped(files) { f -> FileDiff(f, openFile == f.path, onLine = if (sessions.isNotEmpty()) ({ commenting = it }) else null) { openFile = if (openFile == f.path) null else f.path } } } }
                 }
                 else -> {
                     if (log.isEmpty()) item { Text("Nothing logged yet. Decisions and reviews appear here.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(22.dp)) }
@@ -343,8 +369,11 @@ fun SectionLabelV2(text: String, trailing: String? = null, color: Color = Bench.
     }
 }
 
+/** A line of a diff, numbered as in the new file. */
+data class DiffLine(val path: String, val line: Int, val text: String)
+
 @Composable
-private fun FileDiff(f: DiffFile, open: Boolean, onToggle: () -> Unit) {
+private fun FileDiff(f: DiffFile, open: Boolean, onLine: ((DiffLine) -> Unit)? = null, onToggle: () -> Unit) {
     val c = Bench.colors
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().height(56.dp).clickable(onClick = onToggle).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -354,14 +383,20 @@ private fun FileDiff(f: DiffFile, open: Boolean, onToggle: () -> Unit) {
             if (f.removed > 0) Text("−${f.removed}", fontSize = 12.5.sp, color = c.bad)
         }
         if (open) Column(Modifier.fillMaxWidth().background(c.wellBg).horizontalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+            var next = 0
             f.lines.take(500).forEach { l ->
+                // The new file's line number for each line, from the hunk headers.
+                if (l.startsWith("@@")) next = Regex("""\+(\d+)""").find(l)?.groupValues?.get(1)?.toIntOrNull() ?: next
+                val n = next
+                if (!l.startsWith("@@") && !l.startsWith("-")) next++
                 val (fg, bg) = when {
                     l.startsWith("@@") -> c.muted to Color.Transparent
                     l.startsWith("+") -> c.good to c.good.copy(alpha = 0.08f)
                     l.startsWith("-") -> c.bad to c.bad.copy(alpha = 0.08f)
                     else -> c.wellText to Color.Transparent
                 }
-                Text(l.ifEmpty { " " }, fontFamily = Mono, fontSize = 11.5.sp, lineHeight = 18.sp, color = fg, softWrap = false, modifier = Modifier.background(bg).padding(horizontal = 16.dp))
+                val tap = if (onLine != null && !l.startsWith("@@")) Modifier.clickable { onLine(DiffLine(f.path, n, l.drop(1))) } else Modifier
+                Text(l.ifEmpty { " " }, fontFamily = Mono, fontSize = 11.5.sp, lineHeight = 22.sp, color = fg, softWrap = false, modifier = Modifier.background(bg).then(tap).padding(horizontal = 16.dp))
             }
         }
     }
