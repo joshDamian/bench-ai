@@ -1317,6 +1317,7 @@ func (s *Server) routesInit() {
 	s.route("POST", "/api/schedules", func(c *ctxt) (any, error) { return svc.AddSchedule(c.body) })
 	s.route("PATCH", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.UpdateSchedule(c.params[0], c.body) })
 	s.route("DELETE", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.DeleteSchedule(c.params[0]) })
+	s.route("GET", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.ScheduleDetail(c.params[0]) })
 	s.route("POST", "/api/schedules/:id/run", func(c *ctxt) (any, error) { return svc.RunSchedule(c.params[0]) })
 	s.route("POST", "/api/research", func(c *ctxt) (any, error) { return svc.Research() })
 	s.route("GET", "/api/about", func(c *ctxt) (any, error) { return svc.About(), nil })

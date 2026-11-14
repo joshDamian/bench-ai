@@ -313,6 +313,21 @@ async function scenario(srv, repo, root) {
   if (!ran?.id) console.error('schedule run gave', JSON.stringify(ran).slice(0, 300));
   if (ran?.id) await until(async () => (await api('GET', `/api/sessions/${ran.id}`)).body.session.status === 'idle');
   if (ran?.id) await step('scheduled session', () => api('GET', `/api/sessions/${ran.id}`));
+  await step('schedule detail', () => api('GET', `/api/schedules/${sch.id}`));
+  await step('schedule detail: unknown', () => api('GET', '/api/schedules/nope'));
+  // A schedule that keeps one board.
+  const board = (await step('schedule: keep a board', () => api('POST', '/api/schedules', { title: 'Job board', projectId: project.id, prompt: 'find roles', days: [2], time: '09:00', tz: 'UTC', keepBoard: true }))).body;
+  if (board?.id) {
+    fs.mkdirSync(path.join(repo, 'boards'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'boards', 'job-board.md'), '# Remote roles\n\nUpdated today\n\n- Acme backend · New\n- Beta API · New\n- Gamma infra\n');
+    fs.utimesSync(path.join(repo, 'boards', 'job-board.md'), new Date('2026-01-02T00:00:00Z'), new Date('2026-01-02T00:00:00Z'));
+    const r1 = (await step('board run', () => api('POST', `/api/schedules/${board.id}/run`, {}))).body;
+    if (r1?.id) await until(async () => (await api('GET', `/api/sessions/${r1.id}`)).body.session.status === 'idle');
+    await step('board in reports', async () => { const r = await api('GET', '/api/reports'); return { status: r.status, body: r.body.filter((x) => x.kind === 'board') }; });
+    await step('board detail', () => api('GET', `/api/schedules/${board.id}`));
+    await step('board: turn off', () => api('PATCH', `/api/schedules/${board.id}`, { keepBoard: false }));
+    await step('board: delete', () => api('DELETE', `/api/schedules/${board.id}`));
+  }
   await step('schedule delete', () => api('DELETE', `/api/schedules/${sch.id}`));
   await step('schedule delete: again', () => api('DELETE', `/api/schedules/${sch.id}`));
   await step('research project', () => api('POST', '/api/research', {}));

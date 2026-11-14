@@ -107,6 +107,10 @@ data class Report(
     val seen: Boolean = false,
     val drafts: Int? = null,
     val unsent: Int? = null,
+    /** The schedule whose run made it. */
+    val schedule_id: String? = null,
+    /** A board: how many entries its last run marked new. */
+    val new: Int? = null,
 )
 
 /** Who the person is, read by every session (GET /api/about). */
@@ -154,7 +158,18 @@ data class Schedule(
     val enabled: Boolean = true,
     val last_run_at: String? = null,
     val next_run_at: String? = null,
+    /** Keeps one board up to date instead of a report per run. */
+    val keep_board: Boolean = false,
 )
+
+/** A schedule's own page (GET /api/schedules/:id): its runs and the board it keeps. */
+@Serializable
+data class ScheduleDetail(val schedule: Schedule, val runs: List<Run> = emptyList(), val board: Board? = null) {
+    @Serializable
+    data class Run(val id: String, val title: String = "", val status: String = "idle", val cost: Double = 0.0, val capped: Boolean = false, val created_at: String = "")
+    @Serializable
+    data class Board(val session_id: String? = null, val path: String, val name: String, val title: String = "", val new: Int = 0, val history: List<String> = emptyList())
+}
 
 @Serializable
 data class SessionPause(val until: String? = null, val message: String = "", val tries: Int = 0)

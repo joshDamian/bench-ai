@@ -144,6 +144,8 @@ export class Store {
     // budget: the most one query of an unattended run may spend; capped: it stopped there.
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'budget')) this.db.exec('ALTER TABLE sessions ADD COLUMN budget REAL');
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'capped')) this.db.exec('ALTER TABLE sessions ADD COLUMN capped INTEGER');
+    // keep_board: the schedule keeps one board up to date instead of a report per run.
+    if (!this.db.prepare('PRAGMA table_info(schedules)').all().some((c) => c.name === 'keep_board')) this.db.exec('ALTER TABLE schedules ADD COLUMN keep_board INTEGER');
     // routing: a project's or a task's own subagent models, as JSON, over the person's default.
     if (!this.db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE projects ADD COLUMN routing TEXT');
     if (!this.db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE tasks ADD COLUMN routing TEXT');
@@ -477,7 +479,7 @@ export class Store {
   /** @param {any} r */
   #schedule(r) {
     if (!r) return r;
-    return { ...r, enabled: !!r.enabled };
+    return { ...r, enabled: !!r.enabled, keep_board: !!r.keep_board };
   }
 
   /** @returns {any[]} */
@@ -493,8 +495,8 @@ export class Store {
   /** @param {Record<string, any>} o */
   addSchedule(o) {
     const id = crypto.randomUUID();
-    this.db.prepare('INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
-      .run(id, o.title, o.project_id, o.prompt, o.days, o.time, o.tz, o.mode ?? null, o.model_id ?? null, o.provider_id ?? null, o.effort ?? null, o.enabled === false ? 0 : 1, now());
+    this.db.prepare('INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at,keep_board) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, o.title, o.project_id, o.prompt, o.days, o.time, o.tz, o.mode ?? null, o.model_id ?? null, o.provider_id ?? null, o.effort ?? null, o.enabled === false ? 0 : 1, now(), o.keep_board ? 1 : 0);
     return this.getSchedule(id);
   }
 
@@ -502,8 +504,14 @@ export class Store {
   updateSchedule(id, patch) {
     const row = { ...patch };
     if (row.enabled !== undefined) row.enabled = row.enabled ? 1 : 0;
+    if (row.keep_board !== undefined) row.keep_board = row.keep_board ? 1 : 0;
     this.#patch('schedules', id, row);
     return this.getSchedule(id);
+  }
+
+  /** The runs a schedule started, newest first. @param {string} id */
+  sessionsOfSchedule(id) {
+    return this.#all('SELECT * FROM sessions WHERE schedule_id=? ORDER BY created_at DESC LIMIT 20', id).map((r) => /** @type {Session} */ (this.#session(r)));
   }
 
   /** @param {string} id */

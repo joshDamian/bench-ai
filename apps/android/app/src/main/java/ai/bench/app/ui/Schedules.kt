@@ -101,6 +101,7 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
     var days by remember { mutableStateOf(existing?.days?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet() ?: setOf(1)) }
     var time by remember { mutableStateOf(existing?.time ?: "08:00") }
     var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
+    var keepBoard by remember { mutableStateOf(existing?.keep_board ?: false) }
     var projectId by remember { mutableStateOf(existing?.project_id) }
     var modelId by remember { mutableStateOf(existing?.model_id) }
     var providerId by remember { mutableStateOf(existing?.provider_id) }
@@ -129,7 +130,7 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
             try {
                 store.api.saveSchedule(existing?.id, buildJsonObject {
                     put("title", title.trim()); put("prompt", prompt.trim()); put("projectId", pid)
-                    put("days", days.sorted().joinToString(",")); put("time", time); put("enabled", enabled)
+                    put("days", days.sorted().joinToString(",")); put("time", time); put("enabled", enabled); put("keepBoard", keepBoard)
                     if (modelId != null) put("modelId", modelId) else put("modelId", JsonNull)
                     if (providerId != null) put("providerId", providerId) else put("providerId", JsonNull)
                     if (effort != null) put("effort", effort) else put("effort", JsonNull)
@@ -169,6 +170,7 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
                     NavRow("Time", time) { picking = "time" }
                     NavRow("Project", projectName) { picking = "project" }
                     NavRow("Model", modelName) { picking = "model" }
+                    SwitchRow("Keep one board", "Each run updates it and marks what is new", keepBoard) { keepBoard = it }
                     if (existing != null) SwitchRow("On", existing.next_run_at?.let { "Next: " + it.take(10) }, enabled) { enabled = it }
                 }
                 error?.let { Text(it, fontSize = 14.sp, color = c.bad, modifier = Modifier.padding(start = 6.dp, top = 8.dp)) }
@@ -258,5 +260,71 @@ fun NewMenu(onDismiss: () -> Unit, onPick: (String) -> Unit) {
                 }
             }
         }
+    }
+}
+
+
+/** A schedule's own page: what it keeps, its runs and its prompt (the schedule page board). */
+@Composable
+fun SchedulePage(store: BenchStore, id: String, onBack: () -> Unit, onEdit: () -> Unit, onOpen: (String) -> Unit) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    val st by store.state.collectAsState()
+    var detail by remember { mutableStateOf<ai.bench.app.data.ScheduleDetail?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var viewing by remember { mutableStateOf(false) }
+    LaunchedEffect(id) { runCatching { store.api.schedule(id) }.onSuccess { detail = it }.onFailure { error = it.message } }
+    val d = detail
+    val sch = d?.schedule
+    val project = st.projects.firstOrNull { it.id == sch?.project_id }?.name
+    Page(sch?.title ?: "Schedule", sch?.let { listOfNotNull("${scheduleDays(it.days)} at ${it.time}", project).joinToString(" · ") }, onBack, bottom = {
+        if (sch != null) Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BigButton("Edit", Modifier.weight(1f), onClick = onEdit)
+            BigButton("Run now", Modifier.weight(1f), primary = true) {
+                scope.launch { runCatching { store.api.runSchedule(sch.id) }.onSuccess { onOpen(it.id) }.onFailure { error = it.message } }
+            }
+        }
+    }) {
+        if (d == null || sch == null) {
+            item("loading") { Text(error ?: "", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 24.dp)) }
+            return@Page
+        }
+        item("state") {
+            Text(
+                if (!sch.enabled) "Off" else sch.next_run_at?.let { "On · next ${java.time.Instant.parse(it).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM, H:mm"))}" } ?: "On",
+                fontSize = 14.sp, color = if (sch.enabled) c.good else c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp),
+            )
+        }
+        d.board?.let { b ->
+            section("What it keeps")
+            item("board") {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surface1).clickable { viewing = true }.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(if (b.new > 0) "Board · ${b.new} new" else "Board", fontSize = 12.5.sp, color = c.muted)
+                    Text(b.title.ifBlank { b.name }, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    if (b.history.isNotEmpty()) Text("${b.history.size} earlier version${if (b.history.size == 1) "" else "s"} kept", fontSize = 12.5.sp, color = c.muted)
+                }
+            }
+        }
+        section("Runs", d.runs.size.takeIf { it > 0 }?.toString())
+        item("runs") {
+            if (d.runs.isEmpty()) Text("It has not run yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp))
+            else Card {
+                d.runs.forEach { r ->
+                    val day = runCatching { java.time.Instant.parse(r.created_at).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM")) }.getOrDefault("")
+                    val state = when { r.capped -> "Stopped at its cap"; r.status == "running" -> "Working"; r.status == "error" -> "Stopped with an error"; else -> "Finished" }
+                    NavRow(day, dollars(r.cost), state, valueColor = null, labelColor = null) { onOpen(r.id) }
+                }
+            }
+        }
+        section("Prompt")
+        item("prompt") { Text(sch.prompt, fontSize = 15.sp, lineHeight = 22.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp)) }
+    }
+    val b = d?.board
+    if (viewing && b != null && b.session_id != null) {
+        val files = remember(b.session_id) { ai.bench.app.ui.session.SessionFiles(store.api, b.session_id) }
+        ai.bench.app.ui.session.FileViewer(files, ai.bench.app.ui.session.FileInfo(b.path, b.path, b.name, if (b.name.endsWith(".html")) "text/html" else "text/markdown", 0, true, "text", true)) { viewing = false }
     }
 }

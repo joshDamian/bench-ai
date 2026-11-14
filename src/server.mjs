@@ -811,6 +811,7 @@ route('GET', '/api/schedules', () => svc.schedules());
 route('POST', '/api/schedules', ({ body }) => svc.addSchedule(body));
 route('PATCH', '/api/schedules/:id', ({ params, body }) => svc.updateSchedule(params[0], body));
 route('DELETE', '/api/schedules/:id', ({ params }) => svc.deleteSchedule(params[0]));
+route('GET', '/api/schedules/:id', ({ params }) => svc.scheduleDetail(params[0]));
 route('POST', '/api/schedules/:id/run', ({ params }) => svc.runSchedule(params[0]));
 route('POST', '/api/research', () => svc.research());
 route('GET', '/api/about', () => svc.about());

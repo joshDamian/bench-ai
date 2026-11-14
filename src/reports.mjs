@@ -8,6 +8,7 @@
 // The apps list them on Home ("Ready for you") until the session is looked at.
 import fs from 'node:fs';
 import path from 'node:path';
+import { findBoard, boardTitle, newCount } from './boards.mjs';
 
 /** @param {string} attachmentsDir */
 export const reportsDir = (attachmentsDir) => path.join(attachmentsDir, 'reports');
@@ -73,13 +74,24 @@ export function listReports(svc) {
       if (!st?.isFile()) continue;
       const kind = kindOf(file);
       const modified = st.mtime.toISOString();
-      const item = { session_id: id, path: full, name: file, kind, title: titleOf(full, kind), size: st.size, modified, seen: !!s.seen_at && s.seen_at >= modified };
+      const item = { session_id: id, path: full, name: file, kind, title: titleOf(full, kind), size: st.size, modified, seen: !!s.seen_at && s.seen_at >= modified, schedule_id: s.schedule_id || null };
       if (kind === 'drafts') {
         const list = drafts(full);
         Object.assign(item, { drafts: list.length, unsent: list.filter((/** @type {any} */ x) => !x.sent_at).length });
       }
       out.push(item);
     }
+  }
+  // Boards: one per schedule that keeps one, seen when its latest run was looked at after it changed.
+  for (const sch of svc.store.listSchedules()) {
+    if (!sch.keep_board) continue;
+    const project = svc.store.getProject(sch.project_id);
+    const file = project ? findBoard(project.path, sch.title) : null;
+    const last = file ? svc.store.sessionsOfSchedule(sch.id)[0] : null;
+    if (!file || !last) continue;
+    const st = fs.statSync(file);
+    const modified = st.mtime.toISOString();
+    out.push({ session_id: last.id, path: file, name: path.basename(file), kind: 'board', title: boardTitle(file, sch.title), size: st.size, modified, seen: !!last.seen_at && last.seen_at >= modified, schedule_id: sch.id, new: newCount(file) });
   }
   return out.sort((a, b) => (a.modified < b.modified ? 1 : -1));
 }

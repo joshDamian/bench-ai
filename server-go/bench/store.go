@@ -191,6 +191,8 @@ func NewStore(root string) (*Store, error) {
 	// budget: the most one query of an unattended run may spend; capped: it stopped there.
 	s.addColumn("sessions", "budget", "REAL")
 	s.addColumn("sessions", "capped", "INTEGER")
+	// keep_board: the schedule keeps one board up to date instead of a report per run.
+	s.addColumn("schedules", "keep_board", "INTEGER")
 	s.addColumn("projects", "routing", "TEXT")
 	s.addColumn("tasks", "routing", "TEXT")
 	if err := s.projectlessSessions(); err != nil {

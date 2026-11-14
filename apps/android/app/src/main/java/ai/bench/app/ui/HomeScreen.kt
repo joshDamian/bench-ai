@@ -213,7 +213,7 @@ private fun dayOf(iso: String): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit, selected: String? = null, onSchedules: () -> Unit = {}, onAbout: () -> Unit = {}) {
+fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit, selected: String? = null, onSchedules: () -> Unit = {}, onSchedule: (String) -> Unit = {}, onAbout: () -> Unit = {}) {
     val s by store.state.collectAsState()
     val reports by store.reports.collectAsState()
     val schedules by store.schedules.collectAsState()
@@ -239,7 +239,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     val spending by store.spending.collectAsState()
     // Reports and pages leave once read. Drafts are things to do, so they stay until each is sent,
     // even when you watched the session write them.
-    val reads = reports.filter { !it.seen && (it.kind == "report" || it.kind == "page") }
+    val reads = reports.filter { !it.seen && (it.kind == "report" || it.kind == "page" || it.kind == "board") }
     val drafts = reports.filter { it.kind == "drafts" && (it.unsent ?: 0) > 0 }
     val carded = (reads + drafts).map { it.session_id }.toSet()
     // A session whose output is already a card is not listed again under it.
@@ -366,7 +366,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                     if (readyCards > 0) item("ready-cards") {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
                             if (reads.isNotEmpty()) ReadyCard(
-                                if (reads.size == 1) (if (reads[0].kind == "page") "Page" else "Report") else "${reads.size} reports",
+                                if (reads.size == 1) readLabel(reads[0]) else "${reads.size} ready to read",
                                 reads[0].title, if (reads.size > 1) "+${reads.size - 1} more" else s.sessions.firstOrNull { it.id == reads[0].session_id }?.title,
                                 Modifier.weight(1f).fillMaxHeight(),
                             ) { if (reads.size == 1) opened = reads[0] else listing = reads }
@@ -412,7 +412,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                 if (next.isNotEmpty()) {
                     item("next-l") { Label("Coming up") }
                     items(next.take(if (needCount + readyCount + working.size == 0) 2 else 1), key = { "n-${it.id}" }) { n ->
-                        UpcomingRow(n.title, scheduleDays(n.days) + if (spending?.paused == true) " · waits while paused" else "", whenNext(n.next_run_at)) { onSchedules() }
+                        UpcomingRow(n.title, scheduleDays(n.days) + if (spending?.paused == true) " · waits while paused" else "", whenNext(n.next_run_at)) { onSchedule(n.id) }
                     }
                 }
 
@@ -445,7 +445,18 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
         if (r.kind == "drafts") ai.bench.app.ui.session.DraftsScreen(store, r, onAbout = { opened = null; onAbout() }) { opened = null }
         else {
             val files = remember(r.session_id) { ai.bench.app.ui.session.SessionFiles(store.api, r.session_id) }
-            ai.bench.app.ui.session.FileViewer(files, ai.bench.app.ui.session.FileInfo(r.path, r.path, r.name, if (r.kind == "page") "text/html" else "text/markdown", r.size, true, "text", true)) { opened = null }
+            // A schedule's second report offers to keep one board instead.
+            val sch = schedules.firstOrNull { it.id == r.schedule_id }
+            var offered by remember(r.path) { mutableStateOf(sch != null && !sch.keep_board && r.kind != "board" && reports.count { it.schedule_id == sch.id && it.kind != "drafts" } >= 2 && !BoardOffers.dismissed(sch.id)) }
+            ai.bench.app.ui.session.FileViewer(
+                files, ai.bench.app.ui.session.FileInfo(r.path, r.path, r.name, if (r.name.endsWith(".html")) "text/html" else "text/markdown", r.size, true, "text", true),
+                top = if (!offered || sch == null) null else ({
+                    BoardOffer(sch.title, onKeep = {
+                        offered = false
+                        scope.launch { runCatching { store.api.saveSchedule(sch.id, kotlinx.serialization.json.buildJsonObject { put("keepBoard", true) }) }; store.loadExtras() }
+                    }) { offered = false; BoardOffers.dismiss(sch.id) }
+                }),
+            ) { opened = null }
         }
     }
     listing?.let { list -> ReportList(list, s.sessions, onDismiss = { listing = null }) { listing = null; opened = it } }
@@ -465,6 +476,36 @@ fun LabelFab(label: String, expanded: Boolean, onClick: () -> Unit) {
             androidx.compose.animation.AnimatedVisibility(expanded, enter = androidx.compose.animation.expandHorizontally() + androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.shrinkHorizontally() + androidx.compose.animation.fadeOut()) {
                 Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp))
             }
+        }
+    }
+}
+
+/** What a ready card calls one thing to read. */
+private fun readLabel(r: Report) = when (r.kind) {
+    "board" -> if ((r.new ?: 0) > 0) "Board · ${r.new} new" else "Board"
+    "page" -> "Page"
+    else -> "Report"
+}
+
+/** Boards the person said "Not now" to, for this run of the app. */
+object BoardOffers {
+    private val no = mutableSetOf<String>()
+    fun dismissed(id: String) = id in no
+    fun dismiss(id: String) { no += id }
+}
+
+/** The offer on a schedule's second report: keep one board instead. */
+@Composable
+private fun BoardOffer(title: String, onKeep: () -> Unit, onNotNow: () -> Unit) {
+    val c = Bench.colors
+    Column(
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surface1).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("This is $title's second report. Keep one board instead? Each run updates it and marks what is new.", fontSize = 15.sp, lineHeight = 21.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BigButton("Keep one board", primary = true, height = 42.dp, fill = false, onClick = onKeep)
+            BigButton("Not now", height = 42.dp, fill = false, onClick = onNotNow)
         }
     }
 }

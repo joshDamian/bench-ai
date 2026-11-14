@@ -79,6 +79,7 @@ class BenchApi(val config: ServerConfig) {
     })
     suspend fun schedules(): List<Schedule> = get("/api/schedules").lossy()
     suspend fun saveSchedule(id: String?, body: JsonObject): Schedule = (if (id == null) post("/api/schedules", body) else patch("/api/schedules/${enc(id)}", body)).decode()
+    suspend fun schedule(id: String): ScheduleDetail = get("/api/schedules/${enc(id)}").decode()
     suspend fun deleteSchedule(id: String) = delete("/api/schedules/${enc(id)}")
     suspend fun runSchedule(id: String): Session = post("/api/schedules/${enc(id)}/run").decode()
     suspend fun research(): Project = post("/api/research").decode()

@@ -15,6 +15,7 @@ import { Resumer } from './resume.mjs';
 import { Scheduler, scheduleView, validZone } from './schedules.mjs';
 import { listReports, markDraft } from './reports.mjs';
 import { Spending, startOfDay } from './spending.mjs';
+import { snapshotBoard, BOARD_NOTE, findBoard, boardTitle, newCount, boardHistory } from './boards.mjs';
 import { routingPatch, DEFAULT_ROUTING } from './routing.mjs';
 import { holders, removable, sizeOf } from './artifacts.mjs';
 import * as g from './git.mjs';
@@ -1102,6 +1103,7 @@ export class Service extends EventEmitter {
     }
     for (const [k, col] of [['modelId', 'model_id'], ['providerId', 'provider_id'], ['effort', 'effort']]) if (o[k] !== undefined) row[col] = o[k] || null;
     if (o.enabled !== undefined) row.enabled = !!o.enabled;
+    if (o.keepBoard !== undefined) row.keep_board = !!o.keepBoard;
     return row;
   }
 
@@ -1129,8 +1131,25 @@ export class Service extends EventEmitter {
     const s = this.createSession({ projectId: sch.project_id, title: sch.title, mode: sch.mode || undefined, providerId: sch.provider_id || undefined, modelId: sch.model_id || undefined, effort: sch.effort || undefined });
     this.runtime.emit('session', this.store.updateSession(s.id, { schedule_id: sch.id, budget: this.spendingStore.settings().run_cap }));
     this.store.updateSchedule(id, { last_run_at: new Date().toISOString() });
-    this.send(s.id, sch.prompt);
+    // A schedule that keeps one board: the version before this run is kept, and the run is told where the board is.
+    const project = this.store.getProject(sch.project_id);
+    if (sch.keep_board && project) snapshotBoard(project.path, sch.title);
+    this.send(s.id, sch.keep_board && project ? `${sch.prompt}\n\n${BOARD_NOTE(project.path, sch.title)}` : sch.prompt);
     return this.session(s.id);
+  }
+
+  /** A schedule's own page: the schedule, its runs, and the board it keeps. @param {string} id */
+  scheduleDetail(id) {
+    const sch = this.store.getSchedule(id);
+    if (!sch) throw fail('No such schedule', 404);
+    const runs = this.store.sessionsOfSchedule(id);
+    const project = this.store.getProject(sch.project_id);
+    const file = project ? findBoard(project.path, sch.title) : null;
+    return {
+      schedule: scheduleView(sch),
+      runs: runs.map((r) => ({ id: r.id, title: r.title, status: r.status, cost: r.cost, capped: !!r.capped, created_at: r.created_at })),
+      board: file && project ? { session_id: runs[0]?.id ?? null, path: file, name: path.basename(file), title: boardTitle(file, sch.title), new: newCount(file), history: boardHistory(project.path, sch.title) } : null,
+    };
   }
 
   /** The Research project: a folder in the projects folder for research and reports, made on first use. */

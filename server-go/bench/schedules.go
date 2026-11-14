@@ -33,6 +33,7 @@ func (s *Store) schedule(r *Obj) *Obj {
 		return nil
 	}
 	r.Set("enabled", truthy(r.Get("enabled")))
+	r.Set("keep_board", truthy(r.Get("keep_board")))
 	return r
 }
 
@@ -54,12 +55,21 @@ func (s *Store) AddSchedule(o *Obj) *Obj {
 	if v, ok := o.Get("enabled").(bool); ok && !v {
 		enabled = 0
 	}
-	s.exec("INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		id, o.Str("title"), o.Str("project_id"), o.Str("prompt"), o.Str("days"), o.Str("time"), o.Str("tz"), o.Get("mode"), o.Get("model_id"), o.Get("provider_id"), o.Get("effort"), enabled, isoNow())
+	keep := 0
+	if truthy(o.Get("keep_board")) {
+		keep = 1
+	}
+	s.exec("INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at,keep_board) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		id, o.Str("title"), o.Str("project_id"), o.Str("prompt"), o.Str("days"), o.Str("time"), o.Str("tz"), o.Get("mode"), o.Get("model_id"), o.Get("provider_id"), o.Get("effort"), enabled, isoNow(), keep)
 	return s.GetSchedule(id)
 }
 
 func (s *Store) UpdateSchedule(id string, patch *Obj) *Obj {
+	for _, k := range []string{"enabled", "keep_board"} {
+		if v, ok := patch.Get(k).(bool); ok {
+			patch = patch.Clone().Set(k, sqlVal(v))
+		}
+	}
 	s.patch("schedules", id, patch)
 	return s.GetSchedule(id)
 }
@@ -306,6 +316,9 @@ func (s *Service) scheduleFields(o *Obj, partial bool) (*Obj, error) {
 	if o.Has("enabled") && !isUndef(o.Get("enabled")) {
 		row.Set("enabled", truthy(o.Get("enabled")))
 	}
+	if o.Has("keepBoard") && !isUndef(o.Get("keepBoard")) {
+		row.Set("keep_board", truthy(o.Get("keepBoard")))
+	}
 	return row, nil
 }
 
@@ -352,7 +365,13 @@ func (s *Service) RunSchedule(id string) (*Obj, error) {
 	}
 	s.Runtime.Emit("session", s.Store.UpdateSession(ss.Str("id"), O("schedule_id", id, "budget", s.Spending().Settings().Num("run_cap"))))
 	s.Store.UpdateSchedule(id, O("last_run_at", isoNow()))
-	if _, err := s.Send(ss.Str("id"), sch.Str("prompt"), SendOpts{}); err != nil {
+	// A schedule that keeps one board: the version before this run is kept, and the run is told where the board is.
+	prompt := sch.Str("prompt")
+	if p := s.Store.GetProject(sch.Str("project_id")); p != nil && truthy(sch.Get("keep_board")) {
+		SnapshotBoard(p.Str("path"), sch.Str("title"))
+		prompt += "\n\n" + BoardNote(p.Str("path"), sch.Str("title"))
+	}
+	if _, err := s.Send(ss.Str("id"), prompt, SendOpts{}); err != nil {
 		return nil, err
 	}
 	return s.Session(ss.Str("id"))
@@ -459,7 +478,11 @@ func (s *Service) Reports() []*Obj {
 			kind := reportKind(f.Name())
 			modified := isoTime(st.ModTime())
 			seen := ss.Str("seen_at") != "" && ss.Str("seen_at") >= modified
-			item := O("session_id", e.Name(), "path", full, "name", f.Name(), "kind", kind, "title", reportTitle(full, kind), "size", st.Size(), "modified", modified, "seen", seen)
+			var schedID any
+			if v := ss.Str("schedule_id"); v != "" {
+				schedID = v
+			}
+			item := O("session_id", e.Name(), "path", full, "name", f.Name(), "kind", kind, "title", reportTitle(full, kind), "size", st.Size(), "modified", modified, "seen", seen, "schedule_id", schedID)
 			if kind == "drafts" {
 				list := draftList(full)
 				unsent := 0
@@ -474,6 +497,7 @@ func (s *Service) Reports() []*Obj {
 			out = append(out, item)
 		}
 	}
+	out = append(out, s.boardReports()...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Str("modified") > out[j].Str("modified") })
 	return out
 }
