@@ -482,7 +482,8 @@ fun taskLine(t: BenchTask, s: Session?, needs: Boolean): Pair<String, Color> {
 @Composable
 fun TabButton(label: String, on: Boolean, dot: String? = null, onClick: () -> Unit) {
     val c = Bench.colors
-    Column(Modifier.height(48.dp).clickable(onClick = onClick).padding(horizontal = 12.dp), verticalArrangement = Arrangement.Center) {
+    // As wide as its label: the underline fills the tab, not the row (it had pushed the other tabs off screen).
+    Column(Modifier.height(48.dp).width(androidx.compose.foundation.layout.IntrinsicSize.Max).clickable(onClick = onClick).padding(horizontal = 12.dp), verticalArrangement = Arrangement.Center) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             dot?.let { Box(Modifier.size(6.dp).background(if (it == "running") c.accent else c.dotIdle.copy(alpha = 0.45f), CircleShape)) }
             Text(label, fontSize = 14.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = if (on) c.text else c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp))

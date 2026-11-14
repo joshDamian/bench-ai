@@ -137,7 +137,7 @@ private fun TopRow(onBack: () -> Unit, menu: @Composable (close: () -> Unit) -> 
 @Composable
 private fun TitleBlock(title: String, sub: @Composable () -> Unit) {
     Column(Modifier.padding(start = 22.dp, end = 16.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, fontSize = 28.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.3).sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        Text(title, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
         sub()
     }
 }
@@ -173,7 +173,8 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
         }
     }
     fun edit(body: JsonObject) = act("Saving…") { store.api.patch("/api/tasks/${BenchApi.enc(taskId)}", body) }
-    val sessions = s.sessions.filter { it.task_id == taskId && it.archived_at == null }.sortedBy { it.created_at }
+    // A finished task's sessions were archived with it; they are still its history.
+    val sessions = s.sessions.filter { it.task_id == taskId && (it.archived_at == null || s.tasks.firstOrNull { x -> x.id == taskId }?.state != "active") }.sortedBy { it.created_at }
     val base = t?.base_branch?.ifBlank { null } ?: "main"
     // A diff line tapped: a note on it goes to the task's latest session (as Linear and Codex steer).
     var commenting by remember { mutableStateOf<DiffLine?>(null) }
@@ -297,24 +298,30 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
                             }
                         }
                     }
-                    item("loop-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Loop until done") } }
-                    item("loop") {
-                        Box(Modifier.padding(horizontal = 16.dp)) {
-                            Card {
-                                val l = t?.loop
-                                SwitchRow(
-                                    "Loop until done",
-                                    when (l?.state) { "looping" -> "Attempt ${l.attempts} of ${l.max_attempts}"; "done" -> "Done: the check passed"; "gave-up" -> "Gave up: ${l.reason ?: "the check kept failing"}"; else -> "Reruns the check whenever Claude stops; a failure sends it back" },
-                                    l?.state == "looping", enabled = active && !t?.check_command.isNullOrBlank(),
-                                ) { on -> edit(buildJsonObject { if (on) putJsonObject("loop") { put("max_attempts", l?.max_attempts?.takeIf { it > 0 } ?: 5); put("max_minutes", l?.max_minutes?.takeIf { it > 0 } ?: 60) } else put("loop", JsonNull) }) }
-                                NavRow("Done means", null, t?.done ?: "Say what finished looks like") { dialog = "done" }
-                                NavRow("Check command", null, t?.check_command ?: "e.g. npm test") { dialog = "check" }
-                                NavRow("Limits", "${l?.max_attempts?.takeIf { it > 0 } ?: 5} attempts · ${l?.max_minutes?.takeIf { it > 0 } ?: 60} min") { dialog = "attempts" }
+                    if (active) {
+                        item("loop-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Checking the work") } }
+                        item("loop") {
+                            Box(Modifier.padding(horizontal = 16.dp)) {
+                                Card {
+                                    val l = t?.loop
+                                    SwitchRow(
+                                        "Loop until done",
+                                        when (l?.state) { "looping" -> "Attempt ${l.attempts} of ${l.max_attempts}"; "done" -> "Done: the check passed"; "gave-up" -> "Gave up: ${l.reason ?: "the check kept failing"}"; else -> if (t?.check_command.isNullOrBlank()) "Needs a check command first" else "Reruns the check whenever Claude stops; a failure sends it back" },
+                                        l?.state == "looping", enabled = !t?.check_command.isNullOrBlank(),
+                                    ) { on -> edit(buildJsonObject { if (on) putJsonObject("loop") { put("max_attempts", l?.max_attempts?.takeIf { it > 0 } ?: 5); put("max_minutes", l?.max_minutes?.takeIf { it > 0 } ?: 60) } else put("loop", JsonNull) }) }
+                                    NavRow("Done means", if (t?.done == null) "Not set" else null, t?.done) { dialog = "done" }
+                                    NavRow("Check command", if (t?.check_command == null) "Not set" else null, t?.check_command) { dialog = "check" }
+                                    NavRow("Limits", "${l?.max_attempts?.takeIf { it > 0 } ?: 5} attempts · ${l?.max_minutes?.takeIf { it > 0 } ?: 60} min") { dialog = "attempts" }
+                                }
                             }
                         }
+                    } else t?.done?.let { done ->
+                        // Finished: what it was for, as a record rather than settings to change.
+                        item("done-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Done meant") } }
+                        item("done") { Text(done, fontSize = 15.sp, lineHeight = 22.sp, modifier = Modifier.padding(horizontal = 22.dp)) }
                     }
-                    item("ses-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Sessions", "${sessions.size}") } }
-                    item("ses") {
+                    if (sessions.isNotEmpty() || active) item("ses-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Sessions", sessions.size.takeIf { it > 0 }?.toString()) } }
+                    if (sessions.isNotEmpty() || active) item("ses") {
                         Box(Modifier.padding(horizontal = 16.dp)) {
                             Card {
                                 sessions.forEach { x -> NavRow(x.title, Format.ago(x.updated_at), statusLabel(x.status)) { onOpen(x.id) } }
