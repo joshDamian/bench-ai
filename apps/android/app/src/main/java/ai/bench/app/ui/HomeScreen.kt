@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,14 +110,11 @@ fun SectionLabel(text: String, color: Color = Bench.colors.muted, top: Boolean =
     Text(text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = color, modifier = Modifier.padding(start = 6.dp, top = if (top) 16.dp else 4.dp))
 }
 
-/** Rows on one rounded surface, divided by hairlines. */
+/** Rows under a section label: space groups them, no box or hairlines. */
 @Composable
 fun <T> Grouped(items: List<T>, row: @Composable (T) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Bench.colors.surface1, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp))) {
-        items.forEachIndexed { i, it ->
-            androidx.compose.runtime.key(it) { row(it) }
-            if (i < items.size - 1) HorizontalDivider(color = Bench.colors.line.copy(alpha = 0.5f), modifier = Modifier.padding(start = 50.dp))
-        }
+    Column(Modifier.fillMaxWidth()) {
+        items.forEach { androidx.compose.runtime.key(it) { row(it) } }
     }
 }
 
@@ -124,28 +122,60 @@ fun <T> Grouped(items: List<T>, row: @Composable (T) -> Unit) {
 @Composable
 fun BigDot(status: String) {
     val c = Bench.colors
-    val color = when (status) { "running" -> c.accent; "waiting" -> c.warn; "error" -> c.bad; "done" -> c.good; else -> c.dotIdle.copy(alpha = 0.45f) }
+    val color = when (status) { "running" -> c.accent; "waiting" -> c.warn; "error" -> c.bad; else -> null }
     Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-        if (status == "running") Box(Modifier.size(18.dp).background(color.copy(alpha = 0.2f), CircleShape))
-        Box(Modifier.size(10.dp).background(color, CircleShape))
+        if (color != null) {
+            if (status == "running") Box(Modifier.size(18.dp).background(color.copy(alpha = 0.2f), CircleShape))
+            Box(Modifier.size(10.dp).background(color, CircleShape))
+        }
     }
 }
 
 @Composable
 fun ListRow(title: String, sub: String?, dot: String, trailing: String? = null, trailingColor: Color = Bench.colors.muted, id: String? = null, selected: Boolean = false, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp)
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(14.dp))
             .background(if (selected) Bench.colors.accent.copy(alpha = 0.12f) else Color.Transparent)
-            .clickable(onClick = onClick).padding(horizontal = Space.lg),
+            .clickable(onClick = onClick).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         BigDot(dot)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedTitle(id))
-            sub?.let { Text(it, fontSize = 12.5.sp, color = Bench.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Text(title, fontSize = 15.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedTitle(id))
+            sub?.let { Text(it, fontSize = 13.sp, color = Bench.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
-        trailing?.let { Text(it, fontSize = 12.sp, color = trailingColor) }
+        trailing?.let { Text(it, fontSize = 12.5.sp, color = trailingColor) }
+    }
+}
+
+/**
+ * A Home row: title, then what it is doing now (Tactic Remote's session-first home), no dot.
+ * The state is in the words: the live step in the accent while working, the error in red.
+ */
+@Composable
+private fun HomeRow(title: String, state: String?, stateColor: Color, where: String, trailing: String?, id: String, selected: Boolean, onClick: () -> Unit) {
+    val c = Bench.colors
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(if (selected) c.accent.copy(alpha = 0.12f) else Color.Transparent)
+            .clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).sharedTitle(id))
+            trailing?.let { Text(it, fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 12.dp)) }
+        }
+        Text(
+            androidx.compose.ui.text.buildAnnotatedString {
+                if (state != null) {
+                    pushStyle(androidx.compose.ui.text.SpanStyle(color = stateColor)); append(state); pop()
+                    if (where.isNotEmpty()) append(" · ")
+                }
+                append(where)
+            },
+            fontSize = 13.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -188,6 +218,14 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
 
     val needs = s.approvals.map { it.session_id }.toSet()
     val working = s.sessions.filter { it.status == "running" && it.archived_at == null }.sortedByDescending { it.updated_at }
+    val steps by store.steps.collectAsState()
+    var filter by rememberSaveable { mutableStateOf("all") }
+    // Watch what is working, so each row can say what it is doing now.
+    val workingIds = working.map { it.id }
+    DisposableEffect(workingIds) {
+        workingIds.forEach { store.watch(it) }
+        onDispose { workingIds.forEach { store.unwatch(it) } }
+    }
     val rest = s.sessions.filter { it.status != "running" && it.archived_at == null && it.id !in needs }
         .sortedByDescending { it.updated_at }.take(30)
     val byDay = rest.groupBy { dayOf(it.updated_at) }
@@ -207,6 +245,12 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                     }
                 }
                 ConnectionBanner(s.connected, s.dropped, s.error)
+                // Filter by state, as GitHub Mobile's agent list does.
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 2.dp), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    FilterChip("All", filter == "all") { filter = "all" }
+                    if (s.approvals.isNotEmpty() || filter == "needs") FilterChip("Needs you ${s.approvals.size}", filter == "needs") { filter = "needs" }
+                    if (working.isNotEmpty() || filter == "working") FilterChip("Working ${working.size}", filter == "working") { filter = "working" }
+                }
             }
         },
         floatingActionButton = {
@@ -231,7 +275,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                     Text(if (shared.isEmpty()) "Choose a session to send what you shared to" else "Choose a session to attach ${shared.size} shared file${if (shared.size == 1) "" else "s"} to", color = c.info, fontSize = 14.sp,
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp).background(c.info.copy(alpha = 0.10f), RoundedCornerShape(18.dp)).padding(16.dp))
                 }
-                if (s.approvals.isNotEmpty()) {
+                if (s.approvals.isNotEmpty() && filter != "working") {
                     item("needs") { Label("Needs you", c.warn, "${s.approvals.size}") }
                     items(s.approvals, key = { "a-${it.id}" }) { a ->
                         val session = s.sessions.firstOrNull { it.id == a.session_id }
@@ -253,11 +297,13 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                         )
                     }
                 }
-                if (working.isNotEmpty()) {
+                if (working.isNotEmpty() && filter != "needs") {
                     item("working") { Label("Working", c.muted, "${working.size}") }
-                    item("working-list") { Grouped(working) { w -> ListRow(w.title, where(w, store, "Working · ${Format.ago(w.updated_at)}"), "running", id = w.id, selected = w.id == selected) { onOpen(w.id) } } }
+                    item("working-list") { Grouped(working) { w ->
+                        HomeRow(w.title, steps[w.id] ?: "Working", c.accent, where(w, store, null), Format.ago(w.updated_at), w.id, w.id == selected) { onOpen(w.id) }
+                    } }
                 }
-                byDay.forEach { (day, list) ->
+                if (filter == "all") byDay.forEach { (day, list) ->
                     item("day-$day") { Label(day) }
                     item("list-$day") { Grouped(list) { r ->
                         SwipeToArchive(onArchive = {
@@ -267,7 +313,14 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                                 if (undo == androidx.compose.material3.SnackbarResult.ActionPerformed) runCatching { store.api.archive(r.id, false) }
                                 store.refresh()
                             }
-                        }) { ListRow(r.title, where(r, store, null), r.status, Format.ago(r.updated_at), id = r.id, selected = r.id == selected) { onOpen(r.id) } }
+                        }) {
+                            val (state, tone) = when {
+                                r.status == "error" -> "Error" to c.bad
+                                r.pause != null -> "Paused" to c.warn
+                                else -> null to c.muted
+                            }
+                            HomeRow(r.title, state, tone, where(r, store, null), Format.ago(r.updated_at), r.id, r.id == selected) { onOpen(r.id) }
+                        }
                     } }
                 }
                 if (!s.ready && s.sessions.isEmpty()) item("skeleton") { ListSkeleton() }
@@ -277,6 +330,16 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             }
         }
     }
+}
+
+@Composable
+private fun FilterChip(text: String, on: Boolean, onClick: () -> Unit) {
+    val c = Bench.colors
+    Text(
+        text, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (on) c.bg else c.muted,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) c.text else c.surface1).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }
 
 /** A section label: more space above than below, so it belongs to what follows. */

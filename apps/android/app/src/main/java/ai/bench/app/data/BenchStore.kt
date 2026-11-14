@@ -44,6 +44,19 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     private val _session = MutableSharedFlow<ServerMessage>(extraBufferCapacity = 256)
     val sessionTraffic: SharedFlow<ServerMessage> = _session.asSharedFlow()
 
+    /** Each watched session's latest step in plain words ("Running tests"), for Home's rows. */
+    private val _steps = MutableStateFlow<Map<String, String>>(emptyMap())
+    val steps: StateFlow<Map<String, String>> = _steps.asStateFlow()
+
+    private fun noteStep(e: SessionEvent) {
+        if (e.kind != "assistant") return
+        val d = e.data
+        val use = d["content"].arr().orEmpty().lastOrNull { it["type"].str() == "tool_use" } ?: return
+        val cwd = _state.value.sessions.firstOrNull { it.id == e.session_id }?.cwd.orEmpty()
+        val label = Transcript.plain(use["name"].str() ?: "", use["input"].obj() ?: kotlinx.serialization.json.JsonObject(emptyMap()), cwd)
+        _steps.update { it + (e.session_id to label) }
+    }
+
     /** Fires when the socket comes back, so open panes read what they missed. */
     private val _reconnected = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val reconnected: SharedFlow<Unit> = _reconnected.asSharedFlow()
@@ -193,7 +206,8 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
                 _state.update { it.copy(approvals = it.approvals.filterNot { a -> a.id == m.id }) }
                 _session.tryEmit(m)
             }
-            is ServerMessage.Event, is ServerMessage.Delta, is ServerMessage.Suggestion, is ServerMessage.Commands -> _session.tryEmit(m)
+            is ServerMessage.Event -> { noteStep(m.event); _session.tryEmit(m) }
+            is ServerMessage.Delta, is ServerMessage.Suggestion, is ServerMessage.Commands -> _session.tryEmit(m)
             is ServerMessage.Git, ServerMessage.Pong -> Unit
         }
     }

@@ -184,6 +184,27 @@ object Transcript {
         }
     }
 
+    /**
+     * What a call is doing, in plain words for a status line: "Running tests" (the command's
+     * own description when Claude gave one), "Editing retry.ts", "Searching for busy".
+     */
+    fun plain(name: String, i: JsonObject, cwd: String): String {
+        fun file(k: String = "file_path") = rel(i[k].str(), cwd).substringAfterLast('/')
+        return when (name) {
+            "Bash" -> i["description"].str()?.takeIf { it.isNotBlank() } ?: "Running a command"
+            "Edit", "MultiEdit" -> "Editing ${file()}"
+            "Write" -> "Writing ${file()}"
+            "Read" -> "Reading ${file()}"
+            "Glob" -> "Finding files"
+            "Grep" -> "Searching for ${i["pattern"].str().orEmpty().take(40)}"
+            "TodoWrite" -> "Updating the plan"
+            "Task", "Agent" -> "Running a subagent"
+            "WebFetch" -> "Reading a web page"
+            "WebSearch" -> "Searching the web"
+            else -> "Working"
+        }
+    }
+
     /** "6 steps · 3 commands · 2 edits · 1 error" for a folded run. */
     fun summary(all: List<ToolCall>): String {
         val calls = all.filter { it.name != "Thinking" }
