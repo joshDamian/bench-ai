@@ -1,0 +1,201 @@
+#!/bin/sh
+# Installs bench-go, the Go Bench server, beside the Node one, for a test drive.
+#
+#   sh server-go/install [--service] [--recopy] [--fresh] [--shared]
+#
+# It never touches the Node server or its data:
+#   - Its own release in ~/.local/share/bench-go/releases, its own command
+#     (~/.local/bin/bench-go) and, with --service, its own systemd unit (bench-go.service).
+#   - Its own data folder, ~/.bench-go, made the first time as a copy of the Node
+#     server's (~/.bench): a consistent snapshot of the database, taken while the Node
+#     server runs, plus the keys file, notes and attachments. --recopy replaces that copy
+#     with a fresh one; --fresh starts from an empty data folder instead.
+#   - Its own port, 4318.
+#
+# Project folders and task worktrees are NOT copied: both databases name the same folders
+# on disk. Don't drive the same task from both servers at once, and remember that merging
+# a task in bench-go merges it in the real repository.
+#
+# Overrides: BENCH_DATA_DIR (bench-go's data, default ~/.bench-go), BENCH_LIVE_DATA (the
+# Node server's, default ~/.bench), BENCH_GO_PORT (default 4318), BENCH_GO_HOME (default
+# ~/.local/share/bench-go).
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+GO_HOME="${BENCH_GO_HOME:-$HOME/.local/share/bench-go}"
+DATA="${BENCH_DATA_DIR:-$HOME/.bench-go}"
+LIVE="${BENCH_LIVE_DATA:-$HOME/.bench}"
+PORT="${BENCH_GO_PORT:-4318}"
+# --shared: bench-go uses the Node server's own data folder and port, and the two take turns
+# (server-go/switch). Same database, same address, so the apps need no change.
+SHARED=0
+[ -f "$HOME/.config/systemd/user/bench-go.shared" ] && SHARED=1
+BIN_DIR="$HOME/.local/bin"
+SERVICE=0
+RECOPY=0
+FRESH=0
+for arg in "$@"; do
+  case "$arg" in
+    --service) SERVICE=1 ;;
+    --recopy) RECOPY=1 ;;
+    --fresh) FRESH=1 ;;
+    --shared) SHARED=1; SERVICE=1 ;;
+    *) printf '%s\n' "install: unknown option: $arg" "usage: sh server-go/install [--service] [--recopy] [--fresh] [--shared]" >&2; exit 2 ;;
+  esac
+done
+
+say() { for l in "$@"; do printf '%s\n' "$l"; done; }
+
+# -- Go, and a C compiler for SQLite --------------------------------------------------------
+GO_WANT=1.24.7
+find_go() {
+  for g in "$(command -v go 2>/dev/null || true)" /usr/local/go/bin/go "$GO_HOME/toolchain/go/bin/go"; do
+    [ -n "$g" ] && [ -x "$g" ] || continue
+    v="$("$g" env GOVERSION 2>/dev/null | sed 's/^go//')"
+    major="$(printf '%s' "$v" | cut -d. -f1)"; minor="$(printf '%s' "$v" | cut -d. -f2)"
+    if [ "${major:-0}" -gt 1 ] || { [ "${major:-0}" -eq 1 ] && [ "${minor:-0}" -ge 24 ]; }; then printf '%s' "$g"; return 0; fi
+  done
+  return 1
+}
+GO="$(find_go || true)"
+if [ -z "$GO" ]; then
+  case "$(uname -m)" in x86_64|amd64) ARCH=amd64 ;; aarch64|arm64) ARCH=arm64 ;; *) say "install: no Go toolchain, and no download for $(uname -m); install Go $GO_WANT or newer" >&2; exit 1 ;; esac
+  OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  say "Downloading Go $GO_WANT into $GO_HOME/toolchain (only bench-go uses it)…"
+  mkdir -p "$GO_HOME/toolchain"
+  curl -fsSL "https://go.dev/dl/go$GO_WANT.$OS-$ARCH.tar.gz" | tar -xz -C "$GO_HOME/toolchain"
+  GO="$GO_HOME/toolchain/go/bin/go"
+fi
+command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || { say "install: a C compiler is needed for SQLite: sudo apt install build-essential" >&2; exit 1; }
+
+# -- the release ------------------------------------------------------------------------------
+RELEASE="$GO_HOME/releases/$(date +%Y%m%d%H%M%S)"
+mkdir -p "$RELEASE" "$BIN_DIR"
+( cd "$ROOT" && tar --exclude='./.bench' --exclude='./.ai-code' --exclude='./node_modules' --exclude='./.git' --exclude='./server-go/bin' -cf - . ) | ( cd "$RELEASE" && tar -xf - )
+# The web app's libraries and the Claude Code binary: installed with npm when there is one,
+# else taken from what the Node server already has - its newest release, or the checkout.
+NODE_RELEASES="${BENCH_RELEASE_DIR:-$HOME/.local/share/bench/releases}"
+FROM_MODULES=""
+for d in $(ls -1d "$NODE_RELEASES"/*/node_modules 2>/dev/null | sort -r) "$ROOT/node_modules"; do
+  [ -d "$d/@anthropic-ai/claude-agent-sdk" ] && { FROM_MODULES="$d"; break; }
+done
+if command -v npm >/dev/null 2>&1; then
+  say "Installing the web app's libraries…"
+  ( cd "$RELEASE" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error )
+elif [ -n "$FROM_MODULES" ]; then
+  say "No npm on this PATH; using the libraries from $FROM_MODULES"
+  cp -a "$FROM_MODULES" "$RELEASE/node_modules"
+else
+  say "install: no npm on this PATH, and no installed Bench release or checkout node_modules to take the libraries from." \
+      "Run \`npm ci\` in $ROOT first, or put npm on PATH (with nvm: \`nvm use\`)." >&2
+  exit 1
+fi
+COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+DIRTY=false
+[ -n "$COMMIT" ] && [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ] && DIRTY=true
+say "Building bench-go with $("$GO" env GOVERSION)…"
+( cd "$ROOT/server-go" && CGO_ENABLED=1 "$GO" build -trimpath -ldflags "-s -w -X main.commit=${COMMIT:-dev}" -o "$RELEASE/bench-go" ./cmd/bench-go )
+printf '{\n  "source": "%s",\n  "commit": %s,\n  "dirty": %s,\n  "installedAt": "%s",\n  "server": "go"\n}\n' \
+  "$ROOT" "$( [ -n "$COMMIT" ] && printf '"%s"' "$COMMIT" || printf null )" "$DIRTY" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RELEASE/.bench-release.json"
+
+# -- the data -----------------------------------------------------------------------------------
+if [ "$SHARED" -eq 1 ]; then
+  DATA="$LIVE"
+  NODE_PORT="$(sed -n 's/^Environment="PORT=\(.*\)"$/\1/p' "$HOME/.config/systemd/user/bench.service" 2>/dev/null | head -1)"
+  PORT="${BENCH_GO_PORT:-${NODE_PORT:-4317}}"
+  # A snapshot first, the first time only: both servers write to this database from now on.
+  if [ ! -f "$HOME/.config/systemd/user/bench-go.shared" ] && [ -f "$LIVE/.bench/bench.db" ]; then
+    BACKUP="$LIVE.backup-$(date +%Y%m%d%H%M%S)"
+    "$RELEASE/bench-go" copy-data --from "$LIVE" --to "$BACKUP" >/dev/null
+    say "Backup: $BACKUP (a snapshot of the shared data, before bench-go touched it)"
+  fi
+  say "Data: $DATA (shared with the Node server; they take turns)"
+elif [ "$FRESH" -eq 1 ]; then
+  mkdir -p "$DATA"
+  say "Data: $DATA (fresh)"
+elif [ "$RECOPY" -eq 1 ] || [ ! -f "$DATA/.bench/bench.db" ]; then
+  if [ -f "$LIVE/.bench/bench.db" ]; then
+    [ "$RECOPY" -eq 1 ] && systemctl --user stop bench-go.service 2>/dev/null || true
+    "$RELEASE/bench-go" copy-data --from "$LIVE" --to "$DATA" --force
+  else
+    say "No Node data at $LIVE; starting bench-go with an empty data folder."
+    mkdir -p "$DATA"
+  fi
+else
+  say "Data: $DATA (kept; --recopy takes a fresh copy of $LIVE)"
+fi
+
+# The PATH sessions get. A shell without nvm loaded has no node or npm on it, and every
+# session would inherit that; the Node server's own unit has the PATH it was installed
+# with, so that one is used, with the newest nvm node added if node is still missing.
+SERVICE_PATH="$PATH"
+NODE_UNIT="$HOME/.config/systemd/user/bench.service"
+if [ -f "$NODE_UNIT" ]; then
+  P="$(sed -n 's/^Environment="PATH=\(.*\)"$/\1/p' "$NODE_UNIT" | head -1)"
+  [ -n "$P" ] && SERVICE_PATH="$P"
+fi
+if ! PATH="$SERVICE_PATH" command -v node >/dev/null 2>&1; then
+  NVM_BIN="$(ls -1d "${NVM_DIR:-$HOME/.nvm}"/versions/node/*/bin 2>/dev/null | sort -V | tail -1)"
+  [ -n "$NVM_BIN" ] && SERVICE_PATH="$NVM_BIN:$SERVICE_PATH"
+fi
+PATH="$SERVICE_PATH" command -v node >/dev/null 2>&1 || say "Note: no node on the sessions' PATH ($SERVICE_PATH); Claude's shell commands won't find node or npm."
+
+# -- the command and the service -------------------------------------------------------------
+cat > "$BIN_DIR/bench-go" <<EOF
+#!/bin/sh
+export BENCH_ROOT="\${BENCH_ROOT:-$DATA}"
+export PORT="\${PORT:-$PORT}"
+export BENCH_APP_ROOT="$RELEASE"
+exec "$RELEASE/bench-go" "\$@"
+EOF
+chmod +x "$BIN_DIR/bench-go"
+
+if [ "$SERVICE" -eq 1 ]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    UNIT="$HOME/.config/systemd/user/bench-go.service"
+    mkdir -p "$(dirname "$UNIT")"
+    cat > "$UNIT" <<EOF
+[Unit]
+Description=Bench (Go server, test drive)
+After=network.target
+
+[Service]
+ExecStart=$RELEASE/bench-go serve
+Restart=on-failure
+Environment="BENCH_ROOT=$DATA"
+Environment="PORT=$PORT"
+Environment="BENCH_APP_ROOT=$RELEASE"
+Environment="BENCH_SERVICE=systemd"
+Environment="PATH=$SERVICE_PATH"
+
+[Install]
+WantedBy=default.target
+EOF
+    systemctl --user daemon-reload
+    if [ "$SHARED" -eq 1 ]; then
+      touch "$HOME/.config/systemd/user/bench-go.shared"
+      # Only one server may run on the shared data: switch stops Node and starts Go.
+      sh "$(dirname "$0")/switch" go
+    else
+      systemctl --user enable --now bench-go.service
+      systemctl --user restart bench-go.service
+      say "Service: bench-go.service (systemctl --user status bench-go)"
+    fi
+  else
+    say "No systemd here: run it with \`bench-go serve\`."
+  fi
+fi
+
+# Keep the newest three releases, and any a running service still points at.
+IN_USE="$(grep -o "$GO_HOME/releases/[0-9]*" "$HOME/.config/systemd/user/bench-go.service" 2>/dev/null || true)"
+for old in $(ls -1 "$GO_HOME/releases" | grep -E '^[0-9]{14}$' | sort -r | tail -n +4); do
+  case "$IN_USE" in *"$old"*) continue ;; esac
+  rm -rf "$GO_HOME/releases/$old"
+done
+
+say "" "Installed: $RELEASE" "Command:   $BIN_DIR/bench-go serve" "Data:      $DATA" "Address:   http://127.0.0.1:$PORT"
+if [ "$SHARED" -eq 1 ]; then
+  say "" "Same port as the Node server, so the apps keep working as they are." "Back to Node: sh server-go/switch node   ·   which is on: sh server-go/switch status"
+else
+  say "" "To reach it from your phone or Mac over Tailscale, on its own port:" "  tailscale serve --bg --https=8444 http://127.0.0.1:$PORT" "then add https://<this machine>.<tailnet>.ts.net:8444 as a server in the app."
+fi

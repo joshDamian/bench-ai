@@ -1,0 +1,30 @@
+#!/bin/sh
+# Takes turns between the Node server (bench.service) and bench-go (bench-go.service) on the
+# shared data folder that `sh server-go/install --shared` set up. Only one ever runs: the
+# other is stopped first, and the one switched to is the one that starts at login.
+#
+#   sh server-go/switch go | node | status
+set -eu
+U="$HOME/.config/systemd/user"
+on() { systemctl --user is-active --quiet "$1" 2>/dev/null; }
+
+case "${1:-status}" in
+  go|node)
+    [ -f "$U/bench-go.shared" ] || { echo "switch: run sh server-go/install --shared first (bench-go isn't on the shared data yet)" >&2; exit 1; }
+    if [ "$1" = go ]; then to=bench-go.service; from=bench.service; else to=bench.service; from=bench-go.service; fi
+    systemctl --user disable --now "$from" 2>/dev/null || true
+    # Wait until it has really let go of the database and the port.
+    i=0; while on "$from" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done
+    on "$from" && { echo "switch: $from didn't stop; leaving it as it is" >&2; exit 1; }
+    systemctl --user enable --now "$to"
+    echo "Now on: $1 ($to). Running sessions pick up again on their own."
+    ;;
+  status)
+    if on bench-go.service; then echo "go (bench-go.service)"
+    elif on bench.service; then echo "node (bench.service)"
+    else echo "neither is running"; fi
+    on bench-go.service && on bench.service && echo "warning: both are running" >&2
+    exit 0
+    ;;
+  *) echo "usage: sh server-go/switch go | node | status" >&2; exit 2 ;;
+esac

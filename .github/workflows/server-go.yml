@@ -1,0 +1,47 @@
+name: Go server
+
+# Builds bench-go, runs its tests, and runs the conformance scenario against both servers
+# on the fake Claude CLI. Runs when the Go server changes, or anything it must match.
+on:
+  push:
+    branches: [main]
+    paths: ['server-go/**', 'src/**', 'package.json', 'package-lock.json', '.github/workflows/server-go.yml']
+  pull_request:
+    paths: ['server-go/**', 'src/**', 'package.json', 'package-lock.json', '.github/workflows/server-go.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: server-go-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server-go/go.mod
+          cache-dependency-path: server-go/go.sum
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Build
+        working-directory: server-go
+        run: go vet ./... && go build -o bin/bench-go ./cmd/bench-go
+      - name: Test
+        working-directory: server-go
+        run: go test ./...
+      - name: Conformance
+        run: |
+          git config --global user.email ci@bench
+          git config --global user.name CI
+          node server-go/conformance/run.mjs
+      - name: Benchmark (short)
+        run: node server-go/benchmark/run.mjs --duration=2 --sessions=6 --events=12 --out=benchmark.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: benchmark.*
