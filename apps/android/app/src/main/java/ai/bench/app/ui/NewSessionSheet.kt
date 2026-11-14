@@ -209,7 +209,7 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
                             else -> askMic.launch(android.Manifest.permission.RECORD_AUDIO)
                         }
                     }) { androidx.compose.material3.Icon(Icons.Default.Mic, if (live.listening) "Stop dictating" else "Dictate", tint = if (live.listening) c.accent else c.muted) }
-                    val canStart = !busy && (!research || projectId != null) && (projectId == null || where == "checkout" || prompt.isNotBlank() || picked.isNotEmpty())
+                    val canStart = !busy && (!research || (projectId != null && prompt.isNotBlank())) && (projectId == null || where == "checkout" || prompt.isNotBlank() || picked.isNotEmpty())
                     androidx.compose.material3.FilledIconButton(
                         enabled = canStart,
                         modifier = Modifier.size(52.dp),
