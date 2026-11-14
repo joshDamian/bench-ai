@@ -69,6 +69,8 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
     val settings = BenchApp.instance.settings
     val theme by settings.theme.collectAsState("system")
     val scope = rememberCoroutineScope()
+    var about by remember { mutableStateOf<ai.bench.app.data.About?>(null) }
+    LaunchedEffect(Unit) { about = runCatching { store.api.about() }.getOrNull() }
     var providers by remember { mutableStateOf<List<ProviderInfo>>(emptyList()) }
     var defaults by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
     var page by remember { mutableStateOf<String?>(null) }
@@ -107,6 +109,8 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
 
     Scaffold(containerColor = c.bg, topBar = { TabTitle("Settings") }) { pad ->
         androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp)) {
+            section("You")
+            item("about") { Card { NavRow("About me", null, aboutSummary(about)) { onOpen("about") } } }
             section("Server")
             item {
                 Card {

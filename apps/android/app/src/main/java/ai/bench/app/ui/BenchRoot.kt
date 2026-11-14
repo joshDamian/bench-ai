@@ -118,7 +118,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
     if (wide) {
         Box(Modifier.width(380.dp).fillMaxHeight()) {
-            HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
+            HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onAbout = { nav.navigate("about") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
         }
         androidx.compose.material3.VerticalDivider(color = Bench.colors.line)
     }
@@ -134,13 +134,15 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         ) {
             composable("home") {
                 if (wide) EmptyDetail() else androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
-                    HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") })
+                    HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onAbout = { nav.navigate("about") })
                 }
             }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }, onAsk = { nav.navigate("ask") }) }
             composable("ask") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }, askOnly = true) }
             composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
+            composable("about") { AboutScreen(store, onBack = { nav.popBackStack() }, onOpen = open, onRules = { nav.navigate("rules") }) }
+            composable("rules") { RulesScreen(store, onBack = { nav.popBackStack() }) }
             composable("schedules") { SchedulesScreen(store, onBack = { nav.popBackStack() }, onEdit = { nav.navigate("schedule/${it ?: "new"}") }) }
             composable("schedule/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { e ->
                 val id = e.arguments?.getString("id")?.takeIf { it != "new" }

@@ -66,6 +66,8 @@ class BenchApi(val config: ServerConfig) {
     suspend fun get(path: String) = call(request(path).get().build())
     suspend fun post(path: String, body: JsonElement = JsonObject(emptyMap())) =
         call(request(path).post(body.toString().toRequestBody(jsonType)).build())
+    suspend fun put(path: String, body: JsonElement) =
+        call(request(path).put(body.toString().toRequestBody(jsonType)).build())
     suspend fun patch(path: String, body: JsonElement) =
         call(request(path).patch(body.toString().toRequestBody(jsonType)).build())
     suspend fun seen(id: String) = runCatching { post("/api/sessions/${enc(id)}/seen") }
@@ -80,6 +82,16 @@ class BenchApi(val config: ServerConfig) {
     suspend fun deleteSchedule(id: String) = delete("/api/schedules/${enc(id)}")
     suspend fun runSchedule(id: String): Session = post("/api/schedules/${enc(id)}/run").decode()
     suspend fun research(): Project = post("/api/research").decode()
+    suspend fun about(): About = get("/api/about").decode()
+    suspend fun saveAbout(text: String? = null, include: Boolean? = null): About = put("/api/about", buildJsonObject {
+        text?.let { put("text", it) }; include?.let { put("include", it) }
+    }).decode()
+    suspend fun aboutDraft(action: String): About = post("/api/about/draft", buildJsonObject { put("action", action) }).decode()
+    suspend fun aboutUndo(): About = post("/api/about/undo").decode()
+    /** A session that turns a CV into a draft: attach the CV to it and send the prompt. */
+    suspend fun aboutFromCv(): Pair<Session, String> = post("/api/about/from-cv").let { r -> r["session"].decode<Session>() to (r["prompt"].str() ?: "") }
+    suspend fun rules(): List<Rule> = get("/api/rules").lossy()
+    suspend fun setRule(key: String, value: String): List<Rule> = put("/api/rules", buildJsonObject { put("key", key); put("value", value) }).lossy()
     suspend fun delete(path: String) = call(request(path).delete().build())
 
     /** A shape this client cannot read is a BenchError the screen shows, never a crash. */

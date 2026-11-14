@@ -105,6 +105,24 @@ data class Report(
     val unsent: Int? = null,
 )
 
+/** Who the person is, read by every session (GET /api/about). */
+@Serializable
+data class About(
+    val text: String? = null,
+    /** A draft made from a CV, used only once saved. */
+    val draft: String? = null,
+    val include: Boolean = false,
+    val path: String = "",
+    val changed_by: ChangedBy? = null,
+) {
+    @Serializable
+    data class ChangedBy(val session_id: String, val title: String? = null)
+}
+
+/** One rule: what Bench may do, asks about, or never does (GET /api/rules). value: allow, ask or never. */
+@Serializable
+data class Rule(val key: String, val label: String, val value: String)
+
 /** A session that starts on its own (GET /api/schedules). days: 0 Sunday .. 6 Saturday. */
 @Serializable
 data class Schedule(

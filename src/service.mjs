@@ -1139,6 +1139,49 @@ export class Service extends EventEmitter {
     return this.addProject({ path: dir, name: 'Research', init: true });
   }
 
+  // -- About me and the rules -------------------------------------------------------
+
+  about() {
+    return this.runtime.about.get((/** @type {string} */ id) => this.store.getSession(id));
+  }
+
+  /** @param {{text?: unknown, include?: unknown}} o */
+  saveAbout(o) {
+    if (o.text !== undefined) {
+      if (typeof o.text !== 'string') throw fail('About me is text');
+      this.runtime.about.write(o.text);
+    }
+    if (o.include !== undefined) this.runtime.about.include(!!o.include);
+    return this.about();
+  }
+
+  /** @param {unknown} action */
+  aboutDraft(action) {
+    this.runtime.about.draft(action);
+    return this.about();
+  }
+
+  aboutUndo() {
+    this.runtime.about.undo();
+    return this.about();
+  }
+
+  /** A session in Research that turns a CV into a draft; the app attaches the CV and sends the prompt. */
+  aboutFromCv() {
+    const project = this.research();
+    const session = this.createSession({ projectId: project.id, title: 'About me from your CV', mode: 'acceptEdits' });
+    return { session, prompt: this.runtime.about.cvPrompt() };
+  }
+
+  rules() {
+    return this.runtime.rules.list();
+  }
+
+  /** @param {unknown} key @param {unknown} value */
+  setRule(key, value) {
+    return this.runtime.rules.set(key, value);
+  }
+
   shutdown() {
     this.scheduler.stop();
     this.resumer.shutdown();

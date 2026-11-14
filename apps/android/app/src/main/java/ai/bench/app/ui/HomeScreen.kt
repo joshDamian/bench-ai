@@ -213,7 +213,7 @@ private fun dayOf(iso: String): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit, selected: String? = null, onSchedules: () -> Unit = {}) {
+fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit, selected: String? = null, onSchedules: () -> Unit = {}, onAbout: () -> Unit = {}) {
     val s by store.state.collectAsState()
     val reports by store.reports.collectAsState()
     val schedules by store.schedules.collectAsState()
@@ -425,7 +425,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     opened?.let { r ->
         // Opening what a session made counts as looking at that session.
         LaunchedEffect(r.path) { store.markSeen(r.session_id) }
-        if (r.kind == "drafts") ai.bench.app.ui.session.DraftsScreen(store, r) { opened = null }
+        if (r.kind == "drafts") ai.bench.app.ui.session.DraftsScreen(store, r, onAbout = { opened = null; onAbout() }) { opened = null }
         else {
             val files = remember(r.session_id) { ai.bench.app.ui.session.SessionFiles(store.api, r.session_id) }
             ai.bench.app.ui.session.FileViewer(files, ai.bench.app.ui.session.FileInfo(r.path, r.path, r.name, if (r.kind == "page") "text/html" else "text/markdown", r.size, true, "text", true)) { opened = null }

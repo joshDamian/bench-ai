@@ -54,6 +54,8 @@ import ai.bench.app.ui.theme.Bench
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
+private val BLANK = Regex("\\[[^\\]\\n]{2,40}\\]")
+
 @Serializable
 data class Draft(val to: String = "", val subject: String = "", val body: String = "", val why: String? = null, val sent_at: String? = null)
 
@@ -65,12 +67,12 @@ private data class DraftsFile(val title: String = "", val drafts: List<Draft> = 
  * person's own email app, filled in, and they mark it sent when it is gone.
  */
 @Composable
-fun DraftsScreen(store: BenchStore, report: Report, onDismiss: () -> Unit) =
-    DraftsScreen(store.api, report.session_id, report.path, report.name, report.title, report.size, { store.loadExtras() }, onDismiss)
+fun DraftsScreen(store: BenchStore, report: Report, onAbout: (() -> Unit)? = null, onDismiss: () -> Unit) =
+    DraftsScreen(store.api, report.session_id, report.path, report.name, report.title, report.size, { store.loadExtras() }, onAbout, onDismiss)
 
 /** The same, from a file a session named (its card in the conversation). */
 @Composable
-fun DraftsScreen(api: ai.bench.app.data.BenchApi, sessionId: String, path: String, name: String, title: String, size: Long, onChanged: () -> Unit, onDismiss: () -> Unit) {
+fun DraftsScreen(api: ai.bench.app.data.BenchApi, sessionId: String, path: String, name: String, title: String, size: Long, onChanged: () -> Unit, onAbout: (() -> Unit)? = null, onDismiss: () -> Unit) {
     val c = Bench.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -78,6 +80,8 @@ fun DraftsScreen(api: ai.bench.app.data.BenchApi, sessionId: String, path: Strin
     var file by remember(path) { mutableStateOf<DraftsFile?>(null) }
     var failed by remember(path) { mutableStateOf(false) }
     var open by remember(path) { mutableStateOf(-1) }
+    var noAbout by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { noAbout = runCatching { api.about().text == null }.getOrDefault(false) }
     LaunchedEffect(path) {
         val b = files.bytes(FileInfo(path, path, name, "application/json", size, true, "text", true))
         file = b?.let { runCatching { BenchJson.decodeFromString(DraftsFile.serializer(), it.decodeToString()) }.getOrNull() }
@@ -117,6 +121,16 @@ fun DraftsScreen(api: ai.bench.app.data.BenchApi, sessionId: String, path: Strin
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    // Drafts with blanks for the person's own details: About me fills those in.
+                    if (noAbout && onAbout != null && f.drafts.any { it.sent_at == null && BLANK.containsMatchIn(it.body) }) item("about") {
+                        Column(
+                            Modifier.widthIn(max = 680.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surface1).padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text("These drafts have blanks for your own details. With About me set up, Bench fills those in.", fontSize = 15.sp, lineHeight = 21.sp)
+                            BigButton("Set up About me", height = 40.dp, fill = false, onClick = onAbout)
+                        }
+                    }
                     itemsIndexed(f.drafts) { i, d ->
                         DraftCard(d, expanded = open == i, onToggle = { open = if (open == i) -1 else i },
                             onOpenMail = { openInMail(context, d) },

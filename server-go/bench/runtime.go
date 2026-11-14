@@ -243,6 +243,8 @@ type Runtime struct {
 	probes       map[string]*probe
 	tmpBefore    map[string]map[string]bool
 	notes        *Notes
+	rules        *Rules
+	about        *About
 	stop         chan struct{}
 }
 
@@ -776,6 +778,8 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		add(scratchNote(scratch))
 		add(attach)
 		add(ReportsNote(ReportsDir(r.AttachmentsDir(id))))
+		add(r.About().Note())
+		add(r.Rules().Note())
 		add(r.Notes().Brief(pp))
 		if routed != nil {
 			add(RoutingNote)
@@ -847,7 +851,7 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		o.Hooks = append(o.Hooks, HookSpec{Event: "Stop", Timeout: int(CheckTimeout.Seconds()) + 60, Fn: func(ctx context.Context, in *Obj) *Obj { return r.onStop(ctx, id, in) }})
 	}
 	o.Hooks = append(o.Hooks,
-		HookSpec{Event: "PreToolUse", Fn: func(ctx context.Context, in *Obj) *Obj { return r.beforeTool(in) }},
+		HookSpec{Event: "PreToolUse", Fn: func(ctx context.Context, in *Obj) *Obj { return r.beforeTool(id, in) }},
 		HookSpec{Event: "PostToolUse", Fn: func(ctx context.Context, in *Obj) *Obj { return r.afterTool(id, in) }},
 		HookSpec{Event: "PostToolUseFailure", Fn: func(ctx context.Context, in *Obj) *Obj { return r.afterTool(id, in) }},
 	)
@@ -1393,7 +1397,16 @@ func (r *Runtime) SetModel(id string, providerID string, modelID any, hasModel b
 	return r.update(id, patch), nil
 }
 
-func (r *Runtime) beforeTool(in *Obj) *Obj {
+func (r *Runtime) beforeTool(sid string, in *Obj) *Obj {
+	// The person's Never list: stopped here, before the tool runs, in every permission mode.
+	if never := r.Rules().Blocks(in.Str("tool_name"), in.ObjAt("tool_input")); never != nil {
+		label := strings.ToLower(never.Label)
+		r.Notice(sid, "Stopped before it could "+label+": that is on your Never list.")
+		return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "deny", "permissionDecisionReason", "Blocked by the person's Never list: "+label+". Do not try another way. Prepare it for the person to finish instead (an email as a drafts file in the reports folder)."))
+	}
+	if r.About().Touches(in.Str("tool_name"), in.ObjAt("tool_input")) {
+		r.About().Before()
+	}
 	if id := in.Str("tool_use_id"); id != "" {
 		snap := tmpSnapshot()
 		r.mu.Lock()
@@ -1404,6 +1417,9 @@ func (r *Runtime) beforeTool(in *Obj) *Obj {
 }
 
 func (r *Runtime) afterTool(sid string, in *Obj) *Obj {
+	if r.About().Touches(in.Str("tool_name"), in.ObjAt("tool_input")) {
+		r.About().After(sid)
+	}
 	tid := in.Str("tool_use_id")
 	r.mu.Lock()
 	before, ok := r.tmpBefore[tid]

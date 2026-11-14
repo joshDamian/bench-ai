@@ -318,6 +318,20 @@ async function scenario(srv, repo, root) {
   await step('research project', () => api('POST', '/api/research', {}));
   await step('research project: again', () => api('POST', '/api/research', {}));
 
+  // About me and the rules.
+  await step('about: none yet', () => api('GET', '/api/about'));
+  await step('about: include before written', () => api('PUT', '/api/about', { include: true }));
+  await step('about: not text', () => api('PUT', '/api/about', { text: 5 }));
+  await step('about: write', () => api('PUT', '/api/about', { text: '# About me\n\n## Who you are\n\nJosh\n' }));
+  await step('about: switch off', () => api('PUT', '/api/about', { include: false }));
+  await step('about: no draft', () => api('POST', '/api/about/draft', { action: 'save' }));
+  await step('about: nothing to undo', () => api('POST', '/api/about/undo', {}));
+  await step('about: from a cv', () => api('POST', '/api/about/from-cv', {}));
+  await step('rules', () => api('GET', '/api/rules'));
+  await step('rules: set', () => api('PUT', '/api/rules', { key: 'send-email', value: 'ask' }));
+  await step('rules: bad value', () => api('PUT', '/api/rules', { key: 'pay', value: 'maybe' }));
+  await step('rules: no such rule', () => api('PUT', '/api/rules', { key: 'fly', value: 'never' }));
+
   return out;
 }
 

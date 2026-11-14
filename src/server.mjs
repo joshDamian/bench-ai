@@ -813,6 +813,13 @@ route('PATCH', '/api/schedules/:id', ({ params, body }) => svc.updateSchedule(pa
 route('DELETE', '/api/schedules/:id', ({ params }) => svc.deleteSchedule(params[0]));
 route('POST', '/api/schedules/:id/run', ({ params }) => svc.runSchedule(params[0]));
 route('POST', '/api/research', () => svc.research());
+route('GET', '/api/about', () => svc.about());
+route('PUT', '/api/about', ({ body }) => svc.saveAbout(body));
+route('POST', '/api/about/draft', ({ body }) => svc.aboutDraft(body.action));
+route('POST', '/api/about/undo', () => svc.aboutUndo());
+route('POST', '/api/about/from-cv', () => svc.aboutFromCv());
+route('GET', '/api/rules', () => svc.rules());
+route('PUT', '/api/rules', ({ body }) => svc.setRule(body.key, body.value));
 // Archiving or deleting a session ends the shells opened beside it; closing a task, its own.
 route('POST', '/api/sessions/:id/archive', async ({ params, body }) => {
   const r = await svc.archiveSession(params[0], body.archived !== false);

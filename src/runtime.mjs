@@ -11,6 +11,8 @@ import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import { cleanEnv, providerEnv, invocationId, priceUsage } from './providers.mjs';
 import { env as benchEnv } from './env.mjs';
 import { Notes } from './notes.mjs';
+import { Rules } from './rules.mjs';
+import { About } from './about.mjs';
 import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
@@ -414,6 +416,20 @@ export class Runtime extends EventEmitter {
     return (this.notesStore ??= new Notes(this.store.dir));
   }
 
+  /** What Bench may do, asks about, and never does. */
+  get rules() {
+    return (this.#rules ??= new Rules(this.store.dir));
+  }
+  /** @type {Rules|undefined} */
+  #rules;
+
+  /** Who the person is: a note every session reads. */
+  get about() {
+    return (this.#about ??= new About(this.store.dir, this.notes));
+  }
+  /** @type {About|undefined} */
+  #about;
+
   /** Where a session's attached files are kept. It is opened to the session, so reading them asks nothing. @param {string} id */
   attachmentsDir(id) {
     return path.join(this.store.dir, 'attachments', id);
@@ -613,7 +629,7 @@ export class Runtime extends EventEmitter {
     const attach = attachNote(this.attachmentsDir(s.id));
     const notes = ask ? null : this.notes.brief(project?.path);
     const reports = reportsDir(this.attachmentsDir(s.id));
-    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, REPORTS_NOTE(reports), notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
+    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, REPORTS_NOTE(reports), this.about.note(), this.rules.note(), notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
     const memory = project && path.resolve(project.path) !== path.resolve(s.cwd) ? memoryDir(project.path) : null;
     fs.mkdirSync(this.attachmentsDir(s.id), { recursive: true });
     const live = new Live(s.id);
@@ -647,7 +663,7 @@ export class Runtime extends EventEmitter {
       hooks: {
         ...(s.task_id && s.purpose !== 'review' ? { Stop: [{ hooks: [(input, _id, { signal }) => this.#onStop(s.id, /** @type {any} */ (input), signal)], timeout: CHECK_TIMEOUT_MS / 1000 + 60 }] } : {}),
         // What each tool call leaves in /tmp, recorded against this session; see artifacts.mjs.
-        PreToolUse: [{ hooks: [async (input) => this.#beforeTool(/** @type {any} */ (input))] }],
+        PreToolUse: [{ hooks: [async (input) => this.#beforeTool(s.id, /** @type {any} */ (input))] }],
         PostToolUse: [{ hooks: [async (input) => this.#afterTool(s.id, /** @type {any} */ (input))] }],
         PostToolUseFailure: [{ hooks: [async (input) => this.#afterTool(s.id, /** @type {any} */ (input))] }],
       },
@@ -944,14 +960,22 @@ export class Runtime extends EventEmitter {
 
   // -- what tools leave behind --------------------------------------------------------
 
-  /** /tmp as it was when a tool call started, by tool_use_id. @param {{tool_use_id?:string}} input */
-  #beforeTool(input) {
+  /** Before each tool call: the Never list, About me's undo, and /tmp as it was. @param {string} id @param {{tool_use_id?:string, tool_name?:string, tool_input?:any}} input */
+  #beforeTool(id, input) {
+    // The person's Never list: stopped here, before the tool runs, in every permission mode.
+    const never = this.rules.blocks(input.tool_name || '', input.tool_input);
+    if (never) {
+      this.notice(id, `Stopped before it could ${never.label.toLowerCase()}: that is on your Never list.`);
+      return { hookSpecificOutput: { hookEventName: /** @type {const} */ ('PreToolUse'), permissionDecision: /** @type {const} */ ('deny'), permissionDecisionReason: `Blocked by the person's Never list: ${never.label.toLowerCase()}. Do not try another way. Prepare it for the person to finish instead (an email as a drafts file in the reports folder).` } };
+    }
+    if (this.about.touches(input.tool_name || '', input.tool_input)) this.about.before();
     if (input.tool_use_id) this.tmpBefore.set(input.tool_use_id, snapshot());
     return {};
   }
 
-  /** Records what appeared in /tmp during the call. @param {string} id @param {{tool_use_id?:string, tool_name?:string}} input */
+  /** Records what appeared in /tmp during the call. @param {string} id @param {{tool_use_id?:string, tool_name?:string, tool_input?:any}} input */
   #afterTool(id, input) {
+    if (this.about.touches(input.tool_name || '', input.tool_input)) this.about.after(id);
     const before = input.tool_use_id ? this.tmpBefore.get(input.tool_use_id) : undefined;
     if (!before || !input.tool_use_id) return {};
     this.tmpBefore.delete(input.tool_use_id);
