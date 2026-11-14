@@ -64,7 +64,8 @@ import kotlinx.coroutines.launch
  * fast path; the link can also be pasted, which is how a tablet without a camera pairs.
  */
 @Composable
-fun PairScreen() {
+/** [onCancel] is set when adding a server while one is already connected. */
+fun PairScreen(onCancel: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     var link by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf(Build.MODEL ?: "Android") }
@@ -140,6 +141,10 @@ fun PairScreen() {
                 } else {
                     BigButton("Scan code", primary = true, height = 56.dp, enabled = !busy) { scanNow() }
                     TextButton(onClick = { pasting = true }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Paste a link instead", fontSize = 15.sp, color = c.text.copy(alpha = 0.8f)) }
+                }
+                if (onCancel != null) {
+                    androidx.activity.compose.BackHandler(onBack = onCancel)
+                    TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Cancel", fontSize = 15.sp, color = c.muted) }
                 }
             }
         }

@@ -145,9 +145,16 @@ final class AppModel {
         use(c)
     }
 
+    /// Forgets the current server, then moves to another saved one if there is one.
     func unpair() {
-        SavedServer.forget()
-        use(nil)
+        use(SavedServer.forget())
+    }
+
+    /// Switches to another saved server.
+    func switchServer(_ base: String) {
+        guard base != store?.api.config.baseURL else { return }
+        SavedServer.setCurrent(base)
+        use(SavedServer.config(base))
     }
 
     /// Bumped to put the cursor in the project page's task box.

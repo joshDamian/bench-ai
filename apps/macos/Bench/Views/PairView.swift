@@ -5,6 +5,8 @@ import SwiftUI
 struct PairView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
+    /// Set when adding a server while one is connected: shows Cancel, and runs after pairing.
+    var onClose: (() -> Void)? = nil
     @State private var link = ""
     @State private var name = Host.current().localizedName ?? "Mac"
     @State private var busy = false
@@ -39,6 +41,10 @@ struct PairView: View {
                 .buttonStyle(CapsuleButton(kind: .primary))
                 .disabled(busy || link.isEmpty)
                 if let error { Text(error).font(.system(size: 12)).foregroundStyle(theme.colors.bad).textSelection(.enabled) }
+                if let onClose {
+                    Button("Cancel", action: onClose).buttonStyle(.plain).foregroundStyle(theme.colors.muted)
+                        .frame(maxWidth: .infinity)
+                }
             }
             if localFound {
                 let old = localVersion.map { Self.older($0) } ?? false
@@ -91,7 +97,7 @@ struct PairView: View {
             busy = false
             if !reachable { error = "Nothing answered at \(base). Is `bench serve` running?" }
             else if !allowed { error = "\(base) isn't this Mac's loopback, so it needs pairing. Use the pairing link below." }
-            else { model.pair(c) }
+            else { model.pair(c); onClose?() }
         }
     }
 
@@ -103,7 +109,7 @@ struct PairView: View {
         busy = true
         error = nil
         Task {
-            do { model.pair(try await BenchAPI.pair(parsed, name: name.isEmpty ? "Mac" : name)) }
+            do { model.pair(try await BenchAPI.pair(parsed, name: name.isEmpty ? "Mac" : name)); onClose?() }
             catch { self.error = error.shown }
             busy = false
         }

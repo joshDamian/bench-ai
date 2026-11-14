@@ -63,7 +63,10 @@ fun BenchRoot(openSession: MutableStateFlow<String?>) {
         Box(Modifier.fillMaxSize().background(Bench.colors.bg)) {
             if (!loaded || theme == null) return@Box
             val s = store
-            if (s == null) PairScreen() else Signed(s, openSession)
+            val adding by app.settings.adding.collectAsState()
+            if (s == null) PairScreen()
+            else if (adding) PairScreen(onCancel = { app.settings.adding.value = false })
+            else Signed(s, openSession)
         }
     }
 }
