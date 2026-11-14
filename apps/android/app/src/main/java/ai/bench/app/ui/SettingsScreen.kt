@@ -1,7 +1,6 @@
 package ai.bench.app.ui
 
-import ai.bench.app.ui.theme.DYNAMIC
-import ai.bench.app.ui.theme.dynamicAvailable
+import ai.bench.app.ui.theme.Appearance
 import androidx.compose.material3.MaterialTheme
 
 import androidx.compose.foundation.background
@@ -21,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -54,7 +54,6 @@ import ai.bench.app.data.ProviderInfo
 import ai.bench.app.data.get
 import ai.bench.app.data.str
 import ai.bench.app.ui.theme.Bench
-import ai.bench.app.ui.theme.BenchThemes
 import ai.bench.app.ui.theme.Space
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
@@ -68,7 +67,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
     val s by store.state.collectAsState()
     val c = Bench.colors
     val settings = BenchApp.instance.settings
-    val theme by settings.theme.collectAsState("classic")
+    val theme by settings.theme.collectAsState("system")
     val scope = rememberCoroutineScope()
     var providers by remember { mutableStateOf<List<ProviderInfo>>(emptyList()) }
     var defaults by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
@@ -111,12 +110,40 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
             section("Server")
             item {
                 Card {
-                    NavRow(store.api.config.baseUrl.substringAfter("://").substringBefore(":").substringBefore("."), listOfNotNull(s.version?.let { "Bench $it" }).joinToString(), listOfNotNull(if (s.connected) "Connected" else "Not connected", uptime).joinToString(" · "), chevron = false)
-                    if (canUpdate) NavRow("Update Bench", "Ready", "A newer version is ready on the server", valueColor = c.accent) {
+                    val saved by settings.servers.collectAsState(emptyList())
+                    // Every saved server, the one in use first: switch between Node and Go, say.
+                    (listOf(store.api.config.baseUrl) + saved.filter { it != store.api.config.baseUrl }).forEach { url ->
+                        val here = url == store.api.config.baseUrl
+                        Custom {
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 6.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.md),
+                            ) {
+                                Box(Modifier.size(8.dp).then(if (here) Modifier.background(if (s.connected) c.good else c.warn, CircleShape) else Modifier))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(url.substringAfter("://").substringBefore(".").substringBefore(":"), fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        if (here) listOfNotNull(if (s.connected) "Connected" else "Connecting…", s.version?.let { "Bench $it" }, uptime).joinToString(" · ")
+                                        else url.substringAfter("://"),
+                                        fontSize = 13.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                if (here) Text("In use", fontSize = 14.sp, color = c.muted)
+                                else Text(
+                                    "Switch", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(c.surface2).clickable { scope.launch { settings.switchTo(url) } }.padding(horizontal = 14.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                    NavRow("Add a server") { settings.adding.value = true }
+                    if (canUpdate) NavRow("Update Bench", "Ready to install") {
                         scope.launch { runCatching { store.api.post("/api/server/update") } }
                     }
                     NavRow("Devices", deviceCount?.toString()) { onOpen("devices") }
-                    NavRow("Dashboard", null, "Memory, CPU, storage and spend") { onOpen("dashboard") }
+                    NavRow("Dashboard", "Memory, CPU, spend") { onOpen("dashboard") }
+                    NavRow("Projects folder", defaults["projectsDir"].str()?.replace(Regex("^/(home|Users)/[^/]+"), "~")) { page = "dir" }
                     NavRow("Diagnostics") { onOpen("diagnostics") }
                     NavRow("Restart server", null, "Sessions pick up where they were", chevron = false) { confirmRestart = true }
                 }
@@ -128,7 +155,6 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                     NavRow("Default effort", effort?.let { Effort.of(it)?.label } ?: "Auto") { page = "effort" }
                     NavRow("Default mode", mode.label) { page = "mode" }
                     NavRow("Models", "${providers.count { it.enabled }} providers") { page = "models" }
-                    NavRow("Projects folder", defaults["projectsDir"].str()?.replace(Regex("^/(home|Users)/[^/]+"), "~"), "Where new projects are cloned or created") { page = "dir" }
                     NavRow("Subagents", if (routing["all"].str() != null) "One model" else "By tier") { onOpen("subagents/default") }
                     NavRow("Usage limit", if (defaults["limits"]["autoResume"].let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "false" }) "Wait" else "Resume") { onOpen("limit") }
                 }
@@ -138,39 +164,28 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                 Card {
                     NavRow("Notifications", if (prefs.getBoolean("background", false)) "Always" else "While open") { onOpen("notifications") }
                     Custom {
-                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                            Text("Theme", fontSize = 15.5.sp)
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.md), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                                val ctx = androidx.compose.ui.platform.LocalContext.current
-                                val wallpaper = if (android.os.Build.VERSION.SDK_INT >= 31) {
-                                    val m = androidx.compose.material3.dynamicDarkColorScheme(ctx)
-                                    listOf(BenchThemes.first().let { b -> b.copy(id = DYNAMIC, name = "Wallpaper", colors = b.colors.copy(bg = m.surface, surface1 = m.surfaceContainerHigh, accent = m.primary)) })
-                                } else emptyList()
-                                (wallpaper + BenchThemes).forEach { t ->
-                                    Column(Modifier.width(68.dp).clickable { scope.launch { settings.setTheme(t.id) } }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Row(
-                                            Modifier.fillMaxWidth().heightIn(min = 46.dp).background(t.colors.bg, RoundedCornerShape(14.dp))
-                                                .border(if (t.id == theme) 2.dp else 1.dp, if (t.id == theme) c.accent else c.line, RoundedCornerShape(14.dp)).padding(8.dp),
-                                            verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        ) {
-                                            Box(Modifier.weight(1f).size(12.dp).background(t.colors.surface1, RoundedCornerShape(4.dp)))
-                                            Box(Modifier.size(12.dp).background(t.colors.accent, CircleShape))
-                                        }
-                                        Text(t.name, fontSize = 11.sp, color = if (t.id == theme) c.text else c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
-                            }
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 6.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Appearance", fontSize = 16.sp, modifier = Modifier.weight(1f))
+                            Segmented(
+                                Appearance.entries.map { it.id to it.label },
+                                Appearance.of(theme).id,
+                                { id -> scope.launch { settings.setTheme(id) } },
+                                Modifier.width(222.dp),
+                                height = 40.dp,
+                            )
                         }
                     }
-                    val saved by settings.servers.collectAsState(emptyList())
-                    saved.forEach { url ->
-                        val here = url == store.api.config.baseUrl
-                        NavRow(url.substringAfter("://"), if (here) "In use" else "Switch", if (here) null else "Saved server", chevron = !here) {
-                            if (!here) scope.launch { settings.switchTo(url) }
-                        }
+                }
+            }
+            item {
+                val saved by settings.servers.collectAsState(emptyList())
+                Column(Modifier.padding(top = 28.dp)) {
+                    Card {
+                        NavRow("Disconnect this phone", null, if (saved.size > 1) "Forgets this server and switches to the next one" else "You'll need to pair again to reconnect", labelColor = c.bad, chevron = false) { confirmUnpair = true }
                     }
-                    NavRow("Add a server", null, "Pair with another Bench server, such as bench-go") { settings.adding.value = true }
-                    NavRow("Disconnect this phone", null, if (saved.size > 1) "Forgets this server and switches to the next" else "Pair again to reconnect", labelColor = c.bad, chevron = false) { confirmUnpair = true }
                 }
             }
             item { Text("Bench for Android ${BuildConfigInfo.versionName}", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 22.dp)) }

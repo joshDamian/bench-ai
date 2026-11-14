@@ -25,7 +25,7 @@ class Settings(private val context: Context) {
         p[baseKey]?.let { ServerConfig(it, p[tokenKey], p[deviceKey]) }
     }
 
-    val theme: Flow<String> = context.store.data.map { it[themeKey] ?: "classic" }
+    val theme: Flow<String> = context.store.data.map { it[themeKey] ?: "system" }
 
     suspend fun current(): ServerConfig? = server.first()
 

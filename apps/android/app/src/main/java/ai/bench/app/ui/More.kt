@@ -111,21 +111,18 @@ fun LazyListScope.section(title: String, trailing: String? = null, color: Color?
     }
 }
 
-/** Rows on one rounded surface, hairlines between them. */
+/**
+ * A group of rows. Space and the section label above do the grouping, not a box or hairlines
+ * (the less-chrome rule from Linear's redesign), so rows sit on the page itself.
+ */
 @Composable
 fun Card(content: @Composable CardScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Bench.colors.surface1, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp))) {
-        CardScope().content()
-    }
+    Column(Modifier.fillMaxWidth()) { CardScope().content() }
 }
 
 class CardScope {
-    private var first = true
     @Composable
-    fun divider() {
-        if (!first) HorizontalDivider(color = Bench.colors.line.copy(alpha = 0.5f), modifier = Modifier.padding(start = 18.dp))
-        first = false
-    }
+    fun divider() {}
 }
 
 @Composable
@@ -133,14 +130,14 @@ fun CardScope.NavRow(label: String, value: String? = null, sub: String? = null, 
     val c = Bench.colors
     divider()
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 58.dp).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 18.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = 54.dp).clip(RoundedCornerShape(12.dp)).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 6.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, fontSize = 15.5.sp, color = labelColor ?: c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(label, fontSize = 16.sp, color = labelColor ?: c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             sub?.let { Text(it, fontSize = 12.5.sp, color = c.muted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
-        value?.let { Text(it, fontSize = 14.sp, color = valueColor ?: c.muted, maxLines = 1, modifier = Modifier.padding(start = 12.dp)) }
+        value?.let { Text(it, fontSize = 15.sp, color = valueColor ?: c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 12.dp)) }
         if (chevron && onClick != null) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.muted, modifier = Modifier.padding(start = 4.dp).size(20.dp))
     }
 }
@@ -150,11 +147,11 @@ fun CardScope.SwitchRow(label: String, sub: String?, on: Boolean, enabled: Boole
     val c = Bench.colors
     divider()
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 62.dp).clickable(enabled = enabled) { onChange(!on) }.padding(horizontal = 18.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = 58.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled) { onChange(!on) }.padding(horizontal = 6.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, fontSize = 15.5.sp, color = if (enabled) c.text else c.muted)
+            Text(label, fontSize = 16.sp, color = if (enabled) c.text else c.muted)
             sub?.let { Text(it, fontSize = 12.5.sp, color = c.muted) }
         }
         Switch(on, onChange, enabled = enabled, colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.onAccent, uncheckedTrackColor = c.surface3, uncheckedBorderColor = Color.Transparent))

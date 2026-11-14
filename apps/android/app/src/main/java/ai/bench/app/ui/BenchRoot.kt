@@ -59,7 +59,7 @@ fun BenchRoot(openSession: MutableStateFlow<String?>) {
     val loaded by app.loaded.collectAsState()
     val store by app.store.collectAsState()
 
-    BenchTheme(theme ?: "classic") {
+    BenchTheme(theme ?: "system") {
         Box(Modifier.fillMaxSize().background(Bench.colors.bg)) {
             if (!loaded || theme == null) return@Box
             val s = store
