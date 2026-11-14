@@ -12,6 +12,8 @@ import { benchServer } from './tools.mjs';
 import { askServer } from './ask.mjs';
 import { Loop, newLoop } from './loop.mjs';
 import { Resumer } from './resume.mjs';
+import { Scheduler, scheduleView, validZone } from './schedules.mjs';
+import { listReports, markDraft } from './reports.mjs';
 import { routingPatch, DEFAULT_ROUTING } from './routing.mjs';
 import { holders, removable, sizeOf } from './artifacts.mjs';
 import * as g from './git.mjs';
@@ -82,6 +84,9 @@ export class Service extends EventEmitter {
     this.loop = new Loop(this);
     /** After the usage limit: pauses a session it stopped, and resumes it when the limit lifts. */
     this.resumer = new Resumer(this);
+    /** Starts the sessions the person scheduled, on their days and times. */
+    this.scheduler = new Scheduler(this);
+    this.scheduler.start();
     this.runtime.on('turn-done', ({ session }) => session?.project_id && this.emit('git', session.project_id));
     this.runtime.on('task', (t) => this.emit('task', t));
     this.#importLegacy();
@@ -747,9 +752,10 @@ export class Service extends EventEmitter {
     return this.session(id);
   }
 
-  /** @param {string} id @param {{title?:string, mode?:PermissionMode, providerId?:string, modelId?:string|null, effort?:string|null}} patch */
+  /** @param {string} id @param {{title?:string, mode?:PermissionMode, providerId?:string, modelId?:string|null, effort?:string|null, pinned?:boolean}} patch */
   async updateSession(id, patch) {
     this.session(id);
+    if (patch.pinned !== undefined) this.runtime.emit('session', this.store.setPinned(id, !!patch.pinned));
     if (patch.title !== undefined) {
       if (!patch.title.trim()) throw fail('A title cannot be empty');
       this.runtime.emit('session', this.store.updateSession(id, { title: patch.title.trim() }));
@@ -1037,7 +1043,104 @@ export class Service extends EventEmitter {
     this.store.setSetting('legacy_import', 'done');
   }
 
+  // -- seen, reports, schedules --------------------------------------------------
+
+  /** The person looked at a session: Home stops listing it as new. @param {string} id */
+  markSeen(id) {
+    this.session(id);
+    const s = this.store.markSeen(id);
+    this.runtime.emit('session', s);
+    return s;
+  }
+
+  reports() {
+    return listReports(this);
+  }
+
+  /** @param {string} sessionId @param {string} file @param {number} index @param {boolean} sent */
+  markDraft(sessionId, file, index, sent) {
+    this.session(sessionId);
+    return markDraft(this, sessionId, file, index, sent);
+  }
+
+  schedules() {
+    return this.store.listSchedules().map(scheduleView);
+  }
+
+  /** @param {Record<string, any>} o @param {boolean} [partial] */
+  #scheduleFields(o, partial = false) {
+    /** @type {Record<string, any>} */
+    const row = {};
+    const need = (/** @type {string} */ k) => !partial || o[k] !== undefined;
+    if (need('title')) {
+      if (!String(o.title || '').trim()) throw fail('A schedule needs a title');
+      row.title = String(o.title).trim();
+    }
+    if (need('prompt')) {
+      if (!String(o.prompt || '').trim()) throw fail('A schedule needs a prompt');
+      row.prompt = String(o.prompt).trim();
+    }
+    if (need('projectId')) row.project_id = this.project(o.projectId).id;
+    if (need('days')) {
+      const days = (Array.isArray(o.days) ? o.days : String(o.days || '').split(',')).filter((/** @type {any} */ x) => String(x).trim() !== '').map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+      if (!days.length) throw fail('Pick at least one day');
+      row.days = [...new Set(days)].sort().join(',');
+    }
+    if (need('time')) {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(o.time || ''))) throw fail('Time is HH:MM, 24-hour');
+      row.time = o.time;
+    }
+    if (need('tz')) {
+      const tz = String(o.tz || 'UTC');
+      if (!validZone(tz)) throw fail(`Unknown time zone ${tz}`);
+      row.tz = tz;
+    }
+    if (o.mode !== undefined) {
+      if (o.mode !== null && !MODES.includes(o.mode)) throw fail(`Unknown mode ${o.mode}`);
+      row.mode = o.mode;
+    }
+    for (const [k, col] of [['modelId', 'model_id'], ['providerId', 'provider_id'], ['effort', 'effort']]) if (o[k] !== undefined) row[col] = o[k] || null;
+    if (o.enabled !== undefined) row.enabled = !!o.enabled;
+    return row;
+  }
+
+  /** @param {Record<string, any>} o */
+  addSchedule(o) {
+    return scheduleView(this.store.addSchedule(this.#scheduleFields(o)));
+  }
+
+  /** @param {string} id @param {Record<string, any>} o */
+  updateSchedule(id, o) {
+    if (!this.store.getSchedule(id)) throw fail('No such schedule', 404);
+    return scheduleView(this.store.updateSchedule(id, this.#scheduleFields(o, true)));
+  }
+
+  /** @param {string} id */
+  deleteSchedule(id) {
+    if (!this.store.deleteSchedule(id)) throw fail('No such schedule', 404);
+    return { ok: true };
+  }
+
+  /** Starts a schedule's session now, as its time would. @param {string} id */
+  runSchedule(id) {
+    const sch = this.store.getSchedule(id);
+    if (!sch) throw fail('No such schedule', 404);
+    const s = this.createSession({ projectId: sch.project_id, title: sch.title, mode: sch.mode || undefined, providerId: sch.provider_id || undefined, modelId: sch.model_id || undefined, effort: sch.effort || undefined });
+    this.runtime.emit('session', this.store.updateSession(s.id, { schedule_id: sch.id }));
+    this.store.updateSchedule(id, { last_run_at: new Date().toISOString() });
+    this.send(s.id, sch.prompt);
+    return this.session(s.id);
+  }
+
+  /** The Research project: a folder in the projects folder for research and reports, made on first use. */
+  research() {
+    const dir = path.join(this.projectsDir(), 'research');
+    fs.mkdirSync(dir, { recursive: true });
+    return this.addProject({ path: dir, name: 'Research', init: true });
+  }
+
   shutdown() {
+    this.scheduler.stop();
     this.resumer.shutdown();
     this.runtime.shutdown();
   }

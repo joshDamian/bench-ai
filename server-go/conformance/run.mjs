@@ -62,7 +62,7 @@ function normaliser(root, repo, home) {
     if (!map.has(v)) map.set(v, `<${prefix}${map.size + 1}>`);
     return map.get(v);
   };
-  const VOLATILE = new Set(['push', 'key', 'created_at', 'updated_at', 'archived_at', 'last_seen_at', 'merged_at', 'check_at', 'started_at', 'ended_at', 'mtime', 'at', 'uptimeMs', 'startedAt', 'pid', 'ms', 'duration_ms', 'expiresIn', 'code_hash', 'qr', 'code', 'removed_at', 'size', 'loadavg', 'memFree', 'diskFree', 'until']);
+  const VOLATILE = new Set(['push', 'key', 'created_at', 'updated_at', 'archived_at', 'last_seen_at', 'merged_at', 'check_at', 'started_at', 'ended_at', 'mtime', 'at', 'uptimeMs', 'startedAt', 'pid', 'ms', 'duration_ms', 'expiresIn', 'code_hash', 'qr', 'code', 'removed_at', 'size', 'loadavg', 'memFree', 'diskFree', 'until', 'seen_at', 'next_run_at', 'last_run_at', 'modified', 'sent_at']);
   const str = (s) => {
     s = s.split(root).join('<root>').split(repo).join('<repo>').split(home).join('<home>');
     for (const m of s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || []) tag(ids, m, 'id');
@@ -171,6 +171,28 @@ async function scenario(srv, repo, root) {
   await until(async () => (await api('GET', `/api/sessions/${s1.id}`)).body.session.status === 'idle');
   await step('session after a turn', () => api('GET', `/api/sessions/${s1.id}`));
   await step('session events', () => api('GET', `/api/sessions/${s1.id}/events`));
+  // Seen and pinned: Home's state, kept without counting as a change to the session.
+  await step('session seen', () => api('POST', `/api/sessions/${s1.id}/seen`, {}));
+  await step('session pin', () => api('PATCH', `/api/sessions/${s1.id}`, { pinned: true }));
+  await step('session unpin', () => api('PATCH', `/api/sessions/${s1.id}`, { pinned: false }));
+  await step('session seen: unknown', () => api('POST', '/api/sessions/nope/seen', {}));
+  // Reports: what a session made, from its reports folder.
+  await step('reports: none', () => api('GET', '/api/reports'));
+  {
+    const dir = path.join(root, '.bench', 'attachments', s1.id, 'reports');
+    fs.mkdirSync(dir, { recursive: true });
+    const write = (name, body, t) => (fs.writeFileSync(path.join(dir, name), body), fs.utimesSync(path.join(dir, name), t, t));
+    write('hackathons.md', '# 7 hackathons for Nov-Dec\n\nStellar first.\n', new Date('2030-01-01T00:00:01Z'));
+    write('board.html', '<html><head><title>Job board</title></head><body></body></html>', new Date('2030-01-01T00:00:02Z'));
+    write('jobs.drafts.json', JSON.stringify({ title: 'Cold emails', drafts: [{ to: 'a@b.co', subject: 'Hi', body: 'Hello', why: 'Fit' }, { to: 'c@d.co', subject: 'Hey', body: 'Hi', why: 'Fit' }] }), new Date('2030-01-01T00:00:03Z'));
+    write('notes', 'plain', new Date('2030-01-01T00:00:00Z'));
+  }
+  await step('reports', () => api('GET', '/api/reports'));
+  await step('draft sent', () => api('POST', '/api/reports/drafts', { sessionId: s1.id, file: 'jobs.drafts.json', index: 1 }));
+  await step('reports after a draft is sent', () => api('GET', '/api/reports'));
+  await step('draft unsent', () => api('POST', '/api/reports/drafts', { sessionId: s1.id, file: 'jobs.drafts.json', index: 1, sent: false }));
+  await step('draft: no such index', () => api('POST', '/api/reports/drafts', { sessionId: s1.id, file: 'jobs.drafts.json', index: 9 }));
+  await step('draft: not a drafts file', () => api('POST', '/api/reports/drafts', { sessionId: s1.id, file: 'board.html', index: 0 }));
   await step('session events after', () => api('GET', `/api/sessions/${s1.id}/events?after=1`));
   await step('session commands', () => api('GET', `/api/sessions/${s1.id}/commands`));
   await step('session paths', () => api('GET', `/api/sessions/${s1.id}/paths?q=read`));
@@ -277,6 +299,25 @@ async function scenario(srv, repo, root) {
     kinds.push(k);
   }
   out.push({ name: 'event stream (types)', value: [...new Set(kinds)].sort() });
+  // Schedules: sessions that start on their own.
+  await step('schedules: none', () => api('GET', '/api/schedules'));
+  await step('schedule: no days', () => api('POST', '/api/schedules', { title: 'Scan', projectId: project.id, prompt: 'look', time: '08:00', tz: 'Africa/Lagos' }));
+  await step('schedule: bad time', () => api('POST', '/api/schedules', { title: 'Scan', projectId: project.id, prompt: 'look', days: [1], time: '8am', tz: 'Africa/Lagos' }));
+  await step('schedule: bad zone', () => api('POST', '/api/schedules', { title: 'Scan', projectId: project.id, prompt: 'look', days: [1], time: '08:00', tz: 'Mars/Base' }));
+  await step('schedule: bad mode', () => api('POST', '/api/schedules', { title: 'Scan', projectId: project.id, prompt: 'look', days: [1], time: '08:00', tz: 'UTC', mode: 'yolo' }));
+  const sch = (await step('schedule add', () => api('POST', '/api/schedules', { title: 'Hackathon scan', projectId: project.id, prompt: 'hello from a schedule', days: [3, 1, 1], time: '08:00', tz: 'Africa/Lagos', mode: 'acceptEdits' }))).body;
+  await step('schedule edit', () => api('PATCH', `/api/schedules/${sch.id}`, { days: '1,2,3,4,5', enabled: false }));
+  await step('schedule edit: unknown', () => api('PATCH', '/api/schedules/nope', { title: 'x' }));
+  await step('schedules', () => api('GET', '/api/schedules'));
+  const ran = (await step('schedule run', () => api('POST', `/api/schedules/${sch.id}/run`, {}))).body;
+  if (!ran?.id) console.error('schedule run gave', JSON.stringify(ran).slice(0, 300));
+  if (ran?.id) await until(async () => (await api('GET', `/api/sessions/${ran.id}`)).body.session.status === 'idle');
+  if (ran?.id) await step('scheduled session', () => api('GET', `/api/sessions/${ran.id}`));
+  await step('schedule delete', () => api('DELETE', `/api/schedules/${sch.id}`));
+  await step('schedule delete: again', () => api('DELETE', `/api/schedules/${sch.id}`));
+  await step('research project', () => api('POST', '/api/research', {}));
+  await step('research project: again', () => api('POST', '/api/research', {}));
+
   return out;
 }
 
