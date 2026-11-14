@@ -140,7 +140,8 @@ fun ListRow(title: String, sub: String?, dot: String, trailing: String? = null, 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        BigDot(dot)
+        // A mark only for states that need one; idle rows start at the edge, no empty gutter.
+        if (dot in setOf("running", "waiting", "error")) BigDot(dot)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, fontSize = 15.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedTitle(id))
             sub?.let { Text(it, fontSize = 13.sp, color = Bench.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -531,5 +532,5 @@ fun SwipeToArchive(onArchive: () -> Unit, content: @Composable () -> Unit) {
                 Text(if (past) "Release to archive" else "Archive", color = if (past) c.onAccent else c.warn, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = Space.sm))
             }
         },
-    ) { Box(Modifier.background(Bench.colors.surface1)) { content() } }
+    ) { Box(Modifier.background(Bench.colors.bg)) { content() } }
 }

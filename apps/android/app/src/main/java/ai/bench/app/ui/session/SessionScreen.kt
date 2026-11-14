@@ -1,5 +1,6 @@
 package ai.bench.app.ui.session
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.ui.graphics.graphicsLayer
 
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
@@ -407,12 +409,22 @@ private fun modelLine(s: ai.bench.app.data.Session, providers: List<ai.bench.app
 @Composable
 private fun ModelSheet(s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>, onDismiss: () -> Unit, onSet: (kotlinx.serialization.json.JsonObject) -> Unit) {
     val c = Bench.colors
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp), dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.statusBarsPadding(), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp), dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Model", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 6.dp, bottom = 4.dp))
-            providers.filter { it.enabled }.forEach { p ->
-                Text(if (p.ready) p.name else "${p.name} · not set up", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 4.dp))
-                p.models.filter { it.enabled }.forEach { m ->
+            // A short list: the provider in use, open; the rest fold behind their name (Claude's "More models").
+            var open by remember { mutableStateOf(setOfNotNull(providers.firstOrNull { p -> p.models.any { it.id == s.model_id } }?.id ?: providers.firstOrNull { it.enabled && it.ready }?.id)) }
+            providers.filter { it.enabled }.sortedByDescending { it.id in open }.forEach { p ->
+                val shown = p.id in open
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp)).clickable { open = if (shown) open - p.id else open + p.id }.padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (p.ready) p.name else "${p.name} · not set up", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.weight(1f))
+                    if (!shown) Text("${p.models.count { it.enabled }}", fontSize = 13.sp, color = c.muted)
+                    Icon(if (shown) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                }
+                if (shown) p.models.filter { it.enabled }.forEach { m ->
                     val on = m.id == s.model_id
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -525,7 +537,7 @@ private fun SessionSheet(
     val c = Bench.colors
     var mode by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.statusBarsPadding(), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
         dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Session", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 6.dp))

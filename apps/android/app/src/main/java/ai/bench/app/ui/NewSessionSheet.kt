@@ -1,5 +1,6 @@
 package ai.bench.app.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -120,6 +121,7 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = Modifier.statusBarsPadding(),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = c.surface2,
         shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
@@ -130,9 +132,19 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
             "model" -> Column(Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 SheetBack("Model") { page = null }
                 Choice("Default model", modelId == null) { modelId = null; providerId = null; page = null }
-                providers.filter { it.enabled && it.ready }.forEach { p ->
-                    Text(p.name, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 4.dp))
-                    p.models.filter { it.enabled }.forEach { m -> Choice(m.label, m.id == modelId) { modelId = m.id; providerId = p.id; page = null } }
+                // The provider in use open, the rest folded behind their name (Claude's "More models").
+                var open by remember { mutableStateOf(setOfNotNull(providers.firstOrNull { p -> p.models.any { it.id == modelId } }?.id ?: providers.firstOrNull { it.enabled && it.ready }?.id)) }
+                providers.filter { it.enabled && it.ready }.sortedByDescending { it.id in open }.forEach { p ->
+                    val shown = p.id in open
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp)).clickable { open = if (shown) open - p.id else open + p.id }.padding(horizontal = 6.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Text(p.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.weight(1f))
+                        if (!shown) Text("${p.models.count { it.enabled }}", fontSize = 13.sp, color = c.muted)
+                        androidx.compose.material3.Icon(if (shown) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                    }
+                    if (shown) p.models.filter { it.enabled }.forEach { m -> Choice(m.label, m.id == modelId) { modelId = m.id; providerId = p.id; page = null } }
                 }
                 Text("Effort", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 16.dp, bottom = 8.dp))
                 Segmented(listOf("" to "Auto") + listOf("low", "medium", "high", "max").map { it to ai.bench.app.data.Effort.of(it)!!.label }, effort ?: "", { effort = it.ifEmpty { null } })
@@ -403,7 +415,7 @@ fun AddProjectSheet(store: BenchStore, onDismiss: () -> Unit, onAdded: (String) 
     LaunchedEffect(Unit) { repos = runCatching { store.api.repos() }.getOrDefault(emptyList()) }
     val matches = repos.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }.take(4)
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.statusBarsPadding(), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
         Column(
             Modifier.fillMaxWidth().imePadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
