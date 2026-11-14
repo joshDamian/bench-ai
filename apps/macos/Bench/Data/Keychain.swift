@@ -39,19 +39,43 @@ enum Keychain {
 /// The saved server: its address in defaults, its token in the keychain.
 enum SavedServer {
     private static let key = "serverURL"
+    /// Every server this Mac has paired with, so you can switch between them (Node and Go, say).
+    private static let listKey = "servers"
 
     static func load() -> ServerConfig? {
         guard let base = UserDefaults.standard.string(forKey: key) else { return nil }
         return ServerConfig(baseURL: base, token: Keychain.read(account: base))
     }
 
+    /// The saved servers' addresses, the current one included.
+    static func all() -> [String] {
+        var list = UserDefaults.standard.stringArray(forKey: listKey) ?? []
+        if let cur = UserDefaults.standard.string(forKey: key), !list.contains(cur) { list.insert(cur, at: 0) }
+        return list
+    }
+
+    static func config(_ base: String) -> ServerConfig { ServerConfig(baseURL: base, token: Keychain.read(account: base)) }
+
     static func save(_ c: ServerConfig) {
         UserDefaults.standard.set(c.baseURL, forKey: key)
+        var list = all()
+        if !list.contains(c.baseURL) { list.append(c.baseURL) }
+        UserDefaults.standard.set(list, forKey: listKey)
         if let t = c.token { Keychain.write(t, account: c.baseURL) } else { Keychain.delete(account: c.baseURL) }
     }
 
-    static func forget() {
-        if let base = UserDefaults.standard.string(forKey: key) { Keychain.delete(account: base) }
+    /// Forgets the current server and returns the next saved one, if any.
+    @discardableResult
+    static func forget() -> ServerConfig? {
+        guard let base = UserDefaults.standard.string(forKey: key) else { return nil }
+        Keychain.delete(account: base)
+        let rest = all().filter { $0 != base }
+        UserDefaults.standard.set(rest, forKey: listKey)
         UserDefaults.standard.removeObject(forKey: key)
+        guard let next = rest.first else { return nil }
+        UserDefaults.standard.set(next, forKey: key)
+        return config(next)
     }
+
+    static func setCurrent(_ base: String) { UserDefaults.standard.set(base, forKey: key) }
 }

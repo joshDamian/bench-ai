@@ -162,7 +162,15 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                             }
                         }
                     }
-                    NavRow("Disconnect this phone", null, "Pair again to reconnect", labelColor = c.bad, chevron = false) { confirmUnpair = true }
+                    val saved by settings.servers.collectAsState(emptyList())
+                    saved.forEach { url ->
+                        val here = url == store.api.config.baseUrl
+                        NavRow(url.substringAfter("://"), if (here) "In use" else "Switch", if (here) null else "Saved server", chevron = !here) {
+                            if (!here) scope.launch { settings.switchTo(url) }
+                        }
+                    }
+                    NavRow("Add a server", null, "Pair with another Bench server, such as bench-go") { settings.adding.value = true }
+                    NavRow("Disconnect this phone", null, if (saved.size > 1) "Forgets this server and switches to the next" else "Pair again to reconnect", labelColor = c.bad, chevron = false) { confirmUnpair = true }
                 }
             }
             item { Text("Bench for Android ${BuildConfigInfo.versionName}", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 22.dp)) }

@@ -136,6 +136,7 @@ private struct ServerPage: View {
     @State private var editingDir = false
     @State private var confirmUnpair = false
     @State private var confirmRestart = false
+    @State private var adding = false
 
     var body: some View {
         Group2 {
@@ -172,14 +173,32 @@ private struct ServerPage: View {
                     Button("Change…") { editingDir = true }.buttonStyle(TonalButton(height: 24))
                 }
             }
-            GroupRow(title: "Disconnect this Mac") {
+            GroupRow(title: "Disconnect this Mac", sub: SavedServer.all().count > 1 ? "Forgets this server and switches to the next one." : nil) {
                 Button("Disconnect…") { confirmUnpair = true }.buttonStyle(TonalButton(danger: true, height: 24))
             }
         }
+        Text("Servers").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.colors.muted)
+            .padding(.top, Space.xl).padding(.bottom, Space.sm)
+        Group2 {
+            let current = store.api.config.baseURL
+            ForEach(Array(SavedServer.all().enumerated()), id: \.element) { i, base in
+                GroupRow(title: base.replacingOccurrences(of: #"^https?://"#, with: "", options: .regularExpression), first: i == 0) {
+                    if base == current {
+                        Text("In use").foregroundStyle(theme.colors.muted)
+                    } else {
+                        Button("Switch") { model.switchServer(base) }.buttonStyle(TonalButton(height: 24))
+                    }
+                }
+            }
+            GroupRow(title: "Add a server", sub: "Pair with another Bench server, such as bench-go, and switch between them here.") {
+                Button("Add…") { adding = true }.buttonStyle(TonalButton(height: 24))
+            }
+        }
+        .sheet(isPresented: $adding) { PairView(onClose: { adding = false }).frame(width: 520, height: 520) }
         .task { await load() }
         .confirmationDialog("Disconnect this Mac?", isPresented: $confirmUnpair) {
             Button("Disconnect", role: .destructive) { model.unpair() }
-        } message: { Text("You'll need to pair again to reconnect.") }
+        } message: { Text(SavedServer.all().count > 1 ? "You'll need to pair again to use it. Bench switches to your next saved server." : "You'll need to pair again to reconnect.") }
         .confirmationDialog("Restart the server?", isPresented: $confirmRestart) {
             Button("Restart", role: .destructive) { Task { _ = try? await store.api.call("/api/server/restart", method: "POST", body: [:]) } }
         } message: { Text("Running sessions stop and pick up again when Bench is back.") }
