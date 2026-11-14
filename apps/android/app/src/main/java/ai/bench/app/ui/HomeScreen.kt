@@ -45,6 +45,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -160,8 +161,8 @@ private fun HomeRow(title: String, state: String?, stateColor: Color, where: Str
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
             .background(if (selected) c.accent.copy(alpha = 0.12f) else Color.Transparent)
-            .clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+            .clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).sharedTitle(id))
@@ -220,6 +221,16 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     val needs = s.approvals.map { it.session_id }.toSet()
     val working = s.sessions.filter { it.status == "running" && it.archived_at == null }.sortedByDescending { it.updated_at }
     val steps by store.steps.collectAsState()
+    // New session shrinks to its + while you scroll down the list and comes back on the way up.
+    val homeList = androidx.compose.foundation.lazy.rememberLazyListState()
+    var fabOpen by remember { mutableStateOf(true) }
+    LaunchedEffect(homeList) {
+        var last = 0
+        snapshotFlow { homeList.firstVisibleItemIndex * 100000 + homeList.firstVisibleItemScrollOffset }.collect { at ->
+            if (at < 40) fabOpen = true else if (at > last + 8) fabOpen = false else if (at < last - 8) fabOpen = true
+            last = at
+        }
+    }
     var filter by rememberSaveable { mutableStateOf("all") }
     // Watch what is working, so each row can say what it is doing now.
     val workingIds = working.map { it.id }
@@ -247,7 +258,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                 }
                 ConnectionBanner(s.connected, s.dropped, s.error)
                 // Filter by state, as GitHub Mobile's agent list does.
-                Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 2.dp), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                if (s.approvals.isNotEmpty() || working.isNotEmpty() || filter != "all") Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 2.dp), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     FilterChip("All", filter == "all") { filter = "all" }
                     if (s.approvals.isNotEmpty() || filter == "needs") FilterChip("Needs you ${s.approvals.size}", filter == "needs") { filter = "needs" }
                     if (working.isNotEmpty() || filter == "working") FilterChip("Working ${working.size}", filter == "working") { filter = "working" }
@@ -255,11 +266,13 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             }
         },
         floatingActionButton = {
+            // Material's own FAB shape: a rounded rectangle, not a pill like the buttons.
             ExtendedFloatingActionButton(
                 onClick = onNew,
-                icon = { Icon(Icons.Default.Add, null) },
+                expanded = fabOpen,
+                icon = { Icon(Icons.Default.Add, "New session") },
                 text = { Text("New session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
-                containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(18.dp),
+                containerColor = c.accent, contentColor = c.onAccent,
             )
         },
     ) { pad ->
@@ -269,6 +282,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             modifier = Modifier.fillMaxSize().padding(pad),
         ) {
             LazyColumn(
+                state = homeList,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 112.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -339,14 +353,14 @@ private fun FilterChip(text: String, on: Boolean, onClick: () -> Unit) {
     Text(
         text, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
         color = if (on) c.bg else c.muted,
-        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) c.text else c.surface1).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) c.text else c.surface1).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp),
     )
 }
 
 /** A section label: more space above than below, so it belongs to what follows. */
 @Composable
 private fun Label(text: String, color: Color = Bench.colors.muted, trailing: String? = null) {
-    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 22.dp, bottom = 10.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 20.dp, bottom = 6.dp)) {
         Text(text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = color, modifier = Modifier.weight(1f))
         trailing?.let { Text(it, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = color) }
     }
