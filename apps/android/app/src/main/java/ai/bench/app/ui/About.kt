@@ -259,31 +259,3 @@ private fun AboutEditor(initial: String, busy: Boolean, onCancel: () -> Unit, on
         Text("Headings start with ##. The Never list is changed in Asks first.", fontSize = 13.sp, color = c.muted, modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 12.dp))
     }
 }
-
-/** Asks first: what Bench may do, asks about, or never does. */
-@Composable
-fun RulesScreen(store: BenchStore, onBack: () -> Unit) {
-    val c = Bench.colors
-    val scope = rememberCoroutineScope()
-    var rules by remember { mutableStateOf<List<Rule>>(emptyList()) }
-    var picking by remember { mutableStateOf<Rule?>(null) }
-    LaunchedEffect(Unit) { runCatching { store.api.rules() }.onSuccess { rules = it } }
-    val words = mapOf("allow" to "Allowed", "ask" to "Asks first", "never" to "Never")
-    Page("Asks first", "What Bench does on its own, what it asks about, and what it never does.", onBack) {
-        section("Leaving the box")
-        item("rules") {
-            Card {
-                rules.forEach { r ->
-                    NavRow(r.label, words[r.value] ?: r.value, valueColor = if (r.value == "never") c.warn else null) { picking = r }
-                }
-            }
-        }
-        item("note") { Text("Never is enforced: Bench stops before the action, and says so in the conversation.", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp)) }
-    }
-    picking?.let { r ->
-        PickDialog(r.label, words.entries.map { it.key to it.value }, r.value, onDismiss = { picking = null }) { v ->
-            picking = null
-            scope.launch { runCatching { store.api.setRule(r.key, v) }.onSuccess { rules = it } }
-        }
-    }
-}

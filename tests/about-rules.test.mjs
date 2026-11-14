@@ -50,3 +50,15 @@ test('About me: first save switches it on; a session change can be undone', () =
   assert.match(a.get(none).text || '', /From a CV/);
   assert.equal(a.get(none).draft, null);
 });
+
+test('leaving the box: push, post and delete are told apart', () => {
+  assert.equal(actionOf('Bash', { command: 'git push origin main' }), 'push-code');
+  assert.equal(actionOf('Bash', { command: 'git push --force origin main' }), 'delete');
+  assert.equal(actionOf('Bash', { command: 'rm -rf node_modules' }), null);
+  assert.equal(actionOf('Bash', { command: 'rm -rf ~/' }), 'delete');
+  assert.equal(actionOf('Bash', { command: 'gh pr comment 5 --body hi' }), 'post-publicly');
+  assert.equal(actionOf('mcp__slack__post_message', {}), 'post-publicly');
+  assert.equal(actionOf('mcp__github__merge_pull_request', {}), 'push-code');
+  assert.equal(actionOf('mcp__drive__delete_file', {}), 'delete');
+  assert.equal(actionOf('mcp__bench__ship', {}), null);
+});

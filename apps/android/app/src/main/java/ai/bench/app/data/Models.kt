@@ -137,6 +137,13 @@ data class Spending(
     val runs_today: Int = 0,
 )
 
+/** Can reach (GET /api/reach): what Bench can use beyond its own folders. */
+@Serializable
+data class Reach(val server: List<Item> = emptyList(), val accounts: List<Item> = emptyList(), val devices: List<Item> = emptyList()) {
+    @Serializable
+    data class Item(val key: String, val name: String, val detail: String = "")
+}
+
 /** One rule: what Bench may do, asks about, or never does (GET /api/rules). value: allow, ask or never. */
 @Serializable
 data class Rule(val key: String, val label: String, val value: String)

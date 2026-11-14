@@ -114,6 +114,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
             section("Your machine")
             item("machine") {
                 Card {
+                    NavRow("Can reach", null, "Devices and accounts it can use") { onOpen("reach") }
                     NavRow("Asks first", null, "What it does on its own, asks about, never does") { onOpen("rules") }
                     NavRow("Spending", store.spending.collectAsState().value?.let { "${dollars(it.today)} today" }) { onOpen("spending") }
                     NavRow("Schedules", store.schedules.collectAsState().value.count { it.enabled }.takeIf { it > 0 }?.toString() ?: "None") { onOpen("schedules") }

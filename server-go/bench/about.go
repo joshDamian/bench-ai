@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -16,20 +17,31 @@ import (
 type ruleAction struct{ Key, Label string }
 
 var RuleActions = []ruleAction{
+	{"push-code", "Push code"},
+	{"post-publicly", "Post publicly"},
+	{"delete", "Delete for good"},
 	{"send-email", "Send email"},
 	{"submit-forms", "Submit applications or forms"},
 	{"pay", "Pay or move money"},
 }
 
-var ruleDefaults = map[string]string{"send-email": "never", "submit-forms": "never", "pay": "never"}
+var ruleDefaults = map[string]string{"push-code": "ask", "post-publicly": "ask", "delete": "ask", "send-email": "never", "submit-forms": "never", "pay": "never"}
 
 var (
-	mailTool    = regexp.MustCompile(`(?i)(gmail|outlook|mail|email|smtp|sendgrid|mailgun|postmark|resend)`)
-	sendVerb    = regexp.MustCompile(`(?i)(^|[_\-.])(send|reply|forward)([_\-.]|$)|send_?(email|mail|message|draft)`)
-	payTool     = regexp.MustCompile(`(?i)(^|[_\-.])(pay|payment|payout|transfer|charge|refund|purchase|checkout|send_?money|withdraw)([_\-.]|$)`)
-	formTool    = regexp.MustCompile(`(?i)(^|[_\-.])(submit|apply)([_\-.]|$)|submit_?(form|application)|apply_?(job|to)`)
-	mailCommand = regexp.MustCompile(`(?i)\b(sendmail|mailx?|mutt|msmtp|swaks|ssmtp)\b|smtps?://|\bsmtplib\b|nodemailer|gmail\.googleapis\.com/\S*/send|api\.sendgrid\.com|api\.mailgun\.net|api\.postmarkapp\.com|api\.resend\.com/emails`)
-	payCommand  = regexp.MustCompile(`(?i)api\.stripe\.com/v1/(charges|payment_intents|transfers|payouts|refunds)|api\.paystack\.co/(transfer|charge)|api\.flutterwave\.com/v3/(transfers|charges)|api\.paypal\.com/v\d/payments`)
+	mailTool      = regexp.MustCompile(`(?i)(gmail|outlook|mail|email|smtp|sendgrid|mailgun|postmark|resend)`)
+	sendVerb      = regexp.MustCompile(`(?i)(^|[_\-.])(send|reply|forward)([_\-.]|$)|send_?(email|mail|message|draft)`)
+	payTool       = regexp.MustCompile(`(?i)(^|[_\-.])(pay|payment|payout|transfer|charge|refund|purchase|checkout|send_?money|withdraw)([_\-.]|$)`)
+	formTool      = regexp.MustCompile(`(?i)(^|[_\-.])(submit|apply)([_\-.]|$)|submit_?(form|application)|apply_?(job|to)`)
+	mailCommand   = regexp.MustCompile(`(?i)\b(sendmail|mailx?|mutt|msmtp|swaks|ssmtp)\b|smtps?://|\bsmtplib\b|nodemailer|gmail\.googleapis\.com/\S*/send|api\.sendgrid\.com|api\.mailgun\.net|api\.postmarkapp\.com|api\.resend\.com/emails`)
+	socialTool    = regexp.MustCompile(`(?i)(slack|twitter|linkedin|discord|telegram|whatsapp|mastodon|bluesky|reddit)`)
+	postVerb      = regexp.MustCompile(`(?i)(^|[_\-.])(post|send|publish|tweet|message|reply|comment)([_\-.]|$)|post_?message|send_?message`)
+	gitTool       = regexp.MustCompile(`(?i)(github|gitlab|bitbucket)`)
+	pushVerb      = regexp.MustCompile(`(?i)(^|[_\-.])(push|merge)([_\-.]|$)|push_?files|merge_?pull`)
+	deleteVerb    = regexp.MustCompile(`(?i)(^|[_\-.])(delete|remove|destroy|drop|purge)([_\-.]|$)`)
+	deleteCommand = regexp.MustCompile(`\brm\s+-[a-zA-Z]*[rR][a-zA-Z]*\s+(/|~/?|\$HOME/?)\*?(\s|$)|\bgit\s+push\b.*\s(--force|-f)\b|\bgit\s+branch\s+-D\b|\b(DROP|drop)\s+(TABLE|DATABASE|table|database)\b`)
+	pushCommand   = regexp.MustCompile(`\bgit\s+push\b`)
+	postCommand   = regexp.MustCompile(`\bgh\s+(issue|pr)\s+(comment|create)\b|\bgh\s+release\s+create\b`)
+	payCommand    = regexp.MustCompile(`(?i)api\.stripe\.com/v1/(charges|payment_intents|transfers|payouts|refunds)|api\.paystack\.co/(transfer|charge)|api\.flutterwave\.com/v3/(transfers|charges)|api\.paypal\.com/v\d/payments`)
 )
 
 // ActionOf is which kind of action a tool call is, if one a rule covers.
@@ -45,9 +57,18 @@ func ActionOf(tool string, input *Obj) string {
 		if payCommand.MatchString(cmd) {
 			return "pay"
 		}
+		if deleteCommand.MatchString(cmd) {
+			return "delete"
+		}
+		if pushCommand.MatchString(cmd) {
+			return "push-code"
+		}
+		if postCommand.MatchString(cmd) {
+			return "post-publicly"
+		}
 		return ""
 	}
-	if !strings.HasPrefix(tool, "mcp__") {
+	if !strings.HasPrefix(tool, "mcp__") || strings.HasPrefix(tool, "mcp__bench__") {
 		return ""
 	}
 	if mailTool.MatchString(tool) && sendVerb.MatchString(tool) {
@@ -58,6 +79,15 @@ func ActionOf(tool string, input *Obj) string {
 	}
 	if formTool.MatchString(tool) {
 		return "submit-forms"
+	}
+	if socialTool.MatchString(tool) && postVerb.MatchString(tool) {
+		return "post-publicly"
+	}
+	if gitTool.MatchString(tool) && pushVerb.MatchString(tool) {
+		return "push-code"
+	}
+	if deleteVerb.MatchString(tool) {
+		return "delete"
 	}
 	return ""
 }
@@ -117,19 +147,23 @@ func (r *Rules) Set(key, value any) ([]any, error) {
 	return r.List(), nil
 }
 
-// Blocks is the Never rule a tool call would break, or nil.
-func (r *Rules) Blocks(tool string, input *Obj) *ruleAction {
+// Decide is the rule a tool call falls under when it asks or never; "" when allowed.
+func (r *Rules) Decide(tool string, input *Obj) (*ruleAction, string) {
 	k := ActionOf(tool, input)
-	if k == "" || r.Values()[k] != "never" {
-		return nil
+	if k == "" {
+		return nil, ""
+	}
+	v := r.Values()[k]
+	if v == "allow" {
+		return nil, ""
 	}
 	for _, a := range RuleActions {
 		if a.Key == k {
 			a := a
-			return &a
+			return &a, v
 		}
 	}
-	return nil
+	return nil, ""
 }
 
 func (r *Rules) Note() string {
@@ -377,4 +411,33 @@ func (s *Service) AboutFromCV() (*Obj, error) {
 		return nil, err
 	}
 	return O("session", sess, "prompt", s.Runtime.About().CVPrompt()), nil
+}
+
+// Reach is Can reach: what Bench can use beyond its own folders.
+func (s *Service) Reach() *Obj {
+	file := filepath.Join(os.Getenv("HOME"), ".claude.json")
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		file = filepath.Join(d, ".claude.json")
+	}
+	var apps []string
+	if b, err := os.ReadFile(file); err == nil {
+		var m struct {
+			McpServers map[string]any `json:"mcpServers"`
+		}
+		if json.Unmarshal(b, &m) == nil {
+			for k := range m.McpServers {
+				apps = append(apps, k)
+			}
+		}
+	}
+	sort.Strings(apps)
+	gh := "Not connected"
+	if GhReady() {
+		gh = "Connected"
+	}
+	accounts := []any{O("key", "github", "name", "GitHub", "detail", gh)}
+	for _, n := range apps {
+		accounts = append(accounts, O("key", "app:"+n, "name", n, "detail", "Connected app"))
+	}
+	return O("server", []any{O("key", "server", "name", "Files, shell and the web", "detail", "Always")}, "accounts", accounts, "devices", []any{})
 }

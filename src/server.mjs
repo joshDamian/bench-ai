@@ -823,6 +823,7 @@ route('GET', '/api/spending', () => svc.spending());
 route('PUT', '/api/spending', ({ body }) => svc.setSpending(body));
 route('POST', '/api/sessions/:id/budget', ({ params, body }) => svc.budget(params[0], body.action));
 route('GET', '/api/rules', () => svc.rules());
+route('GET', '/api/reach', () => svc.reach());
 route('PUT', '/api/rules', ({ body }) => svc.setRule(body.key, body.value));
 // Archiving or deleting a session ends the shells opened beside it; closing a task, its own.
 route('POST', '/api/sessions/:id/archive', async ({ params, body }) => {

@@ -1241,6 +1241,21 @@ export class Service extends EventEmitter {
     return this.runtime.rules.list();
   }
 
+  /** Can reach: what Bench can use beyond its own folders. */
+  async reach() {
+    const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json');
+    /** @type {string[]} */
+    let apps = [];
+    try {
+      apps = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')).mcpServers || {}).sort();
+    } catch {}
+    return {
+      server: [{ key: 'server', name: 'Files, shell and the web', detail: 'Always' }],
+      accounts: [{ key: 'github', name: 'GitHub', detail: (await g.ghReady()) ? 'Connected' : 'Not connected' }, ...apps.map((n) => ({ key: `app:${n}`, name: n, detail: 'Connected app' }))],
+      devices: [],
+    };
+  }
+
   /** @param {unknown} key @param {unknown} value */
   setRule(key, value) {
     return this.runtime.rules.set(key, value);

@@ -15,19 +15,30 @@ import path from 'node:path';
 
 /** The kinds of action a rule can be about, in the order the apps list them. */
 export const ACTIONS = [
+  { key: 'push-code', label: 'Push code' },
+  { key: 'post-publicly', label: 'Post publicly' },
+  { key: 'delete', label: 'Delete for good' },
   { key: 'send-email', label: 'Send email' },
   { key: 'submit-forms', label: 'Submit applications or forms' },
   { key: 'pay', label: 'Pay or move money' },
 ];
 
 /** @type {Record<string, RuleValue>} */
-const DEFAULTS = { 'send-email': 'never', 'submit-forms': 'never', pay: 'never' };
+const DEFAULTS = { 'push-code': 'ask', 'post-publicly': 'ask', delete: 'ask', 'send-email': 'never', 'submit-forms': 'never', pay: 'never' };
 
 const MAIL_TOOL = /(gmail|outlook|mail|email|smtp|sendgrid|mailgun|postmark|resend)/i;
 const SEND_VERB = /(^|[_\-.])(send|reply|forward)([_\-.]|$)|send_?(email|mail|message|draft)/i;
 const PAY_TOOL = /(^|[_\-.])(pay|payment|payout|transfer|charge|refund|purchase|checkout|send_?money|withdraw)([_\-.]|$)/i;
 const FORM_TOOL = /(^|[_\-.])(submit|apply)([_\-.]|$)|submit_?(form|application)|apply_?(job|to)/i;
 
+const SOCIAL_TOOL = /(slack|twitter|linkedin|discord|telegram|whatsapp|mastodon|bluesky|reddit)/i;
+const POST_VERB = /(^|[_\-.])(post|send|publish|tweet|message|reply|comment)([_\-.]|$)|post_?message|send_?message/i;
+const GIT_TOOL = /(github|gitlab|bitbucket)/i;
+const PUSH_VERB = /(^|[_\-.])(push|merge)([_\-.]|$)|push_?files|merge_?pull/i;
+const DELETE_VERB = /(^|[_\-.])(delete|remove|destroy|drop|purge)([_\-.]|$)/i;
+const DELETE_COMMAND = /\brm\s+-[a-zA-Z]*[rR][a-zA-Z]*\s+(\/|~\/?|\$HOME\/?)\*?(\s|$)|\bgit\s+push\b.*\s(--force|-f)\b|\bgit\s+branch\s+-D\b|\b(DROP|drop)\s+(TABLE|DATABASE|table|database)\b/;
+const PUSH_COMMAND = /\bgit\s+push\b/;
+const POST_COMMAND = /\bgh\s+(issue|pr)\s+(comment|create)\b|\bgh\s+release\s+create\b/;
 const MAIL_COMMAND = /\b(sendmail|mailx?|mutt|msmtp|swaks|ssmtp)\b|smtps?:\/\/|\bsmtplib\b|nodemailer|gmail\.googleapis\.com\/\S*\/send|api\.sendgrid\.com|api\.mailgun\.net|api\.postmarkapp\.com|api\.resend\.com\/emails/i;
 const PAY_COMMAND = /api\.stripe\.com\/v1\/(charges|payment_intents|transfers|payouts|refunds)|api\.paystack\.co\/(transfer|charge)|api\.flutterwave\.com\/v3\/(transfers|charges)|api\.paypal\.com\/v\d\/payments/i;
 
@@ -42,13 +53,20 @@ export function actionOf(tool, input) {
     const cmd = String(input?.command || '');
     if (MAIL_COMMAND.test(cmd)) return 'send-email';
     if (PAY_COMMAND.test(cmd)) return 'pay';
+    if (DELETE_COMMAND.test(cmd)) return 'delete';
+    if (PUSH_COMMAND.test(cmd)) return 'push-code';
+    if (POST_COMMAND.test(cmd)) return 'post-publicly';
     return null;
   }
-  // Tools from connected apps are named mcp__<server>__<tool>.
-  if (!name.startsWith('mcp__')) return null;
+  // Tools from connected apps are named mcp__<server>__<tool>. Bench's own tools are its
+  // own flows, asked about in their own words.
+  if (!name.startsWith('mcp__') || name.startsWith('mcp__bench__')) return null;
   if (MAIL_TOOL.test(name) && SEND_VERB.test(name)) return 'send-email';
   if (PAY_TOOL.test(name)) return 'pay';
   if (FORM_TOOL.test(name)) return 'submit-forms';
+  if (SOCIAL_TOOL.test(name) && POST_VERB.test(name)) return 'post-publicly';
+  if (GIT_TOOL.test(name) && PUSH_VERB.test(name)) return 'push-code';
+  if (DELETE_VERB.test(name)) return 'delete';
   return null;
 }
 
@@ -87,11 +105,19 @@ export class Rules {
     return this.list();
   }
 
+  /** The rule a tool call falls under, when it asks or never: null when it is allowed. @param {string} tool @param {any} input */
+  decide(tool, input) {
+    const kind = actionOf(tool, input);
+    const value = kind ? this.values()[kind] : 'allow';
+    if (!kind || value === 'allow') return null;
+    const a = /** @type {{key:string,label:string}} */ (ACTIONS.find((x) => x.key === kind));
+    return { ...a, value };
+  }
+
   /** The Never rule a tool call would break, or null. @param {string} tool @param {any} input */
   blocks(tool, input) {
-    const kind = actionOf(tool, input);
-    if (!kind || this.values()[kind] !== 'never') return null;
-    return ACTIONS.find((a) => a.key === kind) || null;
+    const d = this.decide(tool, input);
+    return d?.value === 'never' ? d : null;
   }
 
   /** What a session is told, so it does not try in the first place. */

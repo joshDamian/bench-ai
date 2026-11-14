@@ -343,6 +343,7 @@ async function scenario(srv, repo, root) {
   await step('about: nothing to undo', () => api('POST', '/api/about/undo', {}));
   await step('about: from a cv', () => api('POST', '/api/about/from-cv', {}));
   await step('rules', () => api('GET', '/api/rules'));
+  await step('can reach', () => api('GET', '/api/reach'));
   await step('rules: set', () => api('PUT', '/api/rules', { key: 'send-email', value: 'ask' }));
   await step('rules: bad value', () => api('PUT', '/api/rules', { key: 'pay', value: 'maybe' }));
   await step('rules: no such rule', () => api('PUT', '/api/rules', { key: 'fly', value: 'never' }));

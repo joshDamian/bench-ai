@@ -92,6 +92,7 @@ class BenchApi(val config: ServerConfig) {
     /** A session that turns a CV into a draft: attach the CV to it and send the prompt. */
     suspend fun aboutFromCv(): Pair<Session, String> = post("/api/about/from-cv").let { r -> r["session"].decode<Session>() to (r["prompt"].str() ?: "") }
     suspend fun rules(): List<Rule> = get("/api/rules").lossy()
+    suspend fun reach(): Reach = get("/api/reach").decode()
     suspend fun spending(): Spending = get("/api/spending").decode()
     suspend fun setSpending(dailyCap: Double? = null, runCap: Double? = null, paused: Boolean? = null): Spending = put("/api/spending", buildJsonObject {
         dailyCap?.let { put("daily_cap", it) }; runCap?.let { put("run_cap", it) }; paused?.let { put("paused", it) }

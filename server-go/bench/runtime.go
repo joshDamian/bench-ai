@@ -1407,8 +1407,13 @@ func (r *Runtime) SetModel(id string, providerID string, modelID any, hasModel b
 
 func (r *Runtime) beforeTool(sid string, in *Obj) *Obj {
 	// The person's Never list: stopped here, before the tool runs, in every permission mode.
-	if never := r.Rules().Blocks(in.Str("tool_name"), in.ObjAt("tool_input")); never != nil {
-		label := strings.ToLower(never.Label)
+	rule, value := r.Rules().Decide(in.Str("tool_name"), in.ObjAt("tool_input"))
+	// Asks first: put to the person even in a mode that would let it run.
+	if value == "ask" {
+		return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "ask", "permissionDecisionReason", "Asks first: "+strings.ToLower(rule.Label)))
+	}
+	if value == "never" {
+		label := strings.ToLower(rule.Label)
 		r.Notice(sid, "Stopped before it could "+label+": that is on your Never list.")
 		return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "deny", "permissionDecisionReason", "Blocked by the person's Never list: "+label+". Do not try another way. Prepare it for the person to finish instead (an email as a drafts file in the reports folder)."))
 	}

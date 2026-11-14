@@ -967,7 +967,10 @@ export class Runtime extends EventEmitter {
   /** Before each tool call: the Never list, About me's undo, and /tmp as it was. @param {string} id @param {{tool_use_id?:string, tool_name?:string, tool_input?:any}} input */
   #beforeTool(id, input) {
     // The person's Never list: stopped here, before the tool runs, in every permission mode.
-    const never = this.rules.blocks(input.tool_name || '', input.tool_input);
+    const rule = this.rules.decide(input.tool_name || '', input.tool_input);
+    // Asks first: put to the person even in a mode that would let it run.
+    if (rule?.value === 'ask') return { hookSpecificOutput: { hookEventName: /** @type {const} */ ('PreToolUse'), permissionDecision: /** @type {const} */ ('ask'), permissionDecisionReason: `Asks first: ${rule.label.toLowerCase()}` } };
+    const never = rule?.value === 'never' ? rule : null;
     if (never) {
       this.notice(id, `Stopped before it could ${never.label.toLowerCase()}: that is on your Never list.`);
       return { hookSpecificOutput: { hookEventName: /** @type {const} */ ('PreToolUse'), permissionDecision: /** @type {const} */ ('deny'), permissionDecisionReason: `Blocked by the person's Never list: ${never.label.toLowerCase()}. Do not try another way. Prepare it for the person to finish instead (an email as a drafts file in the reports folder).` } };
