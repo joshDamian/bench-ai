@@ -134,6 +134,18 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
         components = com.mikepenz.markdown.compose.components.markdownComponents(
             codeFence = { m -> com.mikepenz.markdown.compose.elements.MarkdownCodeFence(m.content, m.node) { code, lang, _ -> CodeCard(code, lang) } },
             codeBlock = { m -> com.mikepenz.markdown.compose.elements.MarkdownCodeBlock(m.content, m.node) { code, lang, _ -> CodeCard(code, lang) } },
+            // Tables scroll sideways and their cells wrap: the default cuts each cell to one line.
+            table = { m ->
+                com.mikepenz.markdown.compose.elements.MarkdownTable(
+                    m.content, m.node, style = m.typography.table,
+                    headerBlock = { content, header, width, style ->
+                        com.mikepenz.markdown.compose.elements.MarkdownTableHeader(content = content, header = header, tableWidth = width, style = style, verticalAlignment = androidx.compose.ui.Alignment.Top, maxLines = Int.MAX_VALUE, overflow = androidx.compose.ui.text.style.TextOverflow.Clip)
+                    },
+                    rowBlock = { content, row, width, style ->
+                        com.mikepenz.markdown.compose.elements.MarkdownTableRow(content = content, header = row, tableWidth = width, style = style, verticalAlignment = androidx.compose.ui.Alignment.Top, maxLines = Int.MAX_VALUE, overflow = androidx.compose.ui.text.style.TextOverflow.Clip)
+                    },
+                )
+            },
         ),
     )
     }

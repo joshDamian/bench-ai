@@ -155,7 +155,10 @@ private fun DraftCard(d: Draft, expanded: Boolean, onToggle: () -> Unit, onOpenM
 
 /** Opens the draft in Gmail, filled in; any email app when Gmail is not installed. */
 private fun openInMail(context: Context, d: Draft) {
-    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:" + Uri.encode(d.to).replace("%40", "@")))
+    // Gmail reads the subject and body from the mailto address itself and ignores the extras,
+    // so both go in the query; the extras stay for apps that read those instead.
+    val mailto = "mailto:" + Uri.encode(d.to, "@,") + "?subject=" + Uri.encode(d.subject) + "&body=" + Uri.encode(d.body)
+    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse(mailto))
         .putExtra(Intent.EXTRA_EMAIL, arrayOf(d.to))
         .putExtra(Intent.EXTRA_SUBJECT, d.subject)
         .putExtra(Intent.EXTRA_TEXT, d.body)
