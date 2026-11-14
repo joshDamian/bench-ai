@@ -179,6 +179,8 @@ fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
     val page = ext in setOf("html", "htm")
     var source by remember(f.path) { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        // A dialog is its own window: without this its text falls back to black on the dark ground.
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides c.text) {
         Column(Modifier.fillMaxSize().background(c.bg)) {
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Close, "Close") }
@@ -213,6 +215,7 @@ fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
                     )
                 }
             }
+        }
         }
     }
 }
@@ -297,5 +300,9 @@ private fun PdfPages(context: android.content.Context, b: ByteArray, name: Strin
 fun WithFiles(files: SessionFiles, content: @Composable () -> Unit) {
     var viewing by remember { mutableStateOf<FileInfo?>(null) }
     CompositionLocalProvider(LocalFiles provides files, LocalViewFile provides { viewing = it }) { content() }
-    viewing?.let { FileViewer(files, it) { viewing = null } }
+    viewing?.let { f ->
+        // Email drafts open as drafts (Open in Gmail, Copy, Mark sent), not as JSON.
+        if (f.name.endsWith(".drafts.json")) DraftsScreen(files.api, files.sessionId, f.path, f.name, f.name.removeSuffix(".drafts.json"), f.size, {}) { viewing = null }
+        else FileViewer(files, f) { viewing = null }
+    }
 }

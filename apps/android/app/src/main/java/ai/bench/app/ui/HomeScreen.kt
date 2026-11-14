@@ -234,15 +234,18 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     val working = live.filter { it.status == "running" }.sortedByDescending { it.updated_at }
     // Stopped with an error and not looked at: a decision, so it sits with what needs you.
     val failed = live.filter { it.status == "error" && it.unseen && it.id !in waitingOn }.sortedByDescending { it.updated_at }
-    val fresh = reports.filter { !it.seen }
-    val reads = fresh.filter { it.kind == "report" || it.kind == "page" }
-    val drafts = fresh.filter { it.kind == "drafts" }
-    val finished = live.filter { it.status == "idle" && it.unseen && it.id !in waitingOn }.sortedByDescending { it.updated_at }
+    // Reports and pages leave once read. Drafts are things to do, so they stay until each is sent,
+    // even when you watched the session write them.
+    val reads = reports.filter { !it.seen && (it.kind == "report" || it.kind == "page") }
+    val drafts = reports.filter { it.kind == "drafts" && (it.unsent ?: 0) > 0 }
+    val carded = (reads + drafts).map { it.session_id }.toSet()
+    // A session whose output is already a card is not listed again under it.
+    val finished = live.filter { it.status == "idle" && it.unseen && it.id !in waitingOn && it.id !in carded }.sortedByDescending { it.updated_at }
     val readyCards = (if (reads.isNotEmpty()) 1 else 0) + (if (drafts.isNotEmpty()) 1 else 0)
     val readyCount = readyCards + finished.size
     val needCount = s.approvals.size + failed.size
     val next = schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at }
-    val shown = (working + failed + finished).map { it.id }.toSet() + waitingOn
+    val shown = (working + failed + finished).map { it.id }.toSet() + waitingOn + carded
     val pinned = live.filter { it.pinned && it.id !in shown }
     val quiet = live.count { it.id !in shown && !it.pinned }
 
@@ -457,7 +460,9 @@ private fun whenNext(iso: String?): String {
     return when (t.toLocalDate()) {
         today -> "Today $time"
         today.plusDays(1) -> "Tomorrow $time"
-        else -> t.format(java.time.format.DateTimeFormatter.ofPattern("EEE")) + " $time"
+        // Within the week a weekday is enough; a week away, "Sat" would read as today.
+        in today.plusDays(2)..today.plusDays(5) -> t.format(java.time.format.DateTimeFormatter.ofPattern("EEE")) + " $time"
+        else -> t.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM")) + ", $time"
     }
 }
 
