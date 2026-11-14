@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +17,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -43,30 +48,30 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.bench.app.data.BenchError
 import ai.bench.app.data.BenchStore
-import ai.bench.app.data.Schedule
+import ai.bench.app.data.Effort
+import ai.bench.app.data.ProviderInfo
 import ai.bench.app.ui.theme.Bench
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
  * Sessions that start on their own: "every Monday at 8:00, look for new hackathons". What
- * they make lands on Home under Ready for you.
+ * they make lands on Home under Ready for you. New ones start from Home's New menu.
  */
 @Composable
-fun SchedulesScreen(store: BenchStore, onBack: () -> Unit, onOpen: (String) -> Unit) {
+fun SchedulesScreen(store: BenchStore, onBack: () -> Unit, onEdit: (String?) -> Unit) {
     val list by store.schedules.collectAsState()
     val s by store.state.collectAsState()
-    var editing by remember { mutableStateOf<Schedule?>(null) }
-    var adding by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { store.loadExtras() }
     Page("Schedules", "Sessions that start on their own", onBack, actions = {
-        IconButton(onClick = { adding = true }) { Icon(Icons.Default.Add, "New schedule") }
+        IconButton(onClick = { onEdit(null) }) { Icon(Icons.Default.Add, "New schedule") }
     }) {
         if (list.isEmpty()) item("empty") {
             Column(Modifier.padding(start = 6.dp, top = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Nothing scheduled", fontSize = 15.sp, color = Bench.colors.muted)
-                BigButton("New schedule", primary = true, height = 48.dp, fill = false) { adding = true }
+                BigButton("New schedule", primary = true, height = 48.dp, fill = false) { onEdit(null) }
             }
         } else {
             section("Schedules")
@@ -74,20 +79,22 @@ fun SchedulesScreen(store: BenchStore, onBack: () -> Unit, onOpen: (String) -> U
                 Card {
                     list.sortedWith(compareBy({ !it.enabled }, { it.next_run_at ?: "~" })).forEach { sc ->
                         val project = s.projects.firstOrNull { it.id == sc.project_id }?.name
-                        NavRow(sc.title, if (sc.enabled) "${scheduleDays(sc.days)} · ${sc.time}" else "Off", project) { editing = sc }
+                        NavRow(sc.title, if (sc.enabled) "${scheduleDays(sc.days)} · ${sc.time}" else "Off", project) { onEdit(sc.id) }
                     }
                 }
             }
         }
     }
-    if (adding || editing != null) ScheduleEditor(store, editing, onDismiss = { adding = false; editing = null }, onOpen = onOpen)
 }
 
+/** New schedule, or one being changed: as the "Schedule, from the menu" board draws it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ScheduleEditor(store: BenchStore, existing: Schedule?, onDismiss: () -> Unit, onOpen: (String) -> Unit) {
+fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (String) -> Unit) {
     val c = Bench.colors
     val st by store.state.collectAsState()
+    val all by store.schedules.collectAsState()
+    val existing = remember(id) { id?.let { i -> all.firstOrNull { it.id == i } } }
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
     var prompt by remember { mutableStateOf(existing?.prompt.orEmpty()) }
@@ -95,80 +102,116 @@ private fun ScheduleEditor(store: BenchStore, existing: Schedule?, onDismiss: ()
     var time by remember { mutableStateOf(existing?.time ?: "08:00") }
     var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
     var projectId by remember { mutableStateOf(existing?.project_id) }
-    var picking by remember { mutableStateOf(false) }
-    var pickingTime by remember { mutableStateOf(false) }
+    var modelId by remember { mutableStateOf(existing?.model_id) }
+    var providerId by remember { mutableStateOf(existing?.provider_id) }
+    var effort by remember { mutableStateOf(existing?.effort) }
+    var providers by remember { mutableStateOf<List<ProviderInfo>>(emptyList()) }
+    var picking by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     // A new schedule goes to the Research project unless you pick another; it is made on first use.
-    LaunchedEffect(Unit) { if (projectId == null) projectId = runCatching { store.api.research().id }.getOrNull() }
-    val projectName = st.projects.firstOrNull { it.id == projectId }?.name ?: if (projectId == null) "…" else "Research"
+    LaunchedEffect(Unit) {
+        providers = runCatching { store.api.providers() }.getOrDefault(emptyList())
+        if (projectId == null) projectId = runCatching { store.api.research().id }.getOrNull().also { store.refresh() }
+    }
+    val projectName = st.projects.firstOrNull { it.id == projectId }?.name ?: "Research"
+    val modelName = listOfNotNull(
+        providers.flatMap { it.models }.firstOrNull { it.id == modelId }?.label ?: "Default model",
+        effort?.let { Effort.of(it)?.label },
+    ).joinToString(" · ")
+    val ready = !busy && projectId != null && title.isNotBlank() && prompt.isNotBlank() && days.isNotEmpty()
 
-    fun save(then: (Schedule) -> Unit = { onDismiss() }) {
+    fun save() {
         val pid = projectId ?: return
         busy = true; error = null
         scope.launch {
             try {
-                val saved = store.api.saveSchedule(existing?.id, buildJsonObject {
-                    put("title", title.trim()); put("prompt", prompt.trim()); put("project_id", pid)
+                store.api.saveSchedule(existing?.id, buildJsonObject {
+                    put("title", title.trim()); put("prompt", prompt.trim()); put("projectId", pid)
                     put("days", days.sorted().joinToString(",")); put("time", time); put("enabled", enabled)
+                    if (modelId != null) put("modelId", modelId) else put("modelId", JsonNull)
+                    if (providerId != null) put("providerId", providerId) else put("providerId", JsonNull)
+                    if (effort != null) put("effort", effort) else put("effort", JsonNull)
                     if (existing == null) put("tz", java.time.ZoneId.systemDefault().id)
                 })
                 store.loadExtras()
-                then(saved)
+                onBack()
             } catch (e: BenchError) { error = e.message } finally { busy = false }
         }
     }
 
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, modifier = Modifier.padding(top = 40.dp)) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(if (existing == null) "New schedule" else "Edit schedule", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            Input(title, { title = it }, "Name, like Hackathons this week", single = true)
-            Input(prompt, { prompt = it }, "What to do each time: find, compare, draft…", single = false)
-            Text("Days", fontSize = 13.sp, color = c.muted)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Monday first, as most calendars outside the US show it.
-                listOf(1, 2, 3, 4, 5, 6, 0).forEach { d ->
-                    val on = d in days
-                    Box(
-                        Modifier.size(40.dp).clip(CircleShape).background(if (on) c.accent else c.surface3).clickable { days = if (on) days - d else days + d },
-                        contentAlignment = Alignment.Center,
-                    ) { Text("SMTWTFS"[d].toString(), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (on) c.onAccent else c.text) }
+    Page(if (existing == null) "New schedule" else "Edit schedule", null, onBack, bottom = {
+        Box(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+            BigButton(if (existing == null) "Save" else "Save changes", primary = true, enabled = ready) { save() }
+        }
+    }) {
+        item("fields") {
+            Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Input(title, { title = it }, "Name, like Hackathon scan", single = true)
+                Input(prompt, { prompt = it }, "What to do each time: find, compare, draft…", single = false)
+                Text("Days", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    // Monday first, as most calendars outside the US show it.
+                    listOf(1, 2, 3, 4, 5, 6, 0).forEach { d ->
+                        val on = d in days
+                        Box(
+                            Modifier.size(40.dp).clip(CircleShape).background(if (on) c.accent else c.surface3).clickable { days = if (on) days - d else days + d },
+                            contentAlignment = Alignment.Center,
+                        ) { Text("SMTWTFS"[d].toString(), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (on) c.onAccent else c.text) }
+                    }
                 }
             }
-            Card {
-                NavRow("Time", time) { pickingTime = true }
-                NavRow("Project", projectName) { picking = true }
-                SwitchRow("On", "Uses your default model and mode", enabled) { enabled = it }
+        }
+        item("rows") {
+            Column(Modifier.padding(top = 12.dp)) {
+                Card {
+                    NavRow("Time", time) { picking = "time" }
+                    NavRow("Project", projectName) { picking = "project" }
+                    NavRow("Model", modelName) { picking = "model" }
+                    if (existing != null) SwitchRow("On", existing.next_run_at?.let { "Next: " + it.take(10) }, enabled) { enabled = it }
+                }
+                error?.let { Text(it, fontSize = 14.sp, color = c.bad, modifier = Modifier.padding(start = 6.dp, top = 8.dp)) }
             }
-            error?.let { Text(it, fontSize = 14.sp, color = c.bad) }
-            BigButton(if (existing == null) "Save" else "Save changes", primary = true, enabled = !busy && projectId != null && title.isNotBlank() && prompt.isNotBlank() && days.isNotEmpty()) { save() }
-            if (existing != null) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        }
+        if (existing != null) item("actions") {
+            Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 BigButton("Run now", Modifier.weight(1f), height = 48.dp, enabled = !busy) {
-                    scope.launch {
-                        runCatching { store.api.runSchedule(existing.id) }.onSuccess { onDismiss(); onOpen(it.id) }.onFailure { error = it.message }
-                    }
+                    scope.launch { runCatching { store.api.runSchedule(existing.id) }.onSuccess { onOpen(it.id) }.onFailure { error = it.message } }
                 }
                 BigButton("Delete…", Modifier.weight(1f), height = 48.dp, danger = true, enabled = !busy) { confirmDelete = true }
             }
         }
     }
-    if (picking) PickDialog("Project", st.projects.map { it.id to it.name }, projectId.orEmpty(), onDismiss = { picking = false }) { projectId = it; picking = false }
-    if (pickingTime) {
-        val (h, m) = time.split(':').map { it.toIntOrNull() ?: 0 }
-        val tp = rememberTimePickerState(h, m, is24Hour = true)
-        AlertDialog(
-            onDismissRequest = { pickingTime = false }, containerColor = c.surface2,
-            confirmButton = { TextButton(onClick = { time = "%02d:%02d".format(tp.hour, tp.minute); pickingTime = false }) { Text("Done") } },
-            dismissButton = { TextButton(onClick = { pickingTime = false }) { Text("Cancel", color = c.muted) } },
-            text = { TimeInput(tp, colors = TimePickerDefaults.colors(timeSelectorSelectedContainerColor = c.accent, timeSelectorSelectedContentColor = c.onAccent)) },
-        )
+
+    when (picking) {
+        "project" -> PickDialog("Project", st.projects.sortedBy { it.name.lowercase() }.map { it.id to it.name }, projectId.orEmpty(), onDismiss = { picking = null }) { projectId = it; picking = null }
+        "model" -> {
+            val opts = listOf("" to "Default model") + providers.filter { it.enabled && it.ready }.flatMap { p -> p.models.filter { it.enabled }.map { "${p.id}|${it.id}" to "${it.label} · ${p.name}" } }
+            PickDialog("Model", opts, if (modelId == null) "" else "${providerId.orEmpty()}|$modelId", onDismiss = { picking = null }) { v ->
+                if (v.isEmpty()) { modelId = null; providerId = null } else { providerId = v.substringBefore('|'); modelId = v.substringAfter('|') }
+                picking = "effort"
+            }
+        }
+        "effort" -> PickDialog("Effort", listOf("" to "Auto") + listOf("low", "medium", "high", "max").map { it to Effort.of(it)!!.label }, effort.orEmpty(), onDismiss = { picking = null }) {
+            effort = it.ifEmpty { null }; picking = null
+        }
+        "time" -> {
+            val (h, m) = time.split(':').map { it.toIntOrNull() ?: 0 }
+            val tp = rememberTimePickerState(h, m, is24Hour = true)
+            AlertDialog(
+                onDismissRequest = { picking = null }, containerColor = c.surface2,
+                confirmButton = { TextButton(onClick = { time = "%02d:%02d".format(tp.hour, tp.minute); picking = null }) { Text("Done") } },
+                dismissButton = { TextButton(onClick = { picking = null }) { Text("Cancel", color = c.muted) } },
+                text = { TimeInput(tp, colors = TimePickerDefaults.colors(timeSelectorSelectedContainerColor = c.accent, timeSelectorSelectedContentColor = c.onAccent)) },
+            )
+        }
     }
     if (confirmDelete && existing != null) AlertDialog(
         onDismissRequest = { confirmDelete = false }, containerColor = c.surface2,
         title = { Text("Delete “${existing.title}”?") },
         text = { Text("It stops running. Sessions it already started stay.", color = c.muted) },
-        confirmButton = { TextButton(onClick = { scope.launch { runCatching { store.api.deleteSchedule(existing.id) }; store.loadExtras(); onDismiss() } }) { Text("Delete", color = c.bad) } },
+        confirmButton = { TextButton(onClick = { scope.launch { runCatching { store.api.deleteSchedule(existing.id) }; store.loadExtras(); onBack() } }) { Text("Delete", color = c.bad) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel", color = c.muted) } },
     )
 }
@@ -183,4 +226,37 @@ private fun Input(value: String, onChange: (String) -> Unit, hint: String, singl
         modifier = Modifier.fillMaxWidth().heightIn(min = if (single) 52.dp else 110.dp, max = 220.dp).background(c.surface1, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 15.dp),
         decorationBox = { inner -> Box { if (value.isEmpty()) Text(hint, fontSize = 16.sp, color = c.muted); inner() } },
     )
+}
+
+/** Home's New: one button, a sheet of what you can start (the "New opens a menu" board). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NewMenu(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    val c = Bench.colors
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss, containerColor = c.surface2,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) },
+    ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("New", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp, top = 4.dp, bottom = 8.dp))
+            listOf(
+                Triple("session", Icons.Outlined.ChatBubbleOutline, "New session" to "Ask, or work in a project"),
+                Triple("research", Icons.AutoMirrored.Outlined.ManageSearch, "Research" to "Find and compare; a report to read later"),
+                Triple("schedule", Icons.Outlined.Schedule, "Schedule" to "Runs a prompt on the days you pick"),
+                Triple("project", Icons.Outlined.Folder, "Project" to "Clone a repo, open a folder or start one"),
+            ).forEach { (key, icon, text) ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { onPick(key) }.padding(horizontal = 6.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Box(Modifier.size(48.dp).background(c.surface3, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = c.text, modifier = Modifier.size(22.dp)) }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(text.first, fontSize = 16.5.sp, fontWeight = FontWeight.Medium)
+                        Text(text.second, fontSize = 13.5.sp, color = c.muted)
+                    }
+                }
+            }
+        }
+    }
 }

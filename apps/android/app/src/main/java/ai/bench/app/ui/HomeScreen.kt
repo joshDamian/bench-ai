@@ -303,8 +303,8 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             ExtendedFloatingActionButton(
                 onClick = onNew,
                 expanded = fabOpen,
-                icon = { Icon(Icons.Default.Add, "New session") },
-                text = { Text("New session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
+                icon = { Icon(Icons.Default.Add, null) },
+                text = { Text("New", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
                 containerColor = c.accent, contentColor = c.onAccent,
             )
         },
