@@ -226,6 +226,8 @@ async function scenario(srv, repo, root) {
   await step('task commit', () => api('POST', `/api/tasks/${tid}/commit`, { message: 'Add feature.js' }));
   await step('task commit: nothing', () => api('POST', `/api/tasks/${tid}/commit`, {}));
   await step('task update from base', () => api('POST', `/api/tasks/${tid}/update`, {}));
+  // The check that failed under the loop may have started a fix turn; let it finish on both.
+  await until(async () => (await api('GET', `/api/sessions/${t.session.id}`)).body.session.status === 'idle', 15000);
   await step('task merge', () => api('POST', `/api/tasks/${tid}/merge`, { cleanup: true }));
   await step('task after merge', () => api('GET', `/api/tasks/${tid}`));
   await step('task diff after merge', () => api('GET', `/api/tasks/${tid}/diff`));
