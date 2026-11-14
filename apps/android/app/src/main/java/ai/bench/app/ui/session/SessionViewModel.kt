@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 
 /** One file on its way to the session, or there already. */
-data class Attachment(val key: Long, val name: String, val progress: Float, val ref: UploadRef? = null, val error: String? = null)
+data class Attachment(val key: Long, val name: String, val progress: Float, val ref: UploadRef? = null, val error: String? = null, val uri: android.net.Uri? = null, val type: String = "", val size: Long = -1)
 
 data class Stream(val text: String = "", val thinking: String = "")
 
@@ -231,7 +231,7 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
             val type = resolver.getType(uri) ?: "application/octet-stream"
             val key = nextKey++
             val label = name ?: uri.lastPathSegment ?: "file"
-            _attachments.update { it + Attachment(key, label, 0f) }
+            _attachments.update { it + Attachment(key, label, 0f, uri = uri, type = type, size = size) }
             viewModelScope.launch {
                 try {
                     val ref = api.upload(sessionId, label, type, size, { resolver.openInputStream(uri) ?: error("Can't read $label") }) { p ->

@@ -84,6 +84,7 @@ import ai.bench.app.data.Block
 import ai.bench.app.data.blocks
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import ai.bench.app.ui.Card
 import ai.bench.app.ui.NavRow
 import ai.bench.app.ui.SwitchRow
@@ -289,13 +290,14 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
                     exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
                 ) {
-                    androidx.compose.material3.BadgedBox(badge = {
-                        if (unseen > 0) androidx.compose.material3.Badge(containerColor = Bench.colors.accent) { Text("$unseen") }
-                    }) {
-                        SmallFloatingActionButton(
-                            onClick = { stick = true; scope.launch { list.animateScrollToItem(0) } },
-                            shape = CircleShape, containerColor = Bench.colors.surface3, contentColor = Bench.colors.text,
-                        ) { Icon(Icons.Default.KeyboardArrowDown, if (unseen > 0) "Jump to $unseen new" else "Jump to latest") }
+                    Row(
+                        Modifier.height(36.dp).shadow(8.dp, RoundedCornerShape(18.dp)).background(Bench.colors.surface3, RoundedCornerShape(18.dp))
+                            .clip(RoundedCornerShape(18.dp)).clickable { stick = true; scope.launch { list.animateScrollToItem(0) } }.padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(18.dp))
+                        Text(if (unseen > 0) "$unseen new" else "Latest", fontSize = 13.5.sp)
                     }
                 }
             }
@@ -330,16 +332,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             if (attachments.isNotEmpty()) {
                 LazyRow(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     items(attachments, key = { it.key }) { a ->
-                        Column {
-                            InputChip(
-                                selected = false,
-                                onClick = { vm.removeAttachment(a.key) },
-                                label = { Text(if (a.error != null) "${a.name}: ${a.error}" else a.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (a.error != null) Bench.colors.bad else Bench.colors.text) },
-                                trailingIcon = { Icon(Icons.Default.Close, "Remove", Modifier.size(16.dp), tint = Bench.colors.muted) },
-                                modifier = Modifier.heightIn(max = 40.dp),
-                            )
-                            if (a.ref == null && a.error == null) LinearProgressIndicator(progress = { a.progress }, modifier = Modifier.fillMaxWidth())
-                        }
+                        ai.bench.app.ui.AttachmentTile(
+                            a.name, a.uri, a.type.startsWith("image/"), a.size,
+                            progress = if (a.ref == null) a.progress else null, error = a.error,
+                        ) { vm.removeAttachment(a.key) }
                     }
                 }
             }
@@ -499,8 +495,9 @@ private fun Composer(
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent.copy(alpha = 0.2f), contentColor = c.accent),
                 ) { Icon(Icons.Default.Mic, "Stop dictating") }
             } else if (running && !canSend) {
-                FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
-                    Box(Modifier.size(12.dp).background(c.bad, RoundedCornerShape(3.dp)))
+                // Stop takes Send's place and shape while Claude works.
+                FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent, contentColor = c.onAccent)) {
+                    Box(Modifier.size(12.dp).background(c.onAccent, RoundedCornerShape(3.dp)))
                 }
             } else if (!canSend) {
                 IconButton(onClick = onDictate, modifier = Modifier.size(44.dp)) { Icon(Icons.Default.Mic, "Dictate", tint = c.muted) }
