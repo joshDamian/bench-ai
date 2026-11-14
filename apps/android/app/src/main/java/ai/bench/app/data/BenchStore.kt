@@ -44,6 +44,50 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     private val _session = MutableSharedFlow<ServerMessage>(extraBufferCapacity = 256)
     val sessionTraffic: SharedFlow<ServerMessage> = _session.asSharedFlow()
 
+    /** What sessions made for the person (reports, pages, drafts), and the schedules, for Home. */
+    private val _reports = MutableStateFlow<List<Report>>(emptyList())
+    val reports: StateFlow<List<Report>> = _reports.asStateFlow()
+    private val _schedules = MutableStateFlow<List<Schedule>>(emptyList())
+    val schedules: StateFlow<List<Schedule>> = _schedules.asStateFlow()
+    private var extrasJob: Job? = null
+
+    /** Reloads reports and schedules; a burst of calls makes one request. */
+    fun loadExtras() {
+        extrasJob?.cancel()
+        extrasJob = scope.launch {
+            delay(300)
+            runCatching { api.reports() }.onSuccess { _reports.value = it }
+            runCatching { api.schedules() }.onSuccess { _schedules.value = it }
+        }
+    }
+
+    /** The person looked at a session: Home stops listing it as new. Applied here at once. */
+    fun markSeen(id: String) {
+        val at = java.time.Instant.now().toString()
+        _state.update { st -> st.copy(sessions = st.sessions.map { if (it.id == id) it.copy(seen_at = maxOf(at, it.updated_at)) else it }) }
+        _reports.update { list -> list.map { if (it.session_id == id) it.copy(seen = true) else it } }
+        scope.launch { api.seen(id) }
+    }
+
+    /** Keeps a session on Home (or lets it go back to its project). Applied here at once. */
+    fun setPinned(id: String, on: Boolean) {
+        _state.update { st -> st.copy(sessions = st.sessions.map { if (it.id == id) it.copy(pinned = on) else it }) }
+        scope.launch { runCatching { api.pin(id, on) } }
+    }
+
+    /** Each watched session's latest step in plain words ("Running tests"), for Home's rows. */
+    private val _steps = MutableStateFlow<Map<String, String>>(emptyMap())
+    val steps: StateFlow<Map<String, String>> = _steps.asStateFlow()
+
+    private fun noteStep(e: SessionEvent) {
+        if (e.kind != "assistant") return
+        val d = e.data
+        val use = d["content"].arr().orEmpty().lastOrNull { it["type"].str() == "tool_use" } ?: return
+        val cwd = _state.value.sessions.firstOrNull { it.id == e.session_id }?.cwd.orEmpty()
+        val label = Transcript.plain(use["name"].str() ?: "", use["input"].obj() ?: kotlinx.serialization.json.JsonObject(emptyMap()), cwd)
+        _steps.update { it + (e.session_id to label) }
+    }
+
     /** Fires when the socket comes back, so open panes read what they missed. */
     private val _reconnected = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val reconnected: SharedFlow<Unit> = _reconnected.asSharedFlow()
@@ -76,6 +120,7 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     suspend fun refresh() {
         try {
             val s = api.state()
+            loadExtras()
             _state.update {
                 it.copy(
                     ready = true, unauthorized = false, error = null,
@@ -181,7 +226,12 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     private fun onServerMessage(m: ServerMessage) {
         when (m) {
             is ServerMessage.Hello -> _state.update { it.copy(sessions = m.sessions, approvals = m.approvals) }
-            is ServerMessage.SessionChanged -> _state.update { it.copy(sessions = it.sessions.upsert(m.session) { s -> s.id }) }
+            is ServerMessage.SessionChanged -> {
+                val was = _state.value.sessions.firstOrNull { it.id == m.session.id }?.status
+                _state.update { it.copy(sessions = it.sessions.upsert(m.session) { s -> s.id }) }
+                // A turn ended or a session started: it may have written a report, or come from a schedule.
+                if (was != m.session.status || was == null) loadExtras()
+            }
             is ServerMessage.SessionRemoved -> _state.update { it.copy(sessions = it.sessions.filterNot { s -> s.id == m.id }) }
             is ServerMessage.TaskChanged -> _state.update { it.copy(tasks = it.tasks.upsert(m.task) { t -> t.id }) }
             is ServerMessage.ApprovalAdded -> {
@@ -193,7 +243,8 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
                 _state.update { it.copy(approvals = it.approvals.filterNot { a -> a.id == m.id }) }
                 _session.tryEmit(m)
             }
-            is ServerMessage.Event, is ServerMessage.Delta, is ServerMessage.Suggestion, is ServerMessage.Commands -> _session.tryEmit(m)
+            is ServerMessage.Event -> { noteStep(m.event); _session.tryEmit(m) }
+            is ServerMessage.Delta, is ServerMessage.Suggestion, is ServerMessage.Commands -> _session.tryEmit(m)
             is ServerMessage.Git, ServerMessage.Pong -> Unit
         }
     }

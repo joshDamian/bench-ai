@@ -775,6 +775,7 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		add(userInstructions())
 		add(scratchNote(scratch))
 		add(attach)
+		add(ReportsNote(ReportsDir(r.AttachmentsDir(id))))
 		add(r.Notes().Brief(pp))
 		if routed != nil {
 			add(RoutingNote)

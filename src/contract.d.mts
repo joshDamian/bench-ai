@@ -237,6 +237,12 @@ export interface Session {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  /** When the person last looked at it; Home lists sessions changed after it. */
+  seen_at?: string | null;
+  /** Kept on Home whatever its state. */
+  pinned?: boolean;
+  /** The schedule that started it, if one did. */
+  schedule_id?: string | null;
 }
 
 /** A persisted transcript entry. `kind` is the SDK message type, or `user` for what the person sent. */

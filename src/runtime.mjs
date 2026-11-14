@@ -15,6 +15,7 @@ import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
 import { askApproval, ASK_TOOLS, ASK_BRIEF } from './ask.mjs';
+import { REPORTS_NOTE, reportsDir } from './reports.mjs';
 import { resolveRouting, subagents, ROUTING_NOTE } from './routing.mjs';
 import { parseLimit, limitFromEvent } from './limits.mjs';
 import { snapshot, appeared } from './artifacts.mjs';
@@ -611,7 +612,8 @@ export class Runtime extends EventEmitter {
     };
     const attach = attachNote(this.attachmentsDir(s.id));
     const notes = ask ? null : this.notes.brief(project?.path);
-    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
+    const reports = reportsDir(this.attachmentsDir(s.id));
+    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, REPORTS_NOTE(reports), notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
     const memory = project && path.resolve(project.path) !== path.resolve(s.cwd) ? memoryDir(project.path) : null;
     fs.mkdirSync(this.attachmentsDir(s.id), { recursive: true });
     const live = new Live(s.id);

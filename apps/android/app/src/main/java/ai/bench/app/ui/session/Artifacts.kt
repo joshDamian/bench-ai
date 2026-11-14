@@ -1,6 +1,8 @@
 package ai.bench.app.ui.session
 
 import android.content.Intent
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
@@ -16,6 +18,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -157,6 +161,10 @@ suspend fun handOff(context: android.content.Context, files: SessionFiles, f: Fi
 }
 
 /** The viewer: images pinch to zoom, PDFs page by page, text as it is; Share and Open with for anything. */
+/** Files shown as highlighted code, and the highlighter's name for each where it differs. */
+private val CODE = setOf("kt", "kts", "java", "swift", "js", "mjs", "cjs", "ts", "tsx", "jsx", "go", "py", "rb", "rs", "c", "h", "cpp", "cs", "php", "sh", "bash", "zsh", "json", "yaml", "yml", "toml", "sql", "css", "html", "xml", "gradle", "dart")
+private val LANG = mapOf("kt" to "kotlin", "kts" to "kotlin", "js" to "javascript", "mjs" to "javascript", "cjs" to "javascript", "jsx" to "javascript", "ts" to "typescript", "tsx" to "typescript", "py" to "python", "rb" to "ruby", "rs" to "rust", "h" to "c", "cs" to "csharp", "sh" to "shell", "bash" to "shell", "zsh" to "shell", "yml" to "yaml")
+
 @Composable
 fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
     val c = Bench.colors
@@ -165,6 +173,11 @@ fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
     var bytes by remember(f.path) { mutableStateOf<ByteArray?>(null) }
     var failed by remember(f.path) { mutableStateOf(false) }
     LaunchedEffect(f.path) { if (f.viewable) { bytes = files.bytes(f); failed = bytes == null } }
+    // Markdown opens rendered, at reading width; the toggle shows its source.
+    val ext = f.name.substringAfterLast('.', "").lowercase()
+    val markdown = ext in setOf("md", "markdown", "mdx")
+    val page = ext in setOf("html", "htm")
+    var source by remember(f.path) { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Column(Modifier.fillMaxSize().background(c.bg)) {
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -173,6 +186,7 @@ fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
                     Text(f.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(f.meta, fontSize = 12.sp, color = c.muted)
                 }
+                if ((markdown || page) && bytes != null) ai.bench.app.ui.Segmented(listOf("rendered" to (if (page) "Page" else "Rendered"), "source" to "Source"), if (source) "source" else "rendered", { source = it == "source" }, Modifier.width(176.dp), height = 36.dp)
                 TextButton(onClick = { scope.launch { handOff(context, files, f, share = true) } }) { Text("Share") }
             }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -186,6 +200,13 @@ fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
                     b == null -> CircularProgressIndicator()
                     f.kind == "image" -> ZoomImage(b)
                     f.kind == "pdf" -> PdfPages(context, b, f.name)
+                    markdown && !source -> Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
+                        ai.bench.app.ui.MarkdownText(b.decodeToString().take(400_000), Modifier.widthIn(max = 680.dp).padding(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 32.dp))
+                    }
+                    page && !source -> HtmlPage(b.decodeToString(), f.path)
+                    !markdown && ext in CODE -> Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp).navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
+                        ai.bench.app.ui.CodeCard(b.decodeToString().take(400_000), LANG[ext] ?: ext)
+                    }
                     else -> Text(
                         b.decodeToString().take(400_000), fontFamily = Mono, fontSize = 12.5.sp, lineHeight = 18.sp, color = c.text, softWrap = false,
                         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()).padding(16.dp).navigationBarsPadding(),
@@ -194,6 +215,50 @@ fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * A page a session made, live: its script runs, its state stays (localStorage), but it reaches
+ * no network and no files. Its colours come from the app's theme through the CSS variables the
+ * reports note names. Links open outside, in the browser or the email app.
+ */
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun HtmlPage(html: String, key: String) {
+    val c = Bench.colors
+    val context = LocalContext.current
+    fun hex(x: androidx.compose.ui.graphics.Color) = "#%06X".format(x.toArgb() and 0xFFFFFF)
+    val dark = c.bg.luminance() < 0.5f
+    val theme = "<style>:root{color-scheme:${if (dark) "dark" else "light"};--bg:${hex(c.bg)}!important;--surface:${hex(c.surface1)}!important;--text:${hex(c.text)}!important;--muted:${hex(c.muted)}!important;--accent:${hex(c.accent)}!important;--line:${hex(c.line)}!important}html{background:var(--bg)}</style>"
+    val doc = remember(html, theme) {
+        val viewport = if (html.contains("name=\"viewport\"", true)) "" else "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        val at = html.indexOf("</head>", ignoreCase = true)
+        if (at >= 0) html.substring(0, at) + viewport + theme + html.substring(at) else viewport + theme + html
+    }
+    // One origin per page, so pages keep their own storage and cannot read each other's.
+    val origin = "https://p" + Integer.toHexString(key.hashCode()) + ".pages.bench.invalid/"
+    androidx.compose.ui.viewinterop.AndroidView(
+        modifier = Modifier.fillMaxSize().navigationBarsPadding(),
+        factory = { ctx ->
+            android.webkit.WebView(ctx).apply {
+                setBackgroundColor(c.bg.toArgb())
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.blockNetworkLoads = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                webViewClient = object : android.webkit.WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: android.webkit.WebView, req: android.webkit.WebResourceRequest): Boolean {
+                        val u = req.url
+                        if (u.host?.endsWith(".pages.bench.invalid") == true) return false
+                        if (u.scheme in setOf("http", "https", "mailto", "tel")) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        return true
+                    }
+                }
+                loadDataWithBaseURL(origin, doc, "text/html", "utf-8", null)
+            }
+        },
+    )
 }
 
 @Composable

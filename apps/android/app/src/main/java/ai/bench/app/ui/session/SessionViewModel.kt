@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 
 /** One file on its way to the session, or there already. */
-data class Attachment(val key: Long, val name: String, val progress: Float, val ref: UploadRef? = null, val error: String? = null)
+data class Attachment(val key: Long, val name: String, val progress: Float, val ref: UploadRef? = null, val error: String? = null, val uri: android.net.Uri? = null, val type: String = "", val size: Long = -1)
 
 data class Stream(val text: String = "", val thinking: String = "")
 
@@ -42,6 +42,9 @@ private const val PAGE = 400
 
 class SessionViewModel(val sessionId: String, private val store: BenchStore) : ViewModel() {
     val api = store.api
+
+    /** Looking at a session clears it from Home's "Ready for you". */
+    fun markSeen() = store.markSeen(sessionId)
 
     private val events = MutableStateFlow<List<SessionEvent>>(emptyList())
     private val _stream = MutableStateFlow(Stream())
@@ -204,6 +207,8 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
 
     fun rename(title: String) = viewModelScope.launch { runCatching { api.rename(sessionId, title) }.onFailure { _errors.tryEmit(it.message ?: "") } }
 
+    fun setPinned(on: Boolean) = store.setPinned(sessionId, on)
+
     fun archive(done: () -> Unit) = viewModelScope.launch {
         runCatching { api.archive(sessionId) }.onSuccess { done() }.onFailure { _errors.tryEmit(it.message ?: "") }
     }
@@ -231,7 +236,7 @@ class SessionViewModel(val sessionId: String, private val store: BenchStore) : V
             val type = resolver.getType(uri) ?: "application/octet-stream"
             val key = nextKey++
             val label = name ?: uri.lastPathSegment ?: "file"
-            _attachments.update { it + Attachment(key, label, 0f) }
+            _attachments.update { it + Attachment(key, label, 0f, uri = uri, type = type, size = size) }
             viewModelScope.launch {
                 try {
                     val ref = api.upload(sessionId, label, type, size, { resolver.openInputStream(uri) ?: error("Can't read $label") }) { p ->

@@ -97,7 +97,7 @@ fun CodeBlock(text: String, modifier: Modifier = Modifier, color: Color = Bench.
 @Composable
 fun MarkdownText(text: String, modifier: Modifier = Modifier) {
     val c = Bench.colors
-    val body = TextStyle(fontSize = 15.sp, lineHeight = 23.sp, color = c.text)
+    val body = TextStyle(fontSize = 15.5.sp, lineHeight = 24.sp, color = c.text)
     val head = body.copy(fontWeight = FontWeight.SemiBold)
     // Long-press any text in a reply to select and copy it.
     androidx.compose.foundation.text.selection.SelectionContainer {
@@ -160,8 +160,7 @@ fun CodeCard(code: String, language: String?) {
     }
     androidx.compose.foundation.layout.Column(
         Modifier.fillMaxWidth().padding(vertical = 6.dp)
-            .background(c.wellBg, RoundedCornerShape(14.dp))
-            .border(1.dp, c.line, RoundedCornerShape(14.dp)),
+            .background(c.wellBg, RoundedCornerShape(14.dp)),
     ) {
         Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(language?.ifBlank { null } ?: "code", fontSize = 12.sp, color = c.muted, modifier = Modifier.weight(1f))

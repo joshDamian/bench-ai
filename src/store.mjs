@@ -62,6 +62,11 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS artifacts(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,task_id TEXT,project_id TEXT,path TEXT NOT NULL,tool TEXT,
     created_at TEXT NOT NULL,removed_at TEXT,removed_by TEXT,UNIQUE(session_id,path));
   CREATE INDEX IF NOT EXISTS artifacts_by_path ON artifacts(path);
+  -- A schedule starts a session on its own: on the listed weekdays (0 Sunday .. 6 Saturday,
+  -- comma-separated) at time (HH:MM) in tz, in project_id, with prompt as its first message.
+  -- last_run_at is when it last started one, so a day is never run twice.
+  CREATE TABLE IF NOT EXISTS schedules(id TEXT PRIMARY KEY,title TEXT NOT NULL,project_id TEXT NOT NULL,prompt TEXT NOT NULL,days TEXT NOT NULL,time TEXT NOT NULL,tz TEXT NOT NULL,
+    mode TEXT,model_id TEXT,provider_id TEXT,effort TEXT,enabled INTEGER NOT NULL DEFAULT 1,last_run_at TEXT,created_at TEXT NOT NULL);
 `;
 
 export const hash = (/** @type {string} */ s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -127,6 +132,15 @@ export class Store {
       if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === col)) this.db.exec(`ALTER TABLE sessions ADD COLUMN ${col} TEXT`);
     }
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'auto_resume')) this.db.exec('ALTER TABLE sessions ADD COLUMN auto_resume INTEGER');
+    // seen_at: when the person last looked at the session; Home lists what changed after it.
+    // Sessions from before it start as seen, so Home does not fill with the whole history.
+    // pinned: kept on Home whatever its state. schedule_id: the schedule that started it.
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'seen_at')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN seen_at TEXT');
+      this.db.exec('UPDATE sessions SET seen_at=updated_at');
+    }
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'pinned')) this.db.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER');
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'schedule_id')) this.db.exec('ALTER TABLE sessions ADD COLUMN schedule_id TEXT');
     // routing: a project's or a task's own subagent models, as JSON, over the person's default.
     if (!this.db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE projects ADD COLUMN routing TEXT');
     if (!this.db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE tasks ADD COLUMN routing TEXT');
@@ -434,7 +448,58 @@ export class Store {
   /** A session row, with its JSON columns read back. @param {any} r @returns {Session|undefined} */
   #session(r) {
     if (!r) return r;
-    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume };
+    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume, pinned: !!r.pinned };
+  }
+
+  /** Marks a session looked at, without counting as a change to it. @param {string} id @returns {Session|undefined} */
+  markSeen(id) {
+    this.db.prepare('UPDATE sessions SET seen_at=? WHERE id=?').run(now(), id);
+    return this.getSession(id);
+  }
+
+  /** Pins or unpins a session on Home, without counting as a change. @param {string} id @param {boolean} on */
+  setPinned(id, on) {
+    this.db.prepare('UPDATE sessions SET pinned=? WHERE id=?').run(on ? 1 : 0, id);
+    return this.getSession(id);
+  }
+
+  // -- schedules --------------------------------------------------------------
+
+  /** @param {any} r */
+  #schedule(r) {
+    if (!r) return r;
+    return { ...r, enabled: !!r.enabled };
+  }
+
+  /** @returns {any[]} */
+  listSchedules() {
+    return this.#all('SELECT * FROM schedules ORDER BY created_at').map((r) => this.#schedule(r));
+  }
+
+  /** @param {string} id */
+  getSchedule(id) {
+    return this.#schedule(this.#one('SELECT * FROM schedules WHERE id=?', id));
+  }
+
+  /** @param {Record<string, any>} o */
+  addSchedule(o) {
+    const id = crypto.randomUUID();
+    this.db.prepare('INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, o.title, o.project_id, o.prompt, o.days, o.time, o.tz, o.mode ?? null, o.model_id ?? null, o.provider_id ?? null, o.effort ?? null, o.enabled === false ? 0 : 1, now());
+    return this.getSchedule(id);
+  }
+
+  /** @param {string} id @param {Record<string, any>} patch */
+  updateSchedule(id, patch) {
+    const row = { ...patch };
+    if (row.enabled !== undefined) row.enabled = row.enabled ? 1 : 0;
+    this.#patch('schedules', id, row);
+    return this.getSchedule(id);
+  }
+
+  /** @param {string} id */
+  deleteSchedule(id) {
+    return this.db.prepare('DELETE FROM schedules WHERE id=?').run(id).changes > 0;
   }
 
   /** @param {string} id @returns {Session|undefined} */

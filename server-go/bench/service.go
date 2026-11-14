@@ -100,6 +100,7 @@ type Service struct {
 	Host     *Host
 	Loop     *Loop
 	Resumer  *Resumer
+	Scheduler *Scheduler
 }
 
 func NewService(root string) (*Service, error) {
@@ -116,6 +117,7 @@ func NewService(root string) (*Service, error) {
 	})
 	s.Loop = NewLoop(s)
 	s.Resumer = NewResumer(s)
+	s.Scheduler = NewScheduler(s)
 	s.Runtime.On("turn-done", func(x any) {
 		td := x.(TurnDone)
 		if td.Session != nil && td.Session.Str("project_id") != "" {
@@ -1223,6 +1225,9 @@ func (s *Service) UpdateSession(id string, patch *Obj) (*Obj, error) {
 	if _, err := s.Session(id); err != nil {
 		return nil, err
 	}
+	if patch.Has("pinned") && !isUndef(patch.Get("pinned")) {
+		s.Runtime.Emit("session", s.Store.SetPinned(id, truthy(patch.Get("pinned"))))
+	}
 	if patch.Has("title") {
 		if strings.TrimSpace(patch.Str("title")) == "" {
 			return nil, fail("A title cannot be empty")
@@ -1591,6 +1596,7 @@ func (s *Service) Doctor() *Obj {
 }
 
 func (s *Service) Shutdown() {
+	s.Scheduler.Stop()
 	s.Resumer.Shutdown()
 	s.Runtime.Shutdown()
 }

@@ -1,5 +1,6 @@
 package ai.bench.app.ui.session
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.ui.graphics.graphicsLayer
 
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
@@ -84,6 +86,7 @@ import ai.bench.app.data.Block
 import ai.bench.app.data.blocks
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import ai.bench.app.ui.Card
 import ai.bench.app.ui.NavRow
 import ai.bench.app.ui.SwitchRow
@@ -118,6 +121,11 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     var providers by remember { mutableStateOf<List<ai.bench.app.data.ProviderInfo>>(emptyList()) }
     var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { providers = vm.providers() }
+    // Seen on the way in and on the way out, so what arrived while it was open counts as seen too.
+    DisposableEffect(vm.sessionId) {
+        vm.markSeen()
+        onDispose { vm.markSeen() }
+    }
     val session by vm.session.collectAsState()
     val rows by vm.rows.collectAsState()
     val stream by vm.stream.collectAsState()
@@ -289,13 +297,14 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                     enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
                     exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
                 ) {
-                    androidx.compose.material3.BadgedBox(badge = {
-                        if (unseen > 0) androidx.compose.material3.Badge(containerColor = Bench.colors.accent) { Text("$unseen") }
-                    }) {
-                        SmallFloatingActionButton(
-                            onClick = { stick = true; scope.launch { list.animateScrollToItem(0) } },
-                            shape = CircleShape, containerColor = Bench.colors.surface3, contentColor = Bench.colors.text,
-                        ) { Icon(Icons.Default.KeyboardArrowDown, if (unseen > 0) "Jump to $unseen new" else "Jump to latest") }
+                    Row(
+                        Modifier.height(36.dp).shadow(8.dp, RoundedCornerShape(18.dp)).background(Bench.colors.surface3, RoundedCornerShape(18.dp))
+                            .clip(RoundedCornerShape(18.dp)).clickable { stick = true; scope.launch { list.animateScrollToItem(0) } }.padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(18.dp))
+                        Text(if (unseen > 0) "$unseen new" else "Latest", fontSize = 13.5.sp)
                     }
                 }
             }
@@ -330,16 +339,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             if (attachments.isNotEmpty()) {
                 LazyRow(contentPadding = PaddingValues(horizontal = Space.lg, vertical = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     items(attachments, key = { it.key }) { a ->
-                        Column {
-                            InputChip(
-                                selected = false,
-                                onClick = { vm.removeAttachment(a.key) },
-                                label = { Text(if (a.error != null) "${a.name}: ${a.error}" else a.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (a.error != null) Bench.colors.bad else Bench.colors.text) },
-                                trailingIcon = { Icon(Icons.Default.Close, "Remove", Modifier.size(16.dp), tint = Bench.colors.muted) },
-                                modifier = Modifier.heightIn(max = 40.dp),
-                            )
-                            if (a.ref == null && a.error == null) LinearProgressIndicator(progress = { a.progress }, modifier = Modifier.fillMaxWidth())
-                        }
+                        ai.bench.app.ui.AttachmentTile(
+                            a.name, a.uri, a.type.startsWith("image/"), a.size,
+                            progress = if (a.ref == null) a.progress else null, error = a.error,
+                        ) { vm.removeAttachment(a.key) }
                     }
                 }
             }
@@ -411,12 +414,22 @@ private fun modelLine(s: ai.bench.app.data.Session, providers: List<ai.bench.app
 @Composable
 private fun ModelSheet(s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>, onDismiss: () -> Unit, onSet: (kotlinx.serialization.json.JsonObject) -> Unit) {
     val c = Bench.colors
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp), dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.statusBarsPadding(), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp), dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Model", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 6.dp, bottom = 4.dp))
-            providers.filter { it.enabled }.forEach { p ->
-                Text(if (p.ready) p.name else "${p.name} · not set up", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 4.dp))
-                p.models.filter { it.enabled }.forEach { m ->
+            // A short list: the provider in use, open; the rest fold behind their name (Claude's "More models").
+            var open by remember { mutableStateOf(setOfNotNull(providers.firstOrNull { p -> p.models.any { it.id == s.model_id } }?.id ?: providers.firstOrNull { it.enabled && it.ready }?.id)) }
+            providers.filter { it.enabled }.sortedByDescending { it.id in open }.forEach { p ->
+                val shown = p.id in open
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp)).clickable { open = if (shown) open - p.id else open + p.id }.padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (p.ready) p.name else "${p.name} · not set up", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.weight(1f))
+                    if (!shown) Text("${p.models.count { it.enabled }}", fontSize = 13.sp, color = c.muted)
+                    Icon(if (shown) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                }
+                if (shown) p.models.filter { it.enabled }.forEach { m ->
                     val on = m.id == s.model_id
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -499,8 +512,9 @@ private fun Composer(
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent.copy(alpha = 0.2f), contentColor = c.accent),
                 ) { Icon(Icons.Default.Mic, "Stop dictating") }
             } else if (running && !canSend) {
-                FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.bad.copy(alpha = 0.16f), contentColor = c.bad)) {
-                    Box(Modifier.size(12.dp).background(c.bad, RoundedCornerShape(3.dp)))
+                // Stop takes Send's place and shape while Claude works.
+                FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.accent, contentColor = c.onAccent)) {
+                    Box(Modifier.size(12.dp).background(c.onAccent, RoundedCornerShape(3.dp)))
                 }
             } else if (!canSend) {
                 IconButton(onClick = onDictate, modifier = Modifier.size(44.dp)) { Icon(Icons.Default.Mic, "Dictate", tint = c.muted) }
@@ -528,7 +542,7 @@ private fun SessionSheet(
     val c = Bench.colors
     var mode by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.statusBarsPadding(), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
         dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Session", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 6.dp))
@@ -550,6 +564,7 @@ private fun SessionSheet(
                 }
                 if (s.claude_session_id != null) NavRow("Open in Claude Code", null, "Its own terminal UI, resumed on the server") { onResume() }
                 SwitchRow("Resume after the usage limit", s.pause?.let { "Paused: ${it.message}" } ?: "Picks up where it stopped when the limit lifts", s.auto_resume ?: true) { vm.setAutoResume(it) }
+                SwitchRow("Keep on Home", "Stays on Home after you've looked at it", s.pinned) { vm.setPinned(it) }
                 if (s.pause != null) NavRow("Resume now", labelColor = c.accent, chevron = false) { vm.resumeNow(); onDismiss() }
             }
             val usage = s.model_usage?.entries?.mapNotNull { (k, v) -> (v as? kotlinx.serialization.json.JsonObject)?.get("cost")?.let { k to (it.toString().toDoubleOrNull() ?: 0.0) } }.orEmpty().sortedByDescending { it.second }

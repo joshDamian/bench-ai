@@ -20,7 +20,7 @@ import androidx.compose.ui.graphics.luminance
 // sizes from Space and Type below, never from a literal - the same rule CLAUDE.md sets
 // for the web components.
 
-val LocalBench = staticCompositionLocalOf { BenchThemes.first() }
+val LocalBench = staticCompositionLocalOf { PhoneDark }
 
 object Bench {
     val colors: BenchColors @Composable get() = LocalBench.current.colors
@@ -79,32 +79,17 @@ private fun legible(c: BenchColors): BenchColors {
     )
 }
 
-/** The "Wallpaper" theme: Material You colours from the phone, light or dark with the system. */
+/** The old theme picker's "Wallpaper" id; it now reads as System. */
 const val DYNAMIC = "dynamic"
-val dynamicAvailable get() = android.os.Build.VERSION.SDK_INT >= 31
-
-@Composable
-private fun dynamicSpec(): BenchThemeSpec {
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val base = BenchThemes.first { it.dark == dark }
-    if (android.os.Build.VERSION.SDK_INT < 31) return base
-    val m = if (dark) androidx.compose.material3.dynamicDarkColorScheme(ctx) else androidx.compose.material3.dynamicLightColorScheme(ctx)
-    return base.copy(
-        id = DYNAMIC, name = "Wallpaper",
-        colors = base.colors.copy(
-            bg = m.surface, surfaceSunken = m.surfaceContainerLowest, surfaceRail = m.surfaceContainerLow,
-            surface1 = m.surfaceContainer, surface2 = m.surfaceContainerHigh, surface3 = m.surfaceContainerHighest,
-            text = m.onSurface, muted = m.onSurfaceVariant, accent = m.primary, onAccent = m.onPrimary,
-            line = m.outlineVariant, lineStrong = m.outline, info = m.tertiary,
-            wellBg = m.surfaceContainerLowest, wellText = m.onSurface,
-        ),
-    )
-}
 
 @Composable
 fun BenchTheme(themeId: String, content: @Composable () -> Unit) {
-    val raw = if (themeId == DYNAMIC) dynamicSpec() else themeById(themeId)
+    val dark = when (Appearance.of(themeId)) {
+        Appearance.System -> androidx.compose.foundation.isSystemInDarkTheme()
+        Appearance.Light -> false
+        Appearance.Dark -> true
+    }
+    val raw = if (dark) PhoneDark else PhoneLight
     val spec = raw.copy(colors = legible(raw.colors))
     val c = spec.colors
     val scheme = if (spec.dark) {

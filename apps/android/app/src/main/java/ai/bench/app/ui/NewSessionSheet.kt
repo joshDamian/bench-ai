@@ -1,5 +1,6 @@
 package ai.bench.app.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -12,6 +13,17 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -97,9 +109,19 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
     val base = s.tasks.firstOrNull { it.project_id == projectId }?.base_branch?.ifBlank { null } ?: "main"
     val modelName = providers.flatMap { it.models }.firstOrNull { it.id == modelId }?.label ?: "Default model"
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Files go up once the session exists (uploads belong to a session), then ride on the first message.
+    var picked by remember { mutableStateOf(listOf<Picked>()) }
+    fun add(uris: List<android.net.Uri>) { picked = picked + uris.map { Picked.of(context.contentResolver, it) } }
+    val files = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()) { add(it) }
+    val photos = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(8)) { add(it) }
+    var beforeTake by remember { mutableStateOf("") }
+    val live = ai.bench.app.ui.session.rememberLiveDictation { heard, _ -> prompt = if (beforeTake.isBlank()) heard else beforeTake.trimEnd() + " " + heard }
+    val askMic = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok -> if (ok) { beforeTake = prompt; live.start() } }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = Modifier.statusBarsPadding(),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = c.surface2,
         shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
@@ -110,59 +132,111 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
             "model" -> Column(Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 SheetBack("Model") { page = null }
                 Choice("Default model", modelId == null) { modelId = null; providerId = null; page = null }
-                providers.filter { it.enabled && it.ready }.forEach { p ->
-                    Text(p.name, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 4.dp))
-                    p.models.filter { it.enabled }.forEach { m -> Choice(m.label, m.id == modelId) { modelId = m.id; providerId = p.id; page = null } }
+                // The provider in use open, the rest folded behind their name (Claude's "More models").
+                var open by remember { mutableStateOf(setOfNotNull(providers.firstOrNull { p -> p.models.any { it.id == modelId } }?.id ?: providers.firstOrNull { it.enabled && it.ready }?.id)) }
+                providers.filter { it.enabled && it.ready }.sortedByDescending { it.id in open }.forEach { p ->
+                    val shown = p.id in open
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp)).clickable { open = if (shown) open - p.id else open + p.id }.padding(horizontal = 6.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Text(p.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.weight(1f))
+                        if (!shown) Text("${p.models.count { it.enabled }}", fontSize = 13.sp, color = c.muted)
+                        androidx.compose.material3.Icon(if (shown) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                    }
+                    if (shown) p.models.filter { it.enabled }.forEach { m -> Choice(m.label, m.id == modelId) { modelId = m.id; providerId = p.id; page = null } }
                 }
                 Text("Effort", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 16.dp, bottom = 8.dp))
                 Segmented(listOf("" to "Auto") + listOf("low", "medium", "high", "max").map { it to ai.bench.app.data.Effort.of(it)!!.label }, effort ?: "", { effort = it.ifEmpty { null } })
+                Text("Mode", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 16.dp, bottom = 4.dp))
+                Mode.entries.forEach { m -> Choice(m.label, m == mode) { mode = m } }
+                Text("For this session. Change the defaults in Settings.", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 10.dp))
             }
             "mode" -> Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 SheetBack("Mode") { page = null }
                 Mode.entries.forEach { m -> Choice(m.label, m == mode) { mode = m; page = null } }
             }
             else -> Column(
-                Modifier.fillMaxWidth().imePadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("New session", fontSize = 22.sp, fontWeight = FontWeight.Medium)
+                Text("New session", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp))
+                // Where it goes, as chips: the project (last used first) and how it works there.
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill(Icons.Outlined.Folder, s.projects.firstOrNull { it.id == projectId }?.name ?: "Ask Bench") { page = "project" }
+                    if (projectId != null) {
+                        var whereMenu by remember { mutableStateOf(false) }
+                        Box {
+                            Pill(Icons.Outlined.AccountTree, if (where == "task") "New branch" else "Checkout") { whereMenu = true }
+                            androidx.compose.material3.DropdownMenu(whereMenu, { whereMenu = false }) {
+                                androidx.compose.material3.DropdownMenuItem({ Column { Text("New branch"); Text("Its own branch from $base, so $base stays clean", fontSize = 12.5.sp, color = c.muted) } }, onClick = { where = "task"; whereMenu = false })
+                                androidx.compose.material3.DropdownMenuItem({ Column { Text("Checkout"); Text("Works in the project's checked-out branch", fontSize = 12.5.sp, color = c.muted) } }, onClick = { where = "checkout"; whereMenu = false })
+                            }
+                        }
+                    }
+                }
                 androidx.compose.foundation.text.BasicTextField(
                     prompt, { prompt = it },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 17.sp, lineHeight = 24.sp, color = c.text),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 17.sp, lineHeight = 25.sp, color = c.text),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp).background(c.surface1, RoundedCornerShape(20.dp)).padding(16.dp).focusRequester(focus),
-                    decorationBox = { inner -> androidx.compose.foundation.layout.Box { if (prompt.isEmpty()) Text("What should Claude do?", fontSize = 17.sp, color = c.muted); inner() } },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp).padding(horizontal = 4.dp, vertical = 4.dp).focusRequester(focus),
+                    decorationBox = { inner -> androidx.compose.foundation.layout.Box { if (prompt.isEmpty()) Text(if (live.listening) "Listening…" else if (projectId == null) "Ask about Bench: what's running, what it costs…" else "What should Claude do?", fontSize = 17.sp, color = c.muted); inner() } },
                 )
-                Column(Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))) {
-                    Field("Project", s.projects.firstOrNull { it.id == projectId }?.name ?: "Ask Bench") { page = "project" }
-                    androidx.compose.material3.HorizontalDivider(color = c.line.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
-                    Field("Model", listOfNotNull(modelName, effort?.let { ai.bench.app.data.Effort.of(it)?.label }).joinToString(" · ")) { page = "model" }
-                    androidx.compose.material3.HorizontalDivider(color = c.line.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
-                    Field("Mode", mode.label) { page = "mode" }
+                if (picked.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    picked.forEach { f -> AttachmentTile(f.name, f.uri, f.type.startsWith("image/"), f.size, null, null) { picked = picked - f } }
                 }
-                if (projectId != null) {
-                    Segmented(listOf("task" to "New branch", "checkout" to "Checkout"), where, { where = it })
-                    Text(if (where == "task") "Works on its own branch from $base, so $base stays clean." else "Works directly in the project's checked-out branch.",
-                        fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(horizontal = 6.dp))
-                } else Text("A conversation about Bench itself: what's running, what it costs, starting work anywhere.", fontSize = 12.5.sp, color = c.muted, modifier = Modifier.padding(horizontal = 6.dp))
-                error?.let { Text(it, color = c.bad, fontSize = 13.sp) }
-                BigButton(if (busy) "Starting…" else "Start", primary = true, height = 56.dp, enabled = !busy && (projectId == null || where == "checkout" || prompt.isNotBlank())) {
-                    busy = true
-                    error = null
-                    scope.launch {
-                        try {
-                            val pid = projectId
-                            val text = prompt.trim()
-                            val session = if (pid != null && where == "task") store.api.createTask(pid, text.lineSequence().first().take(80), text, mode.wire)
-                            else store.api.createSession(pid, null, mode.wire)
-                            if (modelId != null || effort != null) runCatching {
-                                store.api.patch("/api/sessions/${ai.bench.app.data.BenchApi.enc(session.id)}", buildJsonObject {
-                                    modelId?.let { put("modelId", it) }; providerId?.let { put("providerId", it) }; effort?.let { put("effort", it) }
-                                })
+                error?.let { Text(it, color = c.bad, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp)) }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    androidx.compose.material3.IconButton(onClick = { files.launch("*/*") }) { androidx.compose.material3.Icon(Icons.Default.Add, "Attach a file", tint = c.muted) }
+                    androidx.compose.material3.IconButton(onClick = { photos.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { androidx.compose.material3.Icon(Icons.Outlined.Image, "Attach photos", tint = c.muted) }
+                    // Model and effort before the first send, as Claude's composer shows them.
+                    Row(
+                        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).clickable { page = "model" }.padding(horizontal = 10.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(listOfNotNull(modelName, effort?.let { ai.bench.app.data.Effort.of(it)?.label }).joinToString(" · "), fontSize = 14.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 150.dp))
+                        androidx.compose.material3.Icon(Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(16.dp))
+                    }
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    if (live.available) androidx.compose.material3.IconButton(onClick = {
+                        when {
+                            live.listening -> live.stop()
+                            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED -> { beforeTake = prompt; live.start() }
+                            else -> askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+                        }
+                    }) { androidx.compose.material3.Icon(Icons.Default.Mic, if (live.listening) "Stop dictating" else "Dictate", tint = if (live.listening) c.accent else c.muted) }
+                    val canStart = !busy && (projectId == null || where == "checkout" || prompt.isNotBlank() || picked.isNotEmpty())
+                    androidx.compose.material3.FilledIconButton(
+                        enabled = canStart,
+                        modifier = Modifier.size(52.dp),
+                        colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(containerColor = c.accent, contentColor = c.onAccent, disabledContainerColor = c.surface3, disabledContentColor = c.muted),
+                        onClick = {
+                            if (live.listening) live.stop()
+                            busy = true
+                            error = null
+                            scope.launch {
+                                try {
+                                    val pid = projectId
+                                    val text = prompt.trim()
+                                    val asTask = pid != null && where == "task"
+                                    // With files, the task starts quietly and the first message carries them.
+                                    val session = if (asTask) store.api.createTask(pid!!, text.lineSequence().firstOrNull()?.take(80)?.ifBlank { null } ?: picked.first().name, if (picked.isEmpty()) text else null, mode.wire)
+                                    else store.api.createSession(pid, null, mode.wire)
+                                    if (modelId != null || effort != null) runCatching {
+                                        store.api.patch("/api/sessions/${ai.bench.app.data.BenchApi.enc(session.id)}", buildJsonObject {
+                                            modelId?.let { put("modelId", it) }; providerId?.let { put("providerId", it) }; effort?.let { put("effort", it) }
+                                        })
+                                    }
+                                    val refs = picked.map { f -> store.api.upload(session.id, f.name, f.type, f.size, { context.contentResolver.openInputStream(f.uri) ?: error("Can't read ${f.name}") }) {} }
+                                    if ((!asTask || picked.isNotEmpty()) && (text.isNotEmpty() || refs.isNotEmpty())) store.api.send(session.id, text, refs)
+                                    onCreated(session.id)
+                                } catch (e: Exception) { error = e.message ?: "Couldn't start the session" } finally { busy = false }
                             }
-                            if (!(pid != null && where == "task") && text.isNotEmpty()) store.api.send(session.id, text)
-                            onCreated(session.id)
-                        } catch (e: BenchError) { error = e.message } finally { busy = false }
+                        },
+                    ) {
+                        if (busy) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onAccent)
+                        else androidx.compose.material3.Icon(Icons.Default.ArrowUpward, "Start")
                     }
                 }
             }
@@ -171,13 +245,42 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); runCatching { focus.requestFocus() } }
 }
 
+/** A file chosen before the session exists. */
+private data class Picked(val uri: android.net.Uri, val name: String, val type: String, val size: Long) {
+    companion object {
+        fun of(r: android.content.ContentResolver, uri: android.net.Uri): Picked {
+            val (name, size) = r.query(uri, null, null, null, null)?.use { cur ->
+                val n = cur.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                val z = cur.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                if (cur.moveToFirst()) (if (n >= 0) cur.getString(n) else null) to (if (z >= 0) cur.getLong(z) else -1L) else null to -1L
+            } ?: (null to -1L)
+            return Picked(uri, name ?: uri.lastPathSegment ?: "file", r.getType(uri) ?: "application/octet-stream", size)
+        }
+    }
+}
+
+/** A chip that opens a choice: an icon, the current value, a caret. */
+@Composable
+private fun Pill(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
+    val c = Bench.colors
+    Row(
+        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(c.surface3).clickable(onClick = onClick).padding(horizontal = 12.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        androidx.compose.material3.Icon(icon, null, tint = c.muted, modifier = Modifier.size(16.dp))
+        Text(text, fontSize = 14.sp, maxLines = 1)
+        androidx.compose.material3.Icon(Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(14.dp))
+    }
+}
+
 @Composable
 private fun Field(label: String, value: String, onClick: () -> Unit) {
     val c = Bench.colors
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(onClick = onClick).padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Text(label, fontSize = 14.sp, color = c.muted, modifier = Modifier.width(76.dp))
         Text(value, fontSize = 15.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.muted)
+        androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.muted)
     }
 }
 
@@ -189,14 +292,14 @@ private fun Choice(label: String, on: Boolean, onClick: () -> Unit) {
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         Text(label, fontSize = 15.5.sp, modifier = Modifier.weight(1f))
-        if (on) androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(18.dp))
+        if (on) androidx.compose.material3.Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(18.dp))
     }
 }
 
 @Composable
 private fun SheetBack(title: String, onBack: () -> Unit) {
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
-        androidx.compose.material3.IconButton(onClick = onBack) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        androidx.compose.material3.IconButton(onClick = onBack) { androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
         Text(title, fontSize = 18.sp, fontWeight = FontWeight.Medium)
     }
 }
@@ -214,7 +317,7 @@ private fun ProjectList(s: ai.bench.app.data.BenchState, selected: String?, onBa
         item { SheetBack("Project", onBack) }
         item {
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).background(c.surface1, RoundedCornerShape(24.dp)).padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Search, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                androidx.compose.material3.Icon(Icons.Default.Search, null, tint = c.muted, modifier = Modifier.size(18.dp))
                 androidx.compose.foundation.text.BasicTextField(
                     query, { query = it }, singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = c.text),
@@ -234,7 +337,7 @@ private fun ProjectList(s: ai.bench.app.data.BenchState, selected: String?, onBa
                             Text(t.first, fontSize = 15.5.sp, color = if (id == selected) c.accent else c.text)
                             Text(t.second, fontSize = 12.sp, color = c.muted, maxLines = 1)
                         }
-                        if (id == selected) androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(18.dp))
+                        if (id == selected) androidx.compose.material3.Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -267,7 +370,7 @@ private fun ProjectPicker(s: ai.bench.app.data.BenchState, selected: String?, on
                 Text("Project", fontSize = 12.sp, color = c.muted)
                 Text(name, fontSize = 16.sp)
             }
-            androidx.compose.material3.Icon(if (open) androidx.compose.material.icons.Icons.Default.KeyboardArrowUp else androidx.compose.material.icons.Icons.Default.KeyboardArrowDown, null, tint = c.muted)
+            androidx.compose.material3.Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = c.muted)
         }
         if (open) {
             androidx.compose.material3.HorizontalDivider(color = c.line)
@@ -287,7 +390,7 @@ private fun ProjectPicker(s: ai.bench.app.data.BenchState, selected: String?, on
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                     ) {
                         Text(label, fontSize = 15.sp, color = if (id == selected) c.accent else c.text, modifier = Modifier.weight(1f))
-                        if (id == selected) androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(18.dp))
+                        if (id == selected) androidx.compose.material3.Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -312,7 +415,7 @@ fun AddProjectSheet(store: BenchStore, onDismiss: () -> Unit, onAdded: (String) 
     LaunchedEffect(Unit) { repos = runCatching { store.api.repos() }.getOrDefault(emptyList()) }
     val matches = repos.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }.take(4)
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.statusBarsPadding(), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
         Column(
             Modifier.fillMaxWidth().imePadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),

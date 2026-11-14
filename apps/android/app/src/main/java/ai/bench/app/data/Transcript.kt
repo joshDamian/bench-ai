@@ -184,15 +184,39 @@ object Transcript {
         }
     }
 
+    /**
+     * What a call is doing, in plain words for a status line: "Running tests" (the command's
+     * own description when Claude gave one), "Editing retry.ts", "Searching for busy".
+     */
+    fun plain(name: String, i: JsonObject, cwd: String): String {
+        fun file(k: String = "file_path") = rel(i[k].str(), cwd).substringAfterLast('/')
+        return when (name) {
+            "Bash" -> i["description"].str()?.takeIf { it.isNotBlank() } ?: "Running a command"
+            "Edit", "MultiEdit" -> "Editing ${file()}"
+            "Write" -> "Writing ${file()}"
+            "Read" -> "Reading ${file()}"
+            "Glob" -> "Finding files"
+            "Grep" -> "Searching for ${i["pattern"].str().orEmpty().take(40)}"
+            "TodoWrite" -> "Updating the plan"
+            "Task", "Agent" -> "Running a subagent"
+            "WebFetch" -> "Reading a web page"
+            "WebSearch" -> "Searching the web"
+            else -> "Working"
+        }
+    }
+
     /** "6 steps · 3 commands · 2 edits · 1 error" for a folded run. */
     fun summary(all: List<ToolCall>): String {
         val calls = all.filter { it.name != "Thinking" }
         val parts = mutableListOf(if (calls.isEmpty()) "Thought" else "${calls.size} step${if (calls.size == 1) "" else "s"}")
         val cmds = calls.count { it.name == "Bash" }
         val edits = calls.count { it.name in setOf("Edit", "MultiEdit", "Write", "NotebookEdit") }
-        val failed = calls.count { it.failed }
+        // A failure that a later call of the same tool got past was retried, not a dead end.
+        val retried = calls.withIndex().count { (i, c) -> c.failed && calls.drop(i + 1).any { it.name == c.name && !it.failed && !it.pending } }
+        val failed = calls.count { it.failed } - retried
         if (cmds > 0) parts += "$cmds command${if (cmds == 1) "" else "s"}"
         if (edits > 0) parts += "$edits edit${if (edits == 1) "" else "s"}"
+        if (retried > 0) parts += "$retried retried"
         if (failed > 0) parts += "$failed error${if (failed == 1) "" else "s"}"
         return parts.joinToString(" · ")
     }

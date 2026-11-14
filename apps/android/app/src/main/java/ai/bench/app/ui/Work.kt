@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -135,7 +137,7 @@ private fun TopRow(onBack: () -> Unit, menu: @Composable (close: () -> Unit) -> 
 @Composable
 private fun TitleBlock(title: String, sub: @Composable () -> Unit) {
     Column(Modifier.padding(start = 22.dp, end = 16.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, fontSize = 28.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.3).sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        Text(title, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
         sub()
     }
 }
@@ -171,10 +173,37 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
         }
     }
     fun edit(body: JsonObject) = act("Saving…") { store.api.patch("/api/tasks/${BenchApi.enc(taskId)}", body) }
-    val sessions = s.sessions.filter { it.task_id == taskId && it.archived_at == null }.sortedBy { it.created_at }
+    // A finished task's sessions were archived with it; they are still its history.
+    val sessions = s.sessions.filter { it.task_id == taskId && (it.archived_at == null || s.tasks.firstOrNull { x -> x.id == taskId }?.state != "active") }.sortedBy { it.created_at }
     val base = t?.base_branch?.ifBlank { null } ?: "main"
+    // A diff line tapped: a note on it goes to the task's latest session (as Linear and Codex steer).
+    var commenting by remember { mutableStateOf<DiffLine?>(null) }
     val active = t?.state == "active"
     val g = git
+    commenting?.let { line ->
+        var note by remember(line) { mutableStateOf("") }
+        val target = sessions.maxByOrNull { it.updated_at }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { commenting = null },
+            title = { Text("${line.path.substringAfterLast('/')}:${line.line}", fontFamily = Mono, fontSize = 15.sp) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(line.text.trim(), fontFamily = Mono, fontSize = 12.5.sp, color = c.muted, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    androidx.compose.material3.OutlinedTextField(note, { note = it }, placeholder = { Text("What should change here?") }, modifier = Modifier.fillMaxWidth())
+                    target?.let { Text("Goes to ${it.title}", fontSize = 12.5.sp, color = c.muted) }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(enabled = note.isNotBlank() && target != null, onClick = {
+                    val to = target ?: return@TextButton
+                    val msg = "In `${line.path}` line ${line.line}:\n> ${line.text.trim()}\n\n${note.trim()}"
+                    commenting = null
+                    act("Sending…") { store.api.send(to.id, msg); onOpen(to.id) }
+                }) { Text("Send") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { commenting = null }) { Text("Cancel") } },
+        )
+    }
 
     Scaffold(
         containerColor = c.bg,
@@ -269,24 +298,30 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
                             }
                         }
                     }
-                    item("loop-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Loop until done") } }
-                    item("loop") {
-                        Box(Modifier.padding(horizontal = 16.dp)) {
-                            Card {
-                                val l = t?.loop
-                                SwitchRow(
-                                    "Loop until done",
-                                    when (l?.state) { "looping" -> "Attempt ${l.attempts} of ${l.max_attempts}"; "done" -> "Done: the check passed"; "gave-up" -> "Gave up: ${l.reason ?: "the check kept failing"}"; else -> "Reruns the check whenever Claude stops; a failure sends it back" },
-                                    l?.state == "looping", enabled = active && !t?.check_command.isNullOrBlank(),
-                                ) { on -> edit(buildJsonObject { if (on) putJsonObject("loop") { put("max_attempts", l?.max_attempts?.takeIf { it > 0 } ?: 5); put("max_minutes", l?.max_minutes?.takeIf { it > 0 } ?: 60) } else put("loop", JsonNull) }) }
-                                NavRow("Done means", null, t?.done ?: "Say what finished looks like") { dialog = "done" }
-                                NavRow("Check command", null, t?.check_command ?: "e.g. npm test") { dialog = "check" }
-                                NavRow("Limits", "${l?.max_attempts?.takeIf { it > 0 } ?: 5} attempts · ${l?.max_minutes?.takeIf { it > 0 } ?: 60} min") { dialog = "attempts" }
+                    if (active) {
+                        item("loop-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Checking the work") } }
+                        item("loop") {
+                            Box(Modifier.padding(horizontal = 16.dp)) {
+                                Card {
+                                    val l = t?.loop
+                                    SwitchRow(
+                                        "Loop until done",
+                                        when (l?.state) { "looping" -> "Attempt ${l.attempts} of ${l.max_attempts}"; "done" -> "Done: the check passed"; "gave-up" -> "Gave up: ${l.reason ?: "the check kept failing"}"; else -> if (t?.check_command.isNullOrBlank()) "Needs a check command first" else "Reruns the check whenever Claude stops; a failure sends it back" },
+                                        l?.state == "looping", enabled = !t?.check_command.isNullOrBlank(),
+                                    ) { on -> edit(buildJsonObject { if (on) putJsonObject("loop") { put("max_attempts", l?.max_attempts?.takeIf { it > 0 } ?: 5); put("max_minutes", l?.max_minutes?.takeIf { it > 0 } ?: 60) } else put("loop", JsonNull) }) }
+                                    NavRow("Done means", if (t?.done == null) "Not set" else null, t?.done) { dialog = "done" }
+                                    NavRow("Check command", if (t?.check_command == null) "Not set" else null, t?.check_command) { dialog = "check" }
+                                    NavRow("Limits", "${l?.max_attempts?.takeIf { it > 0 } ?: 5} attempts · ${l?.max_minutes?.takeIf { it > 0 } ?: 60} min") { dialog = "attempts" }
+                                }
                             }
                         }
+                    } else t?.done?.let { done ->
+                        // Finished: what it was for, as a record rather than settings to change.
+                        item("done-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Done meant") } }
+                        item("done") { Text(done, fontSize = 15.sp, lineHeight = 22.sp, modifier = Modifier.padding(horizontal = 22.dp)) }
                     }
-                    item("ses-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Sessions", "${sessions.size}") } }
-                    item("ses") {
+                    if (sessions.isNotEmpty() || active) item("ses-l") { Box(Modifier.padding(horizontal = 16.dp)) { SectionLabelV2("Sessions", sessions.size.takeIf { it > 0 }?.toString()) } }
+                    if (sessions.isNotEmpty() || active) item("ses") {
                         Box(Modifier.padding(horizontal = 16.dp)) {
                             Card {
                                 sessions.forEach { x -> NavRow(x.title, Format.ago(x.updated_at), statusLabel(x.status)) { onOpen(x.id) } }
@@ -299,7 +334,7 @@ fun TaskScreen(store: BenchStore, taskId: String, onBack: () -> Unit, onOpen: (S
                 }
                 "changes" -> {
                     if (files.isEmpty()) item { Text("No changes yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(22.dp)) }
-                    else item("files") { Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) { Grouped(files) { f -> FileDiff(f, openFile == f.path) { openFile = if (openFile == f.path) null else f.path } } } }
+                    else item("files") { Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) { Grouped(files) { f -> FileDiff(f, openFile == f.path, onLine = if (sessions.isNotEmpty()) ({ commenting = it }) else null) { openFile = if (openFile == f.path) null else f.path } } } }
                 }
                 else -> {
                     if (log.isEmpty()) item { Text("Nothing logged yet. Decisions and reviews appear here.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(22.dp)) }
@@ -343,8 +378,25 @@ fun SectionLabelV2(text: String, trailing: String? = null, color: Color = Bench.
     }
 }
 
+/** A chip in the New task sheet: a setting you tap to change. */
 @Composable
-private fun FileDiff(f: DiffFile, open: Boolean, onToggle: () -> Unit) {
+private fun TaskPill(text: String, onClick: () -> Unit) {
+    val c = Bench.colors
+    Row(
+        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(c.surface3).clickable(onClick = onClick).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(text, fontSize = 14.sp, maxLines = 1)
+        Icon(Icons.Default.KeyboardArrowDown, null, tint = c.muted, modifier = Modifier.size(14.dp))
+    }
+}
+
+/** A line of a diff, numbered as in the new file. */
+data class DiffLine(val path: String, val line: Int, val text: String)
+
+@Composable
+private fun FileDiff(f: DiffFile, open: Boolean, onLine: ((DiffLine) -> Unit)? = null, onToggle: () -> Unit) {
     val c = Bench.colors
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().height(56.dp).clickable(onClick = onToggle).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -354,14 +406,20 @@ private fun FileDiff(f: DiffFile, open: Boolean, onToggle: () -> Unit) {
             if (f.removed > 0) Text("−${f.removed}", fontSize = 12.5.sp, color = c.bad)
         }
         if (open) Column(Modifier.fillMaxWidth().background(c.wellBg).horizontalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+            var next = 0
             f.lines.take(500).forEach { l ->
+                // The new file's line number for each line, from the hunk headers.
+                if (l.startsWith("@@")) next = Regex("""\+(\d+)""").find(l)?.groupValues?.get(1)?.toIntOrNull() ?: next
+                val n = next
+                if (!l.startsWith("@@") && !l.startsWith("-")) next++
                 val (fg, bg) = when {
                     l.startsWith("@@") -> c.muted to Color.Transparent
                     l.startsWith("+") -> c.good to c.good.copy(alpha = 0.08f)
                     l.startsWith("-") -> c.bad to c.bad.copy(alpha = 0.08f)
                     else -> c.wellText to Color.Transparent
                 }
-                Text(l.ifEmpty { " " }, fontFamily = Mono, fontSize = 11.5.sp, lineHeight = 18.sp, color = fg, softWrap = false, modifier = Modifier.background(bg).padding(horizontal = 16.dp))
+                val tap = if (onLine != null && !l.startsWith("@@")) Modifier.clickable { onLine(DiffLine(f.path, n, l.drop(1))) } else Modifier
+                Text(l.ifEmpty { " " }, fontFamily = Mono, fontSize = 11.5.sp, lineHeight = 22.sp, color = fg, softWrap = false, modifier = Modifier.background(bg).then(tap).padding(horizontal = 16.dp))
             }
         }
     }
@@ -490,7 +548,7 @@ private fun BranchSheet(g: GitState?, onDismiss: () -> Unit, onPick: (String, Bo
     val c = Bench.colors
     var q by remember { mutableStateOf("") }
     val list = g?.branches.orEmpty().filter { q.isBlank() || it.name.contains(q, true) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+    ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.statusBarsPadding(), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
         dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Switch branch", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 6.dp))
@@ -531,20 +589,29 @@ private fun NewTaskSheet(store: BenchStore, projectId: String, branch: String, o
     var picking by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+    ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.statusBarsPadding(), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface2, shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
         dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("New task", fontSize = 22.sp, fontWeight = FontWeight.Medium)
+            Text("New task", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp))
+            // Where and how, as chips; the rest waits under More (a calm composer first).
+            var details by remember { mutableStateOf(done.isNotBlank() || check.isNotBlank()) }
+            var editingFrom by remember { mutableStateOf(false) }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TaskPill("From ${from.ifBlank { "main" }}") { editingFrom = true }
+                TaskPill(mode.label) { picking = true }
+                TaskPill(if (details) "Fewer options" else "More options") { details = !details }
+            }
+            if (editingFrom) TextDialog("Branch from", from, "Use", "main", onDismiss = { editingFrom = false }) { from = it.trim(); editingFrom = false }
             BasicTextField(
-                prompt, { prompt = it }, textStyle = TextStyle(fontSize = 17.sp, lineHeight = 24.sp, color = c.text), cursorBrush = SolidColor(c.accent),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 130.dp).background(c.surface1, RoundedCornerShape(20.dp)).padding(16.dp),
+                prompt, { prompt = it }, textStyle = TextStyle(fontSize = 17.sp, lineHeight = 25.sp, color = c.text), cursorBrush = SolidColor(c.accent),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp).padding(horizontal = 4.dp, vertical = 4.dp),
                 decorationBox = { inner -> Box { if (prompt.isEmpty()) Text("What should Claude do?", fontSize = 17.sp, color = c.muted); inner() } },
             )
-            TonalField(title, { title = it }, "Title", "From the first line if left empty")
-            TonalField(from, { from = it }, "Branch from", "main")
-            TonalField(done, { done = it }, "Done means", "Optional: what finished looks like")
-            TonalField(check, { check = it }, "Check", "Optional: e.g. npm test", "Bench runs it in the task's worktree to check the work")
-            Card { NavRow("Mode", mode.label) { picking = true } }
+            if (details) {
+                TonalField(title, { title = it }, "Title", "From the first line if left empty")
+                TonalField(done, { done = it }, "Done means", "Optional: what finished looks like")
+                TonalField(check, { check = it }, "Check", "Optional: e.g. npm test", "Bench runs it in the task's worktree to check the work")
+            }
             error?.let { Text(it, color = c.bad, fontSize = 13.sp) }
             BigButton(if (busy) "Starting…" else "Start task", primary = true, height = 56.dp, enabled = !busy && prompt.isNotBlank()) {
                 busy = true; error = null
