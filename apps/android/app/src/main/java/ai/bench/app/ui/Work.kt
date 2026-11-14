@@ -464,11 +464,7 @@ fun ProjectScreen(store: BenchStore, projectId: String, onBack: () -> Unit, onOp
             }
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { newTask = true }, icon = { Icon(Icons.Default.Add, null) },
-                text = { Text("New task", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
-                containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(18.dp),
-            )
+            LabelFab("New task", true) { newTask = true }
         },
     ) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 112.dp)) {

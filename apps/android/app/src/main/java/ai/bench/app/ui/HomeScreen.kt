@@ -299,14 +299,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             }
         },
         floatingActionButton = {
-            // Material's own FAB shape: a rounded rectangle, not a pill like the buttons.
-            ExtendedFloatingActionButton(
-                onClick = onNew,
-                expanded = fabOpen,
-                icon = { Icon(Icons.Default.Add, null) },
-                text = { Text("New", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
-                containerColor = c.accent, contentColor = c.onAccent,
-            )
+            LabelFab("New", fabOpen, onNew)
         },
     ) { pad ->
         PullToRefreshBox(
@@ -436,6 +429,24 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
         }
     }
     listing?.let { list -> ReportList(list, s.sessions, onDismiss = { listing = null }) { listing = null; opened = it } }
+}
+
+/**
+ * The floating button: a + and a short label, sized to its label. Material's extended FAB has
+ * a fixed gap after the icon and a minimum width, which leaves a short word like "New" adrift.
+ * Folds to its + while the list scrolls down.
+ */
+@Composable
+fun LabelFab(label: String, expanded: Boolean, onClick: () -> Unit) {
+    val c = Bench.colors
+    androidx.compose.material3.FloatingActionButton(onClick = onClick, containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.padding(start = 16.dp, end = if (expanded) 20.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Add, if (expanded) null else label, modifier = Modifier.size(22.dp))
+            androidx.compose.animation.AnimatedVisibility(expanded, enter = androidx.compose.animation.expandHorizontally() + androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.shrinkHorizontally() + androidx.compose.animation.fadeOut()) {
+                Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+    }
 }
 
 /** "Mon 8:00", "Tomorrow 9:00", "Today 18:30": when a schedule next runs, from the phone's clock. */
@@ -632,8 +643,7 @@ fun ProjectsScreen(store: BenchStore, onOpen: (String) -> Unit, onAdd: () -> Uni
         containerColor = c.bg,
         topBar = { TabTitle("Projects") },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add project", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.onAccent) },
-                containerColor = c.accent, contentColor = c.onAccent, shape = RoundedCornerShape(18.dp))
+            LabelFab("Add project", true, onAdd)
         },
     ) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 112.dp)) {
