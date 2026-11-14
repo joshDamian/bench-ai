@@ -114,3 +114,22 @@ node server-go/benchmark/run.mjs \
   definitions), `loop.go` (loop and resume), `notes.go`, `check.go`, `routing.go` (routing
   and limits), `terminal.go`, `metrics.go` (metrics and update), `push.go`, `server.go`.
 - `obj.go`: an ordered JSON object, so answers keep JavaScript's key order.
+
+## Taking turns on the same data
+
+To drive bench-go on your real data, with the option to go back to Node at any time:
+
+```sh
+sh server-go/install --shared     # backs up ~/.bench once, then stops Node and starts Go
+sh server-go/switch node          # back to Node
+sh server-go/switch go            # and to Go again
+sh server-go/switch status        # which one is on
+```
+
+Both servers use `~/.bench` and the Node server's port, so the apps and your Tailscale address
+need no change. Only one runs at a time: `switch` stops one before starting the other, and the
+one you switch to is the one that starts at login. The two share the same schema and migrations,
+so either can open what the other wrote. Running sessions resume on whichever server is on.
+
+The apps can also keep several servers (Settings → Server → Add a server) if you'd rather run
+bench-go on its own copy and port and switch in the app instead.

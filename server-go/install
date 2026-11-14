@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs bench-go, the Go Bench server, beside the Node one, for a test drive.
 #
-#   sh server-go/install [--service] [--recopy] [--fresh]
+#   sh server-go/install [--service] [--recopy] [--fresh] [--shared]
 #
 # It never touches the Node server or its data:
 #   - Its own release in ~/.local/share/bench-go/releases, its own command
@@ -26,6 +26,10 @@ GO_HOME="${BENCH_GO_HOME:-$HOME/.local/share/bench-go}"
 DATA="${BENCH_DATA_DIR:-$HOME/.bench-go}"
 LIVE="${BENCH_LIVE_DATA:-$HOME/.bench}"
 PORT="${BENCH_GO_PORT:-4318}"
+# --shared: bench-go uses the Node server's own data folder and port, and the two take turns
+# (server-go/switch). Same database, same address, so the apps need no change.
+SHARED=0
+[ -f "$HOME/.config/systemd/user/bench-go.shared" ] && SHARED=1
 BIN_DIR="$HOME/.local/bin"
 SERVICE=0
 RECOPY=0
@@ -35,7 +39,8 @@ for arg in "$@"; do
     --service) SERVICE=1 ;;
     --recopy) RECOPY=1 ;;
     --fresh) FRESH=1 ;;
-    *) printf '%s\n' "install: unknown option: $arg" "usage: sh server-go/install [--service] [--recopy] [--fresh]" >&2; exit 2 ;;
+    --shared) SHARED=1; SERVICE=1 ;;
+    *) printf '%s\n' "install: unknown option: $arg" "usage: sh server-go/install [--service] [--recopy] [--fresh] [--shared]" >&2; exit 2 ;;
   esac
 done
 
@@ -94,7 +99,18 @@ printf '{\n  "source": "%s",\n  "commit": %s,\n  "dirty": %s,\n  "installedAt": 
   "$ROOT" "$( [ -n "$COMMIT" ] && printf '"%s"' "$COMMIT" || printf null )" "$DIRTY" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RELEASE/.bench-release.json"
 
 # -- the data -----------------------------------------------------------------------------------
-if [ "$FRESH" -eq 1 ]; then
+if [ "$SHARED" -eq 1 ]; then
+  DATA="$LIVE"
+  NODE_PORT="$(sed -n 's/^Environment="PORT=\(.*\)"$/\1/p' "$HOME/.config/systemd/user/bench.service" 2>/dev/null | head -1)"
+  PORT="${BENCH_GO_PORT:-${NODE_PORT:-4317}}"
+  # A snapshot first, the first time only: both servers write to this database from now on.
+  if [ ! -f "$HOME/.config/systemd/user/bench-go.shared" ] && [ -f "$LIVE/.bench/bench.db" ]; then
+    BACKUP="$LIVE.backup-$(date +%Y%m%d%H%M%S)"
+    "$RELEASE/bench-go" copy-data --from "$LIVE" --to "$BACKUP" >/dev/null
+    say "Backup: $BACKUP (a snapshot of the shared data, before bench-go touched it)"
+  fi
+  say "Data: $DATA (shared with the Node server; they take turns)"
+elif [ "$FRESH" -eq 1 ]; then
   mkdir -p "$DATA"
   say "Data: $DATA (fresh)"
 elif [ "$RECOPY" -eq 1 ] || [ ! -f "$DATA/.bench/bench.db" ]; then
@@ -156,9 +172,15 @@ Environment="PATH=$SERVICE_PATH"
 WantedBy=default.target
 EOF
     systemctl --user daemon-reload
-    systemctl --user enable --now bench-go.service
-    systemctl --user restart bench-go.service
-    say "Service: bench-go.service (systemctl --user status bench-go)"
+    if [ "$SHARED" -eq 1 ]; then
+      touch "$HOME/.config/systemd/user/bench-go.shared"
+      # Only one server may run on the shared data: switch stops Node and starts Go.
+      sh "$(dirname "$0")/switch" go
+    else
+      systemctl --user enable --now bench-go.service
+      systemctl --user restart bench-go.service
+      say "Service: bench-go.service (systemctl --user status bench-go)"
+    fi
   else
     say "No systemd here: run it with \`bench-go serve\`."
   fi
@@ -172,4 +194,8 @@ for old in $(ls -1 "$GO_HOME/releases" | grep -E '^[0-9]{14}$' | sort -r | tail 
 done
 
 say "" "Installed: $RELEASE" "Command:   $BIN_DIR/bench-go serve" "Data:      $DATA" "Address:   http://127.0.0.1:$PORT"
-say "" "To reach it from your phone or Mac over Tailscale, on its own port:" "  tailscale serve --bg --https=8444 http://127.0.0.1:$PORT" "then add https://<this machine>.<tailnet>.ts.net:8444 as a server in the app."
+if [ "$SHARED" -eq 1 ]; then
+  say "" "Same port as the Node server, so the apps keep working as they are." "Back to Node: sh server-go/switch node   ·   which is on: sh server-go/switch status"
+else
+  say "" "To reach it from your phone or Mac over Tailscale, on its own port:" "  tailscale serve --bg --https=8444 http://127.0.0.1:$PORT" "then add https://<this machine>.<tailnet>.ts.net:8444 as a server in the app."
+fi
