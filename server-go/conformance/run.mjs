@@ -222,12 +222,12 @@ async function scenario(srv, repo, root) {
   await step('task check fails', () => api('POST', `/api/tasks/${tid}/check`, {}));
   await step('task loop', () => api('PATCH', `/api/tasks/${tid}`, { loop: { max_attempts: 2 } }));
   await step('task loop off', () => api('PATCH', `/api/tasks/${tid}`, { loop: null }));
+  // The loop may have started a fix turn; let it finish on both.
+  await until(async () => (await api('GET', `/api/sessions/${t.session.id}`)).body.session.status === 'idle', 15000);
   await step('task log', () => api('GET', `/api/tasks/${tid}/log`));
   await step('task commit', () => api('POST', `/api/tasks/${tid}/commit`, { message: 'Add feature.js' }));
   await step('task commit: nothing', () => api('POST', `/api/tasks/${tid}/commit`, {}));
   await step('task update from base', () => api('POST', `/api/tasks/${tid}/update`, {}));
-  // The check that failed under the loop may have started a fix turn; let it finish on both.
-  await until(async () => (await api('GET', `/api/sessions/${t.session.id}`)).body.session.status === 'idle', 15000);
   await step('task merge', () => api('POST', `/api/tasks/${tid}/merge`, { cleanup: true }));
   await step('task after merge', () => api('GET', `/api/tasks/${tid}`));
   await step('task diff after merge', () => api('GET', `/api/tasks/${tid}/diff`));
