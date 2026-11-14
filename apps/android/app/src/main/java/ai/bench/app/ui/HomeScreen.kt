@@ -233,19 +233,22 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     val waitingOn = s.approvals.map { it.session_id }.toSet()
     val working = live.filter { it.status == "running" }.sortedByDescending { it.updated_at }
     // Stopped with an error and not looked at: a decision, so it sits with what needs you.
-    val failed = live.filter { it.status == "error" && it.unseen && it.id !in waitingOn }.sortedByDescending { it.updated_at }
+    val failed = live.filter { it.status == "error" && it.unseen && it.id !in waitingOn && !it.capped }.sortedByDescending { it.updated_at }
+    // Unattended runs that stopped at their cap: go on, or leave it there.
+    val capped = live.filter { it.capped && it.id !in waitingOn }.sortedByDescending { it.updated_at }
+    val spending by store.spending.collectAsState()
     // Reports and pages leave once read. Drafts are things to do, so they stay until each is sent,
     // even when you watched the session write them.
     val reads = reports.filter { !it.seen && (it.kind == "report" || it.kind == "page") }
     val drafts = reports.filter { it.kind == "drafts" && (it.unsent ?: 0) > 0 }
     val carded = (reads + drafts).map { it.session_id }.toSet()
     // A session whose output is already a card is not listed again under it.
-    val finished = live.filter { it.status == "idle" && it.unseen && it.id !in waitingOn && it.id !in carded }.sortedByDescending { it.updated_at }
+    val finished = live.filter { it.status == "idle" && it.unseen && it.id !in waitingOn && it.id !in carded && !it.capped }.sortedByDescending { it.updated_at }
     val readyCards = (if (reads.isNotEmpty()) 1 else 0) + (if (drafts.isNotEmpty()) 1 else 0)
     val readyCount = readyCards + finished.size
-    val needCount = s.approvals.size + failed.size
+    val needCount = s.approvals.size + failed.size + capped.size
     val next = schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at }
-    val shown = (working + failed + finished).map { it.id }.toSet() + waitingOn + carded
+    val shown = (working + failed + finished + capped).map { it.id }.toSet() + waitingOn + carded
     val pinned = live.filter { it.pinned && it.id !in shown }
     val quiet = live.count { it.id !in shown && !it.pinned }
 
@@ -339,6 +342,20 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                         },
                     )
                 }
+                if (spending?.paused == true) item("paused") {
+                    Row(
+                        Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surface1).padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Unattended runs are paused", fontSize = 14.5.sp, modifier = Modifier.weight(1f))
+                        Text("Resume", fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = c.accent, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                            scope.launch { runCatching { store.api.setSpending(paused = false) }.onSuccess { store.setSpending(it) } }
+                        }.padding(4.dp))
+                    }
+                }
+                items(capped, key = { "c-${it.id}" }) { r ->
+                    CapCard(r, spending?.run_cap ?: 2.0, store, Modifier.padding(top = 10.dp).animateItem(), onOpen = { onOpen(r.id) }) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+                }
                 items(failed, key = { "f-${it.id}" }) { f ->
                     HomeCard(where(f, store, null).ifBlank { f.title }, "Stopped with an error", c.bad, "Open", Modifier.padding(top = 10.dp).animateItem()) { onOpen(f.id) }
                 }
@@ -395,7 +412,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                 if (next.isNotEmpty()) {
                     item("next-l") { Label("Coming up") }
                     items(next.take(if (needCount + readyCount + working.size == 0) 2 else 1), key = { "n-${it.id}" }) { n ->
-                        UpcomingRow(n.title, scheduleDays(n.days), whenNext(n.next_run_at)) { onSchedules() }
+                        UpcomingRow(n.title, scheduleDays(n.days) + if (spending?.paused == true) " · waits while paused" else "", whenNext(n.next_run_at)) { onSchedules() }
                     }
                 }
 
@@ -476,6 +493,30 @@ fun scheduleDays(days: String): String {
         d == setOf(0, 6) -> "Weekends"
         d.size == 1 -> "Every ${names[d.first()]}"
         else -> d.sorted().joinToString(", ") { names[it].take(3) }
+    }
+}
+
+/** An unattended run that stopped at its cap: go on with another run's worth, or stop there. */
+@Composable
+private fun CapCard(r: ai.bench.app.data.Session, runCap: Double, store: BenchStore, modifier: Modifier, onOpen: () -> Unit, onError: (String) -> Unit) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    fun act(action: String) {
+        busy = true
+        scope.launch { runCatching { store.api.budget(r.id, action) }.onFailure { onError(it.message ?: "Couldn't do that") }; busy = false }
+    }
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surface1).clickable(onClick = onOpen).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(r.title, fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("Stopped at its ${dollars(r.budget ?: runCap)} cap", fontSize = 16.5.sp, fontWeight = FontWeight.SemiBold)
+        Text("What it made so far is kept.", fontSize = 14.5.sp, color = c.muted)
+        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BigButton("Add ${dollars(runCap)} and go on", primary = true, height = 44.dp, fill = false, enabled = !busy) { act("more") }
+            BigButton("Stop here", height = 44.dp, fill = false, enabled = !busy) { act("stop") }
+        }
     }
 }
 

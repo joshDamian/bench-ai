@@ -49,6 +49,10 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     val reports: StateFlow<List<Report>> = _reports.asStateFlow()
     private val _schedules = MutableStateFlow<List<Schedule>>(emptyList())
     val schedules: StateFlow<List<Schedule>> = _schedules.asStateFlow()
+    /** Caps for unattended runs, and whether they are paused. */
+    private val _spending = MutableStateFlow<Spending?>(null)
+    val spending: StateFlow<Spending?> = _spending.asStateFlow()
+    fun setSpending(s: Spending) { _spending.value = s }
     private var extrasJob: Job? = null
 
     /** Reloads reports and schedules; a burst of calls makes one request. */
@@ -58,6 +62,7 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
             delay(300)
             runCatching { api.reports() }.onSuccess { _reports.value = it }
             runCatching { api.schedules() }.onSuccess { _schedules.value = it }
+            runCatching { api.spending() }.onSuccess { _spending.value = it }
         }
     }
 

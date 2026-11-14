@@ -809,6 +809,7 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		PartialMessages:   true,
 		PromptSuggestions: true,
 		Effort:            s.Str("effort"),
+		MaxBudgetUsd:      s.Num("budget"),
 		Resume:            s.Str("claude_session_id"),
 		AppendSystemPrompt: instructions,
 		OnStderr: func(line string) {
@@ -1101,7 +1102,11 @@ func (r *Runtime) onResult(l *live, id string, m *Obj, priced *Obj) {
 	if byModel.Len() > 0 {
 		patch.Set("model_usage", byModel)
 	}
-	if truthy(m.Get("is_error")) && m.Str("subtype") != "error_during_execution" {
+	capped := m.Str("subtype") == "error_max_budget_usd"
+	if capped {
+		patch.Set("capped", true)
+	}
+	if truthy(m.Get("is_error")) && m.Str("subtype") != "error_during_execution" && !capped {
 		var errs []string
 		for _, e := range arr(m.Get("errors")) {
 			errs = append(errs, str(e))
@@ -1117,6 +1122,9 @@ func (r *Runtime) onResult(l *live, id string, m *Obj, priced *Obj) {
 		}
 	}
 	r.update(id, patch)
+	if capped {
+		r.event(id, "notice", O("text", "Stopped at its $"+jsNum(s.Num("budget"))+" cap."))
+	}
 	l.mu.Lock()
 	l.writeUp = false
 	limit := l.limit

@@ -70,7 +70,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
     val theme by settings.theme.collectAsState("system")
     val scope = rememberCoroutineScope()
     var about by remember { mutableStateOf<ai.bench.app.data.About?>(null) }
-    LaunchedEffect(Unit) { about = runCatching { store.api.about() }.getOrNull() }
+    LaunchedEffect(Unit) { store.loadExtras(); about = runCatching { store.api.about() }.getOrNull() }
     var providers by remember { mutableStateOf<List<ProviderInfo>>(emptyList()) }
     var defaults by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
     var page by remember { mutableStateOf<String?>(null) }
@@ -111,6 +111,14 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
         androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp)) {
             section("You")
             item("about") { Card { NavRow("About me", null, aboutSummary(about)) { onOpen("about") } } }
+            section("Your machine")
+            item("machine") {
+                Card {
+                    NavRow("Asks first", null, "What it does on its own, asks about, never does") { onOpen("rules") }
+                    NavRow("Spending", store.spending.collectAsState().value?.let { "${dollars(it.today)} today" }) { onOpen("spending") }
+                    NavRow("Schedules", store.schedules.collectAsState().value.count { it.enabled }.takeIf { it > 0 }?.toString() ?: "None") { onOpen("schedules") }
+                }
+            }
             section("Server")
             item {
                 Card {
@@ -160,7 +168,6 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                     NavRow("Default mode", mode.label) { page = "mode" }
                     NavRow("Models", "${providers.count { it.enabled }} providers") { page = "models" }
                     NavRow("Subagents", if (routing["all"].str() != null) "One model" else "By tier") { onOpen("subagents/default") }
-                    NavRow("Schedules", store.schedules.collectAsState().value.count { it.enabled }.takeIf { it > 0 }?.toString() ?: "None") { onOpen("schedules") }
                     NavRow("Usage limit", if (defaults["limits"]["autoResume"].let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "false" }) "Wait" else "Resume") { onOpen("limit") }
                 }
             }

@@ -188,6 +188,9 @@ func NewStore(root string) (*Store, error) {
 	}
 	s.addColumn("sessions", "pinned", "INTEGER")
 	s.addColumn("sessions", "schedule_id", "TEXT")
+	// budget: the most one query of an unattended run may spend; capped: it stopped there.
+	s.addColumn("sessions", "budget", "REAL")
+	s.addColumn("sessions", "capped", "INTEGER")
 	s.addColumn("projects", "routing", "TEXT")
 	s.addColumn("tasks", "routing", "TEXT")
 	if err := s.projectlessSessions(); err != nil {
@@ -777,6 +780,7 @@ func (s *Store) session(r *Obj) *Obj {
 		r.Set("auto_resume", truthy(r.Get("auto_resume")))
 	}
 	r.Set("pinned", truthy(r.Get("pinned")))
+	r.Set("capped", truthy(r.Get("capped")))
 	return r
 }
 
@@ -831,6 +835,8 @@ func (s *Store) UpdateSession(id string, patch *Obj) *Obj {
 			} else {
 				row.Set(k, string(ToJSON(v)))
 			}
+		case "capped":
+			row.Set(k, sqlVal(truthy(v)))
 		case "auto_resume":
 			if v == nil {
 				row.Set(k, nil)

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -101,6 +102,9 @@ type Service struct {
 	Loop     *Loop
 	Resumer  *Resumer
 	Scheduler *Scheduler
+
+	mu       sync.Mutex
+	spending *Spending
 }
 
 func NewService(root string) (*Service, error) {

@@ -102,6 +102,7 @@ type ProcOptions struct {
 	Settings           *Obj
 	Agents             *Obj
 	MaxTurns           int
+	MaxBudgetUsd       float64
 	Hooks              []HookSpec
 	MCP                *MCPServer
 	CanUseTool         func(ctx context.Context, req *Obj) *Obj
@@ -144,6 +145,9 @@ func StartProc(o ProcOptions) (*Proc, error) {
 	}
 	if o.MaxTurns > 0 {
 		args = append(args, "--max-turns="+strconv.Itoa(o.MaxTurns))
+	}
+	if o.MaxBudgetUsd > 0 {
+		args = append(args, "--max-budget-usd="+strconv.FormatFloat(o.MaxBudgetUsd, 'f', -1, 64))
 	}
 	if o.Model != "" {
 		args = append(args, "--model="+o.Model)

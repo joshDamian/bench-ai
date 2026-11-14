@@ -91,6 +91,12 @@ class BenchApi(val config: ServerConfig) {
     /** A session that turns a CV into a draft: attach the CV to it and send the prompt. */
     suspend fun aboutFromCv(): Pair<Session, String> = post("/api/about/from-cv").let { r -> r["session"].decode<Session>() to (r["prompt"].str() ?: "") }
     suspend fun rules(): List<Rule> = get("/api/rules").lossy()
+    suspend fun spending(): Spending = get("/api/spending").decode()
+    suspend fun setSpending(dailyCap: Double? = null, runCap: Double? = null, paused: Boolean? = null): Spending = put("/api/spending", buildJsonObject {
+        dailyCap?.let { put("daily_cap", it) }; runCap?.let { put("run_cap", it) }; paused?.let { put("paused", it) }
+    }).decode()
+    /** A run stopped at its cap: "more" goes on with another run's worth, "stop" leaves it there. */
+    suspend fun budget(id: String, action: String): Session = post("/api/sessions/${enc(id)}/budget", buildJsonObject { put("action", action) }).decode()
     suspend fun setRule(key: String, value: String): List<Rule> = put("/api/rules", buildJsonObject { put("key", key); put("value", value) }).lossy()
     suspend fun delete(path: String) = call(request(path).delete().build())
 

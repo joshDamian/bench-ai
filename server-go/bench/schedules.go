@@ -184,6 +184,15 @@ func (sc *Scheduler) Tick(at time.Time) {
 		if !Due(sch, at) {
 			continue
 		}
+		// Paused: it waits, and runs later today if unpaused. Over the day's cap: skipped for today.
+		if ok, paused, reason := sc.svc.Unattended(); !ok {
+			if paused {
+				continue
+			}
+			sc.svc.Store.UpdateSchedule(sch.Str("id"), O("last_run_at", isoTime(at)))
+			fmt.Fprintf(os.Stderr, "schedule %s: skipped, %s\n", sch.Str("title"), reason)
+			continue
+		}
 		if _, err := sc.svc.RunSchedule(sch.Str("id")); err != nil {
 			sc.svc.Store.UpdateSchedule(sch.Str("id"), O("last_run_at", isoTime(at)))
 			fmt.Fprintf(os.Stderr, "schedule %s: %v\n", sch.Str("title"), err)
@@ -341,7 +350,7 @@ func (s *Service) RunSchedule(id string) (*Obj, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.Runtime.Emit("session", s.Store.UpdateSession(ss.Str("id"), O("schedule_id", id)))
+	s.Runtime.Emit("session", s.Store.UpdateSession(ss.Str("id"), O("schedule_id", id, "budget", s.Spending().Settings().Num("run_cap"))))
 	s.Store.UpdateSchedule(id, O("last_run_at", isoNow()))
 	if _, err := s.Send(ss.Str("id"), sch.Str("prompt"), SendOpts{}); err != nil {
 		return nil, err

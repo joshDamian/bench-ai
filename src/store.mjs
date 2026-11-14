@@ -141,6 +141,9 @@ export class Store {
     }
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'pinned')) this.db.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER');
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'schedule_id')) this.db.exec('ALTER TABLE sessions ADD COLUMN schedule_id TEXT');
+    // budget: the most one query of an unattended run may spend; capped: it stopped there.
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'budget')) this.db.exec('ALTER TABLE sessions ADD COLUMN budget REAL');
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'capped')) this.db.exec('ALTER TABLE sessions ADD COLUMN capped INTEGER');
     // routing: a project's or a task's own subagent models, as JSON, over the person's default.
     if (!this.db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE projects ADD COLUMN routing TEXT');
     if (!this.db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE tasks ADD COLUMN routing TEXT');
@@ -448,7 +451,13 @@ export class Store {
   /** A session row, with its JSON columns read back. @param {any} r @returns {Session|undefined} */
   #session(r) {
     if (!r) return r;
-    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume, pinned: !!r.pinned };
+    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume, pinned: !!r.pinned, capped: !!r.capped };
+  }
+
+  /** What unattended runs (the ones a schedule started) have spent since a moment. @param {string} since */
+  unattendedSince(since) {
+    const r = /** @type {any} */ (this.db.prepare('SELECT COALESCE(SUM(cost),0) AS spent, COUNT(*) AS runs FROM sessions WHERE schedule_id IS NOT NULL AND created_at >= ?').get(since));
+    return { spent: Number(r.spent) || 0, runs: Number(r.runs) || 0 };
   }
 
   /** Marks a session looked at, without counting as a change to it. @param {string} id @returns {Session|undefined} */
@@ -524,6 +533,7 @@ export class Store {
     const row = { ...patch, updated_at: now() };
     for (const k of /** @type {const} */ (['pause', 'model_usage'])) if (row[k] !== undefined) row[k] = row[k] === null ? null : JSON.stringify(row[k]);
     if (row.auto_resume !== undefined) row.auto_resume = row.auto_resume === null ? null : row.auto_resume ? 1 : 0;
+    if (row.capped !== undefined) row.capped = row.capped ? 1 : 0;
     this.#patch('sessions', id, row);
     return /** @type {Session} */ (this.getSession(id));
   }

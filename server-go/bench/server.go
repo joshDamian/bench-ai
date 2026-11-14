@@ -1324,6 +1324,9 @@ func (s *Server) routesInit() {
 	s.route("POST", "/api/about/draft", func(c *ctxt) (any, error) { return svc.AboutDraft(c.body.Get("action")) })
 	s.route("POST", "/api/about/undo", func(c *ctxt) (any, error) { return svc.AboutUndo() })
 	s.route("POST", "/api/about/from-cv", func(c *ctxt) (any, error) { return svc.AboutFromCV() })
+	s.route("GET", "/api/spending", func(c *ctxt) (any, error) { return svc.SpendingInfo(), nil })
+	s.route("PUT", "/api/spending", func(c *ctxt) (any, error) { return svc.SetSpending(c.body) })
+	s.route("POST", "/api/sessions/:id/budget", func(c *ctxt) (any, error) { return svc.Budget(c.params[0], c.body.Get("action")) })
 	s.route("GET", "/api/rules", func(c *ctxt) (any, error) { return svc.Runtime.Rules().List(), nil })
 	s.route("PUT", "/api/rules", func(c *ctxt) (any, error) { return svc.Runtime.Rules().Set(c.body.Get("key"), c.body.Get("value")) })
 	s.route("POST", "/api/sessions/:id/archive", func(c *ctxt) (any, error) {

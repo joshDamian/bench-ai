@@ -92,6 +92,14 @@ export class Scheduler {
   tick(at = new Date()) {
     for (const s of this.svc.store.listSchedules()) {
       if (!due(s, at)) continue;
+      // Paused: it waits, and runs later today if unpaused. Over the day's cap: skipped for today.
+      const may = this.svc.unattended();
+      if (!may.ok) {
+        if (may.paused) continue;
+        this.svc.store.updateSchedule(s.id, { last_run_at: at.toISOString() });
+        console.error(`schedule ${s.title}: skipped, ${may.reason}`);
+        continue;
+      }
       try {
         this.svc.runSchedule(s.id);
       } catch (e) {

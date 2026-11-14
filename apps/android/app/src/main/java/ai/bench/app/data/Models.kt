@@ -84,6 +84,10 @@ data class Session(
     val pinned: Boolean = false,
     /** The schedule that started it, if one did. */
     val schedule_id: String? = null,
+    /** The most one query of an unattended run may spend, in USD. */
+    val budget: Double? = null,
+    /** It stopped at its budget and waits for the person. */
+    val capped: Boolean = false,
 ) {
     /** Changed since the person last looked: a reply, a finish, an error. */
     val unseen get() = seen_at == null || updated_at > seen_at
@@ -118,6 +122,16 @@ data class About(
     @Serializable
     data class ChangedBy(val session_id: String, val title: String? = null)
 }
+
+/** Caps for unattended runs, and today's spend (GET /api/spending). */
+@Serializable
+data class Spending(
+    val daily_cap: Double = 5.0,
+    val run_cap: Double = 2.0,
+    val paused: Boolean = false,
+    val today: Double = 0.0,
+    val runs_today: Int = 0,
+)
 
 /** One rule: what Bench may do, asks about, or never does (GET /api/rules). value: allow, ask or never. */
 @Serializable

@@ -332,6 +332,17 @@ async function scenario(srv, repo, root) {
   await step('rules: bad value', () => api('PUT', '/api/rules', { key: 'pay', value: 'maybe' }));
   await step('rules: no such rule', () => api('PUT', '/api/rules', { key: 'fly', value: 'never' }));
 
+  // Spending: caps for unattended runs.
+  await step('spending', () => api('GET', '/api/spending'));
+  await step('spending: set', () => api('PUT', '/api/spending', { daily_cap: 7.555, run_cap: '3' }));
+  await step('spending: zero', () => api('PUT', '/api/spending', { daily_cap: 0 }));
+  await step('spending: not a number', () => api('PUT', '/api/spending', { run_cap: 'x' }));
+  await step('spending: pause', () => api('PUT', '/api/spending', { paused: true }));
+  await step('budget: not capped', () => api('POST', `/api/sessions/${s1.id}/budget`, { action: 'more' }));
+  await step('budget: bad action', () => api('POST', `/api/sessions/${s1.id}/budget`, { action: 'x' }));
+  await step('budget: stop', () => api('POST', `/api/sessions/${s1.id}/budget`, { action: 'stop' }));
+  await step('budget: no session', () => api('POST', '/api/sessions/nope/budget', { action: 'stop' }));
+
   return out;
 }
 

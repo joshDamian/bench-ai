@@ -669,6 +669,8 @@ export class Runtime extends EventEmitter {
       },
       ...(model ? { model: invocationId(model) } : {}),
       ...(s.effort ? { effort: /** @type {any} */ (s.effort) } : {}),
+      // An unattended run stops at its cap; Claude Code ends the query with error_max_budget_usd.
+      ...(s.budget ? { maxBudgetUsd: s.budget } : {}),
       ...(s.claude_session_id ? { resume: s.claude_session_id } : {}),
       ...(instructions ? { systemPrompt: { type: 'preset', preset: 'claude_code', append: instructions } } : {}),
       ...(memory ? { settings: { autoMemoryDirectory: memory } } : {}),
@@ -818,8 +820,10 @@ export class Runtime extends EventEmitter {
         input_tokens: Math.max(s.input_tokens, input),
         output_tokens: Math.max(s.output_tokens, output),
         ...(Object.keys(byModel).length ? { model_usage: byModel } : {}),
-        ...(m.is_error && m.subtype !== 'error_during_execution' ? { error: (m.errors || []).join('\n').slice(0, 2000) || null } : {}),
+        ...(m.is_error && m.subtype !== 'error_during_execution' && m.subtype !== 'error_max_budget_usd' ? { error: (m.errors || []).join('\n').slice(0, 2000) || null } : {}),
+        ...(m.subtype === 'error_max_budget_usd' ? { capped: true } : {}),
       });
+      if (m.subtype === 'error_max_budget_usd') this.#event(id, 'notice', { text: `Stopped at its $${s.budget} cap.` });
       live.writeUp = false;
       // The usage limit ended this turn. Said before turn-done, so whatever pauses the session
       // has done it by the time a loop decides what the turn's end means.
