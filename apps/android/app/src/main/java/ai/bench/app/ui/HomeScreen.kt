@@ -227,6 +227,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     var opened by remember { mutableStateOf<Report?>(null) }
     var listing by remember { mutableStateOf<List<Report>?>(null) }
     var moreReady by rememberSaveable { mutableStateOf(false) }
+    var takingOver by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { store.loadExtras() }
 
     val live = s.sessions.filter { it.archived_at == null }
@@ -331,6 +332,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                         sessionTitle = listOfNotNull(session?.title, s.projects.firstOrNull { it.id == session?.project_id }?.name ?: "Ask Bench").joinToString(" · "),
                         busy = a.id in answering,
                         onOpen = { onOpen(a.session_id) },
+                        onTakeOver = { takingOver = true },
                         modifier = Modifier.padding(top = 10.dp).animateItem(),
                         onAnswer = { body ->
                             answering = answering + a.id
@@ -459,6 +461,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             ) { opened = null }
         }
     }
+    if (takingOver) BrowserView(store.api) { takingOver = false }
     listing?.let { list -> ReportList(list, s.sessions, onDismiss = { listing = null }) { listing = null; opened = it } }
 }
 

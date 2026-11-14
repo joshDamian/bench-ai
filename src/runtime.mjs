@@ -13,6 +13,7 @@ import { env as benchEnv } from './env.mjs';
 import { Notes } from './notes.mjs';
 import { Rules } from './rules.mjs';
 import { About } from './about.mjs';
+import { Browser, BROWSER_NOTE } from './browser.mjs';
 import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
@@ -423,6 +424,13 @@ export class Runtime extends EventEmitter {
   /** @type {Rules|undefined} */
   #rules;
 
+  /** The browser sessions can use. */
+  get browser() {
+    return (this.#browser ??= new Browser(this.store.dir));
+  }
+  /** @type {Browser|undefined} */
+  #browser;
+
   /** Who the person is: a note every session reads. */
   get about() {
     return (this.#about ??= new About(this.store.dir, this.notes));
@@ -626,10 +634,13 @@ export class Runtime extends EventEmitter {
       TEMP: scratch,
       CLAUDE_AGENT_SDK_CLIENT_APP: 'bench',
     };
+    // The browser, for project sessions, when Chromium is installed: started now so its tools find it.
+    const browserMcp = ask ? null : this.browser.mcp();
+    if (browserMcp) this.browser.ensure().catch(() => false);
     const attach = attachNote(this.attachmentsDir(s.id));
     const notes = ask ? null : this.notes.brief(project?.path);
     const reports = reportsDir(this.attachmentsDir(s.id));
-    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, REPORTS_NOTE(reports), this.about.note(), this.rules.note(), notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
+    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, REPORTS_NOTE(reports), this.about.note(), this.rules.note(), browserMcp ? BROWSER_NOTE : null, notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
     const memory = project && path.resolve(project.path) !== path.resolve(s.cwd) ? memoryDir(project.path) : null;
     fs.mkdirSync(this.attachmentsDir(s.id), { recursive: true });
     const live = new Live(s.id);
@@ -656,7 +667,9 @@ export class Runtime extends EventEmitter {
       canUseTool: (tool, input, opts) => this.#ask(s.id, tool, input, opts),
       // Bench's own tools, acting on this session's task and project. In-process: no
       // port, nothing to log in to, nothing exposed.
-      ...(this.mcp ? { mcpServers: { bench: this.mcp(s.id) } } : {}),
+      ...(this.mcp || browserMcp ? { mcpServers: { ...(this.mcp ? { bench: this.mcp(s.id) } : {}), ...(browserMcp ? { browser: browserMcp } : {}) } } : {}),
+      // Browsing is not asked about step by step; the rules still stop what leaves the box.
+      ...(browserMcp ? { allowedTools: ['mcp__browser'] } : {}),
       // A task session may not stop on a failing check: Bench runs it, and a failure goes
       // back to the model as the reason it has to keep going. A reviewer only reads and
       // reports, so the check does not hold it.

@@ -137,9 +137,13 @@ data class Spending(
     val runs_today: Int = 0,
 )
 
+/** The browser on the server (GET /api/browser). */
+@Serializable
+data class BrowserStatus(val installed: Boolean = false, val running: Boolean = false, val sites: List<String> = emptyList())
+
 /** Can reach (GET /api/reach): what Bench can use beyond its own folders. */
 @Serializable
-data class Reach(val server: List<Item> = emptyList(), val accounts: List<Item> = emptyList(), val devices: List<Item> = emptyList()) {
+data class Reach(val server: List<Item> = emptyList(), val accounts: List<Item> = emptyList(), val browser: BrowserStatus? = null, val devices: List<Item> = emptyList()) {
     @Serializable
     data class Item(val key: String, val name: String, val detail: String = "")
 }

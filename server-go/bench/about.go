@@ -33,6 +33,8 @@ var (
 	payTool       = regexp.MustCompile(`(?i)(^|[_\-.])(pay|payment|payout|transfer|charge|refund|purchase|checkout|send_?money|withdraw)([_\-.]|$)`)
 	formTool      = regexp.MustCompile(`(?i)(^|[_\-.])(submit|apply)([_\-.]|$)|submit_?(form|application)|apply_?(job|to)`)
 	mailCommand   = regexp.MustCompile(`(?i)\b(sendmail|mailx?|mutt|msmtp|swaks|ssmtp)\b|smtps?://|\bsmtplib\b|nodemailer|gmail\.googleapis\.com/\S*/send|api\.sendgrid\.com|api\.mailgun\.net|api\.postmarkapp\.com|api\.resend\.com/emails`)
+	payWords      = regexp.MustCompile(`(?i)\b(pay|checkout|check out|place order|buy|purchase|transfer|donate)\b`)
+	submitWords   = regexp.MustCompile(`(?i)\b(submit|apply|send)\b`)
 	socialTool    = regexp.MustCompile(`(?i)(slack|twitter|linkedin|discord|telegram|whatsapp|mastodon|bluesky|reddit)`)
 	postVerb      = regexp.MustCompile(`(?i)(^|[_\-.])(post|send|publish|tweet|message|reply|comment)([_\-.]|$)|post_?message|send_?message`)
 	gitTool       = regexp.MustCompile(`(?i)(github|gitlab|bitbucket)`)
@@ -69,6 +71,23 @@ func ActionOf(tool string, input *Obj) string {
 		return ""
 	}
 	if !strings.HasPrefix(tool, "mcp__") || strings.HasPrefix(tool, "mcp__bench__") {
+		return ""
+	}
+	// The browser: a click is told apart by what it clicks, typing by whether it submits.
+	if strings.HasPrefix(tool, "mcp__browser__") {
+		what := ""
+		if input != nil {
+			what = input.Str("element")
+		}
+		if (strings.HasSuffix(tool, "browser_click") || strings.HasSuffix(tool, "browser_press_key")) && payWords.MatchString(what) {
+			return "pay"
+		}
+		if strings.HasSuffix(tool, "browser_click") && submitWords.MatchString(what) {
+			return "submit-forms"
+		}
+		if strings.HasSuffix(tool, "browser_type") && input != nil && input.Get("submit") == true {
+			return "submit-forms"
+		}
 		return ""
 	}
 	if mailTool.MatchString(tool) && sendVerb.MatchString(tool) {
@@ -439,5 +458,5 @@ func (s *Service) Reach() *Obj {
 	for _, n := range apps {
 		accounts = append(accounts, O("key", "app:"+n, "name", n, "detail", "Connected app"))
 	}
-	return O("server", []any{O("key", "server", "name", "Files, shell and the web", "detail", "Always")}, "accounts", accounts, "devices", []any{})
+	return O("server", []any{O("key", "server", "name", "Files, shell and the web", "detail", "Always")}, "accounts", accounts, "browser", s.Runtime.Browser().Status(), "devices", []any{})
 }

@@ -137,7 +137,7 @@ fun RulesScreen(store: BenchStore, onBack: () -> Unit) {
 
 /** Can reach: what Bench can use beyond its own folders, grouped by kind (the Can reach board). */
 @Composable
-fun CanReachScreen(store: BenchStore, onBack: () -> Unit) {
+fun CanReachScreen(store: BenchStore, onBack: () -> Unit, onBrowser: () -> Unit = {}) {
     val c = Bench.colors
     var reach by remember { mutableStateOf<ai.bench.app.data.Reach?>(null) }
     LaunchedEffect(Unit) { reach = runCatching { store.api.reach() }.getOrNull() }
@@ -149,7 +149,14 @@ fun CanReachScreen(store: BenchStore, onBack: () -> Unit) {
             else Card { r.devices.forEach { d -> NavRow(d.name, d.detail, chevron = false) } }
         }
         section("Accounts")
-        item("accounts") { Card { r.accounts.forEach { a -> NavRow(a.name, a.detail, valueColor = if (a.detail == "Not connected") c.muted else null, chevron = false) } } }
+        item("accounts") {
+            Card {
+                r.accounts.forEach { a -> NavRow(a.name, a.detail, valueColor = if (a.detail == "Not connected") c.muted else null, chevron = false) }
+                r.browser?.let { b ->
+                    NavRow("Browser", when { !b.installed -> "Not installed"; b.sites.isEmpty() -> "No sign-ins"; else -> "${b.sites.size} sign-in${if (b.sites.size == 1) "" else "s"}" }, b.sites.take(3).joinToString(", ").ifBlank { null }) { onBrowser() }
+                }
+            }
+        }
         section("On the server")
         item("server") { Card { r.server.forEach { x -> NavRow(x.name, x.detail, chevron = false) } } }
     }

@@ -77,6 +77,19 @@ fun toolName(tool: String): String {
 }
 
 /** What Claude is asking to do, as a short verb phrase. */
+/** A question that asks the person to take over the browser: its words, or null. */
+fun takeOverQuestion(a: Approval): String? {
+    if (a.tool != "AskUserQuestion") return null
+    val q = a.input["questions"].arr()?.firstOrNull() ?: return null
+    return if (q["header"].str().equals("Take over", ignoreCase = true)) q["question"].str() ?: "A site needs you" else null
+}
+
+/** The answers to a take-over question: Done, or skip the site. */
+fun takeOverAnswer(a: Approval, done: Boolean): JsonObject {
+    val q = a.input["questions"].arr()?.firstOrNull()?.get("question").str().orEmpty()
+    return answer(true) { put("answers", JsonObject(mapOf(q to JsonPrimitive(if (done) "Done" else "Skip this site")))) }
+}
+
 fun askLine(a: Approval) = when (a.tool) {
     "Bash" -> "Run a command"
     "Edit", "MultiEdit" -> "Edit a file"
@@ -96,7 +109,7 @@ private fun answer(allow: Boolean, more: kotlinx.serialization.json.JsonObjectBu
  * message box was, with one big Allow and the other answers beneath.
  */
 @Composable
-fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Unit, busy: Boolean = false, waiting: Int = 1) {
+fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Unit, busy: Boolean = false, waiting: Int = 1, onTakeOver: (() -> Unit)? = null) {
     val c = Bench.colors
     var denying by remember(approval.id) { mutableStateOf(false) }
     var note by remember(approval.id) { mutableStateOf("") }
@@ -126,7 +139,10 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
                     BigButton("Keep planning…", Modifier.weight(1f), height = 48.dp, enabled = !busy) { denying = true }
                 }
             }
-            "AskUserQuestion" -> Questions(approval, busy, onAnswer)
+            "AskUserQuestion" -> {
+                if (onTakeOver != null && takeOverQuestion(approval) != null) BigButton("Take over the browser", primary = true, height = 48.dp, enabled = !busy, onClick = onTakeOver)
+                Questions(approval, busy, onAnswer)
+            }
             else -> {
                 // While writing why, the request folds to its first lines so the note has room.
                 Box(Modifier.fillMaxWidth().heightIn(max = if (denying) 96.dp else 280.dp).verticalScroll(rememberScrollState())) {
@@ -167,6 +183,7 @@ fun ApprovalCard(
     sessionTitle: String? = null,
     busy: Boolean = false,
     onOpen: () -> Unit = {},
+    onTakeOver: () -> Unit = {},
 ) {
     val c = Bench.colors
     Column(
@@ -183,8 +200,15 @@ fun ApprovalCard(
                 Text(it, fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
-        Text(askLine(approval), fontSize = 17.sp, fontWeight = FontWeight.Medium)
-        when (approval.tool) {
+        val takeOver = takeOverQuestion(approval)
+        Text(takeOver ?: askLine(approval), fontSize = 17.sp, fontWeight = FontWeight.Medium)
+        if (takeOver != null) {
+            BigButton("Take over", primary = true, height = 48.dp, size = 15.sp, enabled = !busy, onClick = onTakeOver)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BigButton("Done", Modifier.weight(1f), height = 44.dp, size = 15.sp, enabled = !busy) { onAnswer(takeOverAnswer(approval, true)) }
+                BigButton("Skip this site", Modifier.weight(1f), height = 44.dp, size = 15.sp, enabled = !busy) { onAnswer(takeOverAnswer(approval, false)) }
+            }
+        } else when (approval.tool) {
             "ExitPlanMode", "AskUserQuestion" -> BigButton("Open", primary = true, height = 48.dp, size = 15.sp, onClick = onOpen)
             else -> {
                 Preview(approval, cwd, big = false)

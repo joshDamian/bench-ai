@@ -35,7 +35,7 @@ function makeRepo(dir) {
 }
 
 async function start(kind, root, port) {
-  const env = { ...process.env, BENCH_ROOT: root, PORT: String(port), BENCH_CLAUDE_BIN: fake, BENCH_PROJECTS_DIR: path.join(root, 'projects'), BENCH_TMP_ROOTS: path.join(root, 'tmp') };
+  const env = { ...process.env, BENCH_CHROMIUM: '/nonexistent', BENCH_ROOT: root, PORT: String(port), BENCH_CLAUDE_BIN: fake, BENCH_PROJECTS_DIR: path.join(root, 'projects'), BENCH_TMP_ROOTS: path.join(root, 'tmp') };
   fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
   const child = kind === 'node'
     ? spawn(process.execPath, [path.join(repoRoot, 'src', 'cli.mjs'), 'serve'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -344,6 +344,9 @@ async function scenario(srv, repo, root) {
   await step('about: from a cv', () => api('POST', '/api/about/from-cv', {}));
   await step('rules', () => api('GET', '/api/rules'));
   await step('can reach', () => api('GET', '/api/reach'));
+  await step('browser', () => api('GET', '/api/browser'));
+  await step('browser: sign out of nothing', () => api('POST', '/api/browser/sign-out', {}));
+  await step('browser: sign out', () => api('POST', '/api/browser/sign-out', { site: 'example.com' }));
   await step('rules: set', () => api('PUT', '/api/rules', { key: 'send-email', value: 'ask' }));
   await step('rules: bad value', () => api('PUT', '/api/rules', { key: 'pay', value: 'maybe' }));
   await step('rules: no such rule', () => api('PUT', '/api/rules', { key: 'fly', value: 'never' }));

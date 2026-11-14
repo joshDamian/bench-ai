@@ -31,6 +31,8 @@ const SEND_VERB = /(^|[_\-.])(send|reply|forward)([_\-.]|$)|send_?(email|mail|me
 const PAY_TOOL = /(^|[_\-.])(pay|payment|payout|transfer|charge|refund|purchase|checkout|send_?money|withdraw)([_\-.]|$)/i;
 const FORM_TOOL = /(^|[_\-.])(submit|apply)([_\-.]|$)|submit_?(form|application)|apply_?(job|to)/i;
 
+const PAY_WORDS = /\b(pay|checkout|check out|place order|buy|purchase|transfer|donate)\b/i;
+const SUBMIT_WORDS = /\b(submit|apply|send)\b/i;
 const SOCIAL_TOOL = /(slack|twitter|linkedin|discord|telegram|whatsapp|mastodon|bluesky|reddit)/i;
 const POST_VERB = /(^|[_\-.])(post|send|publish|tweet|message|reply|comment)([_\-.]|$)|post_?message|send_?message/i;
 const GIT_TOOL = /(github|gitlab|bitbucket)/i;
@@ -61,6 +63,14 @@ export function actionOf(tool, input) {
   // Tools from connected apps are named mcp__<server>__<tool>. Bench's own tools are its
   // own flows, asked about in their own words.
   if (!name.startsWith('mcp__') || name.startsWith('mcp__bench__')) return null;
+  // The browser: a click is told apart by what it clicks, typing by whether it submits.
+  if (name.startsWith('mcp__browser__')) {
+    const what = String(input?.element || '');
+    if (/browser_(click|press_key)$/.test(name) && PAY_WORDS.test(what)) return 'pay';
+    if (/browser_click$/.test(name) && SUBMIT_WORDS.test(what)) return 'submit-forms';
+    if (/browser_type$/.test(name) && input?.submit === true) return 'submit-forms';
+    return null;
+  }
   if (MAIL_TOOL.test(name) && SEND_VERB.test(name)) return 'send-email';
   if (PAY_TOOL.test(name)) return 'pay';
   if (FORM_TOOL.test(name)) return 'submit-forms';

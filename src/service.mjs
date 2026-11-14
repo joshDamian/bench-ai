@@ -1241,6 +1241,17 @@ export class Service extends EventEmitter {
     return this.runtime.rules.list();
   }
 
+  browserStatus() {
+    return this.runtime.browser.status();
+  }
+
+  /** @param {unknown} site */
+  async signOut(site) {
+    if (typeof site !== 'string' || !site) throw fail('Which site?');
+    await this.runtime.browser.signOut(site);
+    return this.runtime.browser.status();
+  }
+
   /** Can reach: what Bench can use beyond its own folders. */
   async reach() {
     const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json');
@@ -1252,6 +1263,7 @@ export class Service extends EventEmitter {
     return {
       server: [{ key: 'server', name: 'Files, shell and the web', detail: 'Always' }],
       accounts: [{ key: 'github', name: 'GitHub', detail: (await g.ghReady()) ? 'Connected' : 'Not connected' }, ...apps.map((n) => ({ key: `app:${n}`, name: n, detail: 'Connected app' }))],
+      browser: await this.runtime.browser.status(),
       devices: [],
     };
   }
@@ -1262,6 +1274,7 @@ export class Service extends EventEmitter {
   }
 
   shutdown() {
+    this.runtime.browser.stop();
     this.scheduler.stop();
     this.resumer.shutdown();
     this.runtime.shutdown();

@@ -824,6 +824,8 @@ route('PUT', '/api/spending', ({ body }) => svc.setSpending(body));
 route('POST', '/api/sessions/:id/budget', ({ params, body }) => svc.budget(params[0], body.action));
 route('GET', '/api/rules', () => svc.rules());
 route('GET', '/api/reach', () => svc.reach());
+route('GET', '/api/browser', () => svc.browserStatus());
+route('POST', '/api/browser/sign-out', ({ body }) => svc.signOut(body.site));
 route('PUT', '/api/rules', ({ body }) => svc.setRule(body.key, body.value));
 // Archiving or deleting a session ends the shells opened beside it; closing a task, its own.
 route('POST', '/api/sessions/:id/archive', async ({ params, body }) => {
@@ -1070,6 +1072,13 @@ server.on('upgrade', (req, socket, head) => {
         }
       });
       client.send(JSON.stringify({ type: 'hello', sessions: svc.sessions(), approvals: svc.runtime.pending() }));
+    });
+  }
+
+  // The take-over view: the server's browser, streamed to the person, their input sent back.
+  if (u.pathname === '/api/browser/view') {
+    return wss.handleUpgrade(req, socket, head, (ws) => {
+      svc.runtime.browser.view(ws).catch(() => ws.close(1011, 'The browser could not be reached'));
     });
   }
 

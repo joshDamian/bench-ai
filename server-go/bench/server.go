@@ -1330,6 +1330,15 @@ func (s *Server) routesInit() {
 	s.route("POST", "/api/sessions/:id/budget", func(c *ctxt) (any, error) { return svc.Budget(c.params[0], c.body.Get("action")) })
 	s.route("GET", "/api/rules", func(c *ctxt) (any, error) { return svc.Runtime.Rules().List(), nil })
 	s.route("GET", "/api/reach", func(c *ctxt) (any, error) { return svc.Reach(), nil })
+	s.route("GET", "/api/browser", func(c *ctxt) (any, error) { return svc.Runtime.Browser().Status(), nil })
+	s.route("POST", "/api/browser/sign-out", func(c *ctxt) (any, error) {
+		site, _ := c.body.Get("site").(string)
+		if site == "" {
+			return nil, fail("Which site?")
+		}
+		svc.Runtime.Browser().SignOut(site)
+		return svc.Runtime.Browser().Status(), nil
+	})
 	s.route("PUT", "/api/rules", func(c *ctxt) (any, error) { return svc.Runtime.Rules().Set(c.body.Get("key"), c.body.Get("value")) })
 	s.route("POST", "/api/sessions/:id/archive", func(c *ctxt) (any, error) {
 		archived := c.body.Get("archived") != false
@@ -2006,6 +2015,13 @@ func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
 		delete(s.clients, c)
 		s.hubMu.Unlock()
 		c.close(websocket.StatusNormalClosure, "")
+	case "/api/browser/view":
+		// The take-over view: the server's browser, streamed to the person, their input sent back.
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
+		if err != nil {
+			return
+		}
+		s.Svc.Runtime.Browser().View(ws)
 	case "/api/terminal":
 		if Env("DISABLE_TERMINAL") != "" {
 			refuse(w, "403 Forbidden")

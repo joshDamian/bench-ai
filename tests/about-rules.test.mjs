@@ -62,3 +62,11 @@ test('leaving the box: push, post and delete are told apart', () => {
   assert.equal(actionOf('mcp__drive__delete_file', {}), 'delete');
   assert.equal(actionOf('mcp__bench__ship', {}), null);
 });
+
+test('the browser: clicks are told apart by what they click', () => {
+  assert.equal(actionOf('mcp__browser__browser_click', { element: 'Submit application button' }), 'submit-forms');
+  assert.equal(actionOf('mcp__browser__browser_click', { element: 'Place order' }), 'pay');
+  assert.equal(actionOf('mcp__browser__browser_click', { element: 'Next page link' }), null);
+  assert.equal(actionOf('mcp__browser__browser_type', { text: 'hi', submit: true }), 'submit-forms');
+  assert.equal(actionOf('mcp__browser__browser_navigate', { url: 'https://x' }), null);
+});

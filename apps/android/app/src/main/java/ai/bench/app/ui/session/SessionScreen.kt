@@ -348,8 +348,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             }
 
             val pending = approvals.firstOrNull()
+            var takingOver by remember { mutableStateOf(false) }
             if (pending != null) {
-                ApprovalSheet(pending, cwd, onAnswer = { vm.answer(pending.id, it) }, busy = pending.id in busy, waiting = approvals.size)
+                ApprovalSheet(pending, cwd, onAnswer = { vm.answer(pending.id, it) }, busy = pending.id in busy, waiting = approvals.size, onTakeOver = { takingOver = true })
+                if (takingOver) ai.bench.app.ui.BrowserView(vm.api) { takingOver = false }
             } else Composer(
                 model = session?.let { modelLine(it, providers) } ?: "",
                 onModel = { picking = true },

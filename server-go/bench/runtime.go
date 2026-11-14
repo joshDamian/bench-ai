@@ -245,6 +245,7 @@ type Runtime struct {
 	notes        *Notes
 	rules        *Rules
 	about        *About
+	browser      *Browser
 	stop         chan struct{}
 }
 
@@ -758,6 +759,13 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 	env = mergeEnv(env, pe)
 	env = mergeEnv(env, []string{"TMPDIR=" + scratch, "TMP=" + scratch, "TEMP=" + scratch, "CLAUDE_AGENT_SDK_CLIENT_APP=bench"})
 	id := s.Str("id")
+	// The browser, for project sessions, when Chromium is installed: started now so its tools find it.
+	var browserMCP *Obj
+	if !ask {
+		if browserMCP = r.Browser().MCP(); browserMCP != nil {
+			go r.Browser().Ensure()
+		}
+	}
 	attach := AttachNote(r.AttachmentsDir(id))
 	var parts []string
 	add := func(x string) {
@@ -780,6 +788,9 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		add(ReportsNote(ReportsDir(r.AttachmentsDir(id))))
 		add(r.About().Note())
 		add(r.Rules().Note())
+		if browserMCP != nil {
+			add(BrowserNote)
+		}
 		add(r.Notes().Brief(pp))
 		if routed != nil {
 			add(RoutingNote)
@@ -847,6 +858,11 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 	o.CanUseTool = func(ctx context.Context, req *Obj) *Obj { return r.ask(ctx, id, req) }
 	if r.mcp != nil {
 		o.MCP = r.mcp(id)
+	}
+	if browserMCP != nil {
+		o.ExtraMCP = O("browser", browserMCP)
+		// Browsing is not asked about step by step; the rules still stop what leaves the box.
+		o.AllowedTools = []string{"mcp__browser"}
 	}
 	if s.Str("task_id") != "" && s.Str("purpose") != "review" {
 		o.Hooks = append(o.Hooks, HookSpec{Event: "Stop", Timeout: int(CheckTimeout.Seconds()) + 60, Fn: func(ctx context.Context, in *Obj) *Obj { return r.onStop(ctx, id, in) }})

@@ -1600,6 +1600,7 @@ func (s *Service) Doctor() *Obj {
 }
 
 func (s *Service) Shutdown() {
+	s.Runtime.Browser().Stop()
 	s.Scheduler.Stop()
 	s.Resumer.Shutdown()
 	s.Runtime.Shutdown()
