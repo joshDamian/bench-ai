@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -79,6 +81,8 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
     var typed by remember { mutableStateOf("") }
     var box by remember { mutableStateOf(IntSize.Zero) }
     var editing by remember { mutableStateOf(false) }
+    // The browser's tabs, as the server lists them: id to (title or address, shown now).
+    var tabs by remember { mutableStateOf<List<Triple<String, String, Boolean>>>(emptyList()) }
     var address by remember { mutableStateOf("") }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     val socket = remember { mutableStateOf<WebSocket?>(null) }
@@ -96,6 +100,13 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
                         BitmapFactory.decodeByteArray(b, 0, b.size)?.let { frame = it.asImageBitmap() }
                     }
                     "url" -> url = (m["url"] as? JsonPrimitive)?.content.orEmpty()
+                    "tabs" -> tabs = (m["tabs"] as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { t ->
+                        val o = t as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                        val id = (o["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+                        val u = (o["url"] as? JsonPrimitive)?.content.orEmpty()
+                        val title = (o["title"] as? JsonPrimitive)?.content.orEmpty().ifBlank { u.removePrefix("https://").removePrefix("http://").substringBefore('/') }.ifBlank { "New tab" }
+                        Triple(id, if (u == "about:blank") "New tab" else title, (o["current"] as? JsonPrimitive)?.content == "true")
+                    }
                     // Why the browser couldn't start, in full, before the server closes.
                     "error" -> closed = (m["message"] as? JsonPrimitive)?.content
                 }
@@ -142,6 +153,18 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
                     }
                 }
                 BigButton("Done", primary = true, height = 40.dp, fill = false, onClick = onDone)
+            }
+            // Tabs, when there is more than one: a popup or a page the session opened shows as it
+            // opens; tap another to see it, or + for a new one.
+            if (tabs.size > 1) Row(
+                Modifier.fillMaxWidth().background(c.surface1).horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                tabs.forEach { (id, title, on) ->
+                    Text(title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (on) c.text else c.muted, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                        modifier = Modifier.widthIn(max = 180.dp).clip(RoundedCornerShape(50)).background(if (on) c.surface3 else c.bg).clickable { if (!on) send("tab") { put("id", id) } }.padding(horizontal = 12.dp, vertical = 7.dp))
+                }
+                Text("+", fontSize = 15.sp, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(50)).background(c.bg).clickable { send("new_tab") }.padding(horizontal = 12.dp, vertical = 5.dp))
             }
             Box(
                 Modifier.weight(1f).fillMaxWidth().background(c.surface2).onSizeChanged { box = it }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,7 +26,7 @@ import (
 
 const PlaywrightMCP = "@playwright/mcp@0.0.84"
 
-const BrowserNote = "# The browser\n\nYou have a browser on this server (the \"browser\" tools), signed in to the sites the person signed in to. Use it for pages that need a sign-in or that plain fetching cannot read. When a site needs the person - to sign in, or to pass a CAPTCHA or a check - do not try to get around it: ask them with AskUserQuestion, header exactly \"Take over\", saying which site and why, with the options \"Done\" and \"Skip this site\". They take over the browser from their phone and answer Done when they are through."
+const BrowserNote = "# The browser\n\nYou have a browser on this server (the \"browser\" tools), signed in to the sites the person signed in to. Use it for pages that need a sign-in or that plain fetching cannot read. When a site needs the person - to sign in, or to pass a CAPTCHA or a check - do not try to get around it: ask them with AskUserQuestion, header exactly \"Take over\", saying which site and why, with the options \"Done\" and \"Skip this site\". They take over the browser from their phone and answer Done when they are through.\n\nTabs: the browser is shared and may already have pages in use - a call, a sign-in, a page another step needs. Never navigate away from a tab you or the person may still need: open other sites in a new tab (browser_tabs, action new), work there, and switch back (browser_tabs, action select) when you are done. Above all, never leave a call's tab while you are in the call."
 
 func ChromiumPath() string {
 	if p := os.Getenv("BENCH_CHROMIUM"); p != "" {
@@ -102,6 +103,20 @@ func (b *Browser) Endpoint() string { return "http://127.0.0.1:" + strconv.Itoa(
 func (b *Browser) getJSON(p string, out any) error {
 	c := &http.Client{Timeout: 2 * time.Second}
 	r, err := c.Get(b.Endpoint() + p)
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+	return json.NewDecoder(r.Body).Decode(out)
+}
+
+// putJSON is getJSON with PUT, which newer Chromium wants for /json/new.
+func (b *Browser) putJSON(p string, out any) error {
+	req, err := http.NewRequest("PUT", b.Endpoint()+p, nil)
+	if err != nil {
+		return err
+	}
+	r, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
 	if err != nil {
 		return err
 	}
@@ -292,11 +307,16 @@ func (b *Browser) screen() string {
 	}
 	n := 90 + b.Port%9
 	display := fmt.Sprintf(":%d", n)
-	// An X server another Bench left running on this display is used as it is.
-	if _, err := os.Stat(fmt.Sprintf("/tmp/.X11-unix/X%d", n)); err == nil {
+	// An X server another Bench left running on this display is used as it is; a socket file
+	// with nothing behind it (an Xvfb that died) is cleared, or Chromium cannot start.
+	sock := fmt.Sprintf("/tmp/.X11-unix/X%d", n)
+	if c, err := net.DialTimeout("unix", sock, time.Second); err == nil {
+		c.Close()
 		b.display = display
 		return display
 	}
+	os.Remove(sock)
+	os.Remove(fmt.Sprintf("/tmp/.X%d-lock", n))
 	cmd := exec.Command(bin, display, "-screen", "0", "1280x900x24", "-nolisten", "tcp")
 	if cmd.Start() != nil {
 		return ""
@@ -304,7 +324,8 @@ func (b *Browser) screen() string {
 	go cmd.Wait()
 	b.xvfb, b.display = cmd, display
 	for i := 0; i < 30; i++ {
-		if _, err := os.Stat(fmt.Sprintf("/tmp/.X11-unix/X%d", n)); err == nil {
+		if c, err := net.DialTimeout("unix", sock, 200*time.Millisecond); err == nil {
+			c.Close()
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -448,6 +469,64 @@ var browserKeys = map[string]map[string]any{
 }
 
 // View streams the browser's page to the person and their input back: the take-over view.
+// browserTab is one page in the browser, as /json lists it.
+type browserTab struct{ id, ws, url, title string }
+
+func (b *Browser) tabs() []browserTab {
+	var list []map[string]any
+	if b.getJSON("/json", &list) != nil {
+		return nil
+	}
+	var out []browserTab
+	for _, t := range list {
+		if t["type"] != "page" {
+			continue
+		}
+		id, _ := t["id"].(string)
+		ws, _ := t["webSocketDebuggerUrl"].(string)
+		u, _ := t["url"].(string)
+		title, _ := t["title"].(string)
+		if id != "" && ws != "" {
+			out = append(out, browserTab{id, ws, u, title})
+		}
+	}
+	return out
+}
+
+// viewPage is the tab the take-over view shows: its own DevTools connection.
+type viewPage struct {
+	id     string
+	conn   *websocket.Conn
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	next   int
+}
+
+func (p *viewPage) send(ctx context.Context, method string, params map[string]any) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if params == nil {
+		params = map[string]any{}
+	}
+	p.next++
+	msg, _ := json.Marshal(map[string]any{"id": p.next, "method": method, "params": params})
+	p.conn.Write(ctx, websocket.MessageText, msg)
+}
+
+// close puts the tab back as the sessions use it, and lets go of it.
+func (p *viewPage) close() {
+	cctx, ccancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer ccancel()
+	p.send(cctx, "Page.stopScreencast", nil)
+	p.send(cctx, "Emulation.clearDeviceMetricsOverride", nil)
+	p.cancel()
+	p.conn.Close(websocket.StatusNormalClosure, "")
+}
+
+// View streams the browser to a person and their input back: the take-over view. It shows
+// one tab at a time and follows the browser: a tab or popup that opens (a sign-in window, a
+// page the session opened) is shown as it opens, and when the shown one closes it goes back
+// to another. The tabs are listed so the person can switch.
 func (b *Browser) View(client *websocket.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -459,31 +538,7 @@ func (b *Browser) View(client *websocket.Conn) {
 		client.Close(websocket.StatusInternalError, "The browser couldn't start")
 		return
 	}
-	wsURL := b.pageSocket()
-	if wsURL == "" {
-		client.Close(websocket.StatusInternalError, "The browser has no page open")
-		return
-	}
-	page, _, err := websocket.Dial(ctx, wsURL, nil)
-	if err != nil {
-		client.Close(websocket.StatusInternalError, "The browser could not be reached")
-		return
-	}
-	defer page.Close(websocket.StatusNormalClosure, "")
-	page.SetReadLimit(32 << 20)
 	client.SetReadLimit(1 << 20)
-	var wmu sync.Mutex
-	next := 100
-	send := func(method string, params map[string]any) {
-		wmu.Lock()
-		defer wmu.Unlock()
-		if params == nil {
-			params = map[string]any{}
-		}
-		msg, _ := json.Marshal(map[string]any{"id": next, "method": method, "params": params})
-		next++
-		page.Write(ctx, websocket.MessageText, msg)
-	}
 	var cmu sync.Mutex
 	toClient := func(v any) {
 		cmu.Lock()
@@ -491,55 +546,126 @@ func (b *Browser) View(client *websocket.Conn) {
 		msg, _ := json.Marshal(v)
 		client.Write(ctx, websocket.MessageText, msg)
 	}
-	var mmu sync.Mutex
+	var mu sync.Mutex // guards cur, width, height, vw, vh
+	var cur *viewPage
 	width, height := 1280.0, 900.0
-	send("Page.enable", nil)
-	send("Page.startScreencast", map[string]any{"format": "jpeg", "quality": 85, "maxWidth": 1600, "maxHeight": 2400, "everyNthFrame": 1})
-	// While the person is in control, the page is laid out at their phone's size; after,
-	// it goes back to the size sessions use.
-	defer func() {
-		cctx, ccancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer ccancel()
-		msg, _ := json.Marshal(map[string]any{"id": 99, "method": "Emulation.clearDeviceMetricsOverride", "params": map[string]any{}})
-		page.Write(cctx, websocket.MessageText, msg)
-	}()
-	var list []map[string]any
-	if b.getJSON("/json", &list) == nil {
-		for _, t := range list {
-			if t["webSocketDebuggerUrl"] == wsURL {
-				toClient(map[string]any{"type": "url", "url": t["url"], "title": t["title"]})
-			}
+	vw, vh := 0.0, 0.0
+	current := func() *viewPage { mu.Lock(); defer mu.Unlock(); return cur }
+
+	attach := func(t browserTab) bool {
+		pctx, pcancel := context.WithCancel(ctx)
+		conn, _, err := websocket.Dial(pctx, t.ws, nil)
+		if err != nil {
+			pcancel()
+			return false
 		}
-	}
-	go func() {
-		defer cancel()
-		for {
-			_, data, err := page.Read(ctx)
-			if err != nil {
-				return
-			}
-			var m map[string]any
-			if json.Unmarshal(data, &m) != nil {
-				continue
-			}
-			p, _ := m["params"].(map[string]any)
-			switch m["method"] {
-			case "Page.screencastFrame":
-				meta, _ := p["metadata"].(map[string]any)
-				mmu.Lock()
-				width, _ = meta["deviceWidth"].(float64)
-				height, _ = meta["deviceHeight"].(float64)
-				w, h := width, height
-				mmu.Unlock()
-				send("Page.screencastFrameAck", map[string]any{"sessionId": p["sessionId"]})
-				toClient(map[string]any{"type": "frame", "data": p["data"], "width": w, "height": h})
-			case "Page.frameNavigated":
-				if f, ok := p["frame"].(map[string]any); ok && f["parentId"] == nil {
-					toClient(map[string]any{"type": "url", "url": f["url"]})
+		conn.SetReadLimit(32 << 20)
+		p := &viewPage{id: t.id, conn: conn, cancel: pcancel, next: 100}
+		mu.Lock()
+		old := cur
+		cur = p
+		w, h := vw, vh
+		mu.Unlock()
+		if old != nil {
+			old.close()
+		}
+		// Bring it to the front, so what the person sees is what the browser shows.
+		b.getJSON("/json/activate/"+t.id, nil)
+		p.send(pctx, "Page.enable", nil)
+		if w > 0 {
+			p.send(pctx, "Emulation.setDeviceMetricsOverride", map[string]any{"width": int(w), "height": int(h), "deviceScaleFactor": 2, "mobile": false})
+		}
+		p.send(pctx, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 85, "maxWidth": 1600, "maxHeight": 2400, "everyNthFrame": 1})
+		toClient(map[string]any{"type": "url", "url": t.url, "title": t.title})
+		go func() {
+			for {
+				_, data, err := conn.Read(pctx)
+				if err != nil {
+					return
+				}
+				var m map[string]any
+				if json.Unmarshal(data, &m) != nil {
+					continue
+				}
+				pm, _ := m["params"].(map[string]any)
+				switch m["method"] {
+				case "Page.screencastFrame":
+					meta, _ := pm["metadata"].(map[string]any)
+					fw, _ := meta["deviceWidth"].(float64)
+					fh, _ := meta["deviceHeight"].(float64)
+					p.send(pctx, "Page.screencastFrameAck", map[string]any{"sessionId": pm["sessionId"]})
+					if current() != p {
+						continue
+					}
+					mu.Lock()
+					width, height = fw, fh
+					mu.Unlock()
+					toClient(map[string]any{"type": "frame", "data": pm["data"], "width": fw, "height": fh})
+				case "Page.frameNavigated":
+					if f, ok := pm["frame"].(map[string]any); ok && f["parentId"] == nil && current() == p {
+						toClient(map[string]any{"type": "url", "url": f["url"]})
+					}
 				}
 			}
+		}()
+		return true
+	}
+	defer func() {
+		if p := current(); p != nil {
+			p.close()
 		}
 	}()
+
+	tabs := b.tabs()
+	if len(tabs) == 0 || !attach(tabs[0]) {
+		client.Close(websocket.StatusInternalError, "The browser has no page open")
+		return
+	}
+	// Follow the browser's tabs: list them for the person, show a new one as it opens, and
+	// go back to another when the shown one closes.
+	go func() {
+		seen := map[string]bool{}
+		for _, t := range tabs {
+			seen[t.id] = true
+		}
+		last := ""
+		tick := time.NewTicker(800 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			list := b.tabs()
+			shown := current()
+			var opened *browserTab
+			alive := false
+			for i, t := range list {
+				if !seen[t.id] {
+					seen[t.id] = true
+					opened = &list[i]
+				}
+				alive = alive || (shown != nil && t.id == shown.id)
+			}
+			switch {
+			case opened != nil:
+				attach(*opened)
+			case !alive && len(list) > 0:
+				attach(list[0])
+			}
+			shown = current()
+			items := []any{}
+			for _, t := range list {
+				items = append(items, map[string]any{"id": t.id, "title": t.title, "url": t.url, "current": shown != nil && t.id == shown.id})
+			}
+			if sig := string(ToJSON(items)); sig != last {
+				last = sig
+				toClient(map[string]any{"type": "tabs", "tabs": items})
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+		}
+	}()
+
 	for {
 		_, data, err := client.Read(ctx)
 		if err != nil {
@@ -549,9 +675,11 @@ func (b *Browser) View(client *websocket.Conn) {
 		if json.Unmarshal(data, &m) != nil {
 			continue
 		}
-		mmu.Lock()
+		p := current()
+		mu.Lock()
 		w, h := width, height
-		mmu.Unlock()
+		mu.Unlock()
+		send := func(method string, params map[string]any) { p.send(ctx, method, params) }
 		switch m["type"] {
 		case "tap":
 			x, _ := m["x"].(float64)
@@ -584,14 +712,31 @@ func (b *Browser) View(client *websocket.Conn) {
 		case "size":
 			// The phone's view, in its CSS pixels: pages lay out at its width. Not as a phone
 			// (mobile: false): a desktop browser claiming to be a phone looks like a bot.
-			vw, _ := m["width"].(float64)
-			vh, _ := m["height"].(float64)
-			if vw >= 200 && vw <= 2000 && vh >= 200 && vh <= 3000 {
-				send("Emulation.setDeviceMetricsOverride", map[string]any{"width": int(vw), "height": int(vh), "deviceScaleFactor": 2, "mobile": false})
+			nw, _ := m["width"].(float64)
+			nh, _ := m["height"].(float64)
+			if nw >= 200 && nw <= 2000 && nh >= 200 && nh <= 3000 {
+				mu.Lock()
+				vw, vh = nw, nh
+				mu.Unlock()
+				send("Emulation.setDeviceMetricsOverride", map[string]any{"width": int(nw), "height": int(nh), "deviceScaleFactor": 2, "mobile": false})
 			}
 		case "go":
 			if u := webAddress(fmt.Sprint(m["url"])); u != "" {
 				send("Page.navigate", map[string]any{"url": u})
+			}
+		case "tab":
+			id := fmt.Sprint(m["id"])
+			for _, t := range b.tabs() {
+				if t.id == id && t.id != p.id {
+					attach(t)
+				}
+			}
+		case "new_tab":
+			// A new tab, for the person to go somewhere without leaving the session's page.
+			var t map[string]any
+			if b.putJSON("/json/new?about:blank", &t) == nil {
+				// The follower shows it as it appears.
+				_ = t
 			}
 		}
 	}
