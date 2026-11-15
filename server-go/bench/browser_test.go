@@ -12,3 +12,11 @@ func TestCrashLineSaysWhy(t *testing.T) {
 		t.Fatal("a sandbox failure is seen as one")
 	}
 }
+
+func TestWebAddress(t *testing.T) {
+	for in, want := range map[string]string{"linkedin.com/jobs": "https://linkedin.com/jobs", "http://x.test": "http://x.test", "remote jobs lagos": "https://duckduckgo.com/?q=remote+jobs+lagos", " ": ""} {
+		if got := webAddress(in); got != want {
+			t.Errorf("webAddress(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

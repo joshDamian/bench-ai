@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -416,7 +417,15 @@ func (b *Browser) View(client *websocket.Conn) {
 	var mmu sync.Mutex
 	width, height := 1280.0, 900.0
 	send("Page.enable", nil)
-	send("Page.startScreencast", map[string]any{"format": "jpeg", "quality": 60, "maxWidth": 1280, "maxHeight": 1600, "everyNthFrame": 1})
+	send("Page.startScreencast", map[string]any{"format": "jpeg", "quality": 60, "maxWidth": 1600, "maxHeight": 2400, "everyNthFrame": 1})
+	// While the person is in control, the page is laid out at their phone's size; after,
+	// it goes back to the size sessions use.
+	defer func() {
+		cctx, ccancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer ccancel()
+		msg, _ := json.Marshal(map[string]any{"id": 99, "method": "Emulation.clearDeviceMetricsOverride", "params": map[string]any{}})
+		page.Write(cctx, websocket.MessageText, msg)
+	}()
 	var list []map[string]any
 	if b.getJSON("/json", &list) == nil {
 		for _, t := range list {
@@ -495,8 +504,34 @@ func (b *Browser) View(client *websocket.Conn) {
 			}
 		case "back":
 			send("Runtime.evaluate", map[string]any{"expression": "history.back()"})
+		case "size":
+			// The phone's view, in its CSS pixels: pages lay out for it as on a phone.
+			vw, _ := m["width"].(float64)
+			vh, _ := m["height"].(float64)
+			if vw >= 200 && vw <= 2000 && vh >= 200 && vh <= 3000 {
+				send("Emulation.setDeviceMetricsOverride", map[string]any{"width": int(vw), "height": int(vh), "deviceScaleFactor": 2, "mobile": true})
+			}
+		case "go":
+			if u := webAddress(fmt.Sprint(m["url"])); u != "" {
+				send("Page.navigate", map[string]any{"url": u})
+			}
 		}
 	}
+}
+
+// webAddress turns what the person typed into a page to open: "linkedin.com" is
+// https://linkedin.com, and words with no dot in them are a search.
+func webAddress(s string) string {
+	s = strings.TrimSpace(s)
+	switch {
+	case s == "":
+		return ""
+	case strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://"):
+		return s
+	case !strings.ContainsAny(s, " ") && strings.Contains(s, "."):
+		return "https://" + s
+	}
+	return "https://duckduckgo.com/?q=" + url.QueryEscape(s)
 }
 
 func (r *Runtime) Browser() *Browser {

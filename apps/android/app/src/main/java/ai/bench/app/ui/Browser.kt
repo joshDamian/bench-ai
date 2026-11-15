@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -77,6 +78,9 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
     var closed by remember { mutableStateOf<String?>(null) }
     var typed by remember { mutableStateOf("") }
     var box by remember { mutableStateOf(IntSize.Zero) }
+    var editing by remember { mutableStateOf(false) }
+    var address by remember { mutableStateOf("") }
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
     val socket = remember { mutableStateOf<WebSocket?>(null) }
     fun send(type: String, block: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}) {
         socket.value?.send(buildJsonObject { put("type", type); block() }.toString())
@@ -109,6 +113,10 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
         socket.value = ws
         onDispose { ws.close(1000, null) }
     }
+    // Pages lay out at this view's size while you are in control, as on a phone.
+    LaunchedEffect(box, socket.value) {
+        if (box != IntSize.Zero) send("size") { put("width", box.width / density); put("height", box.height / density) }
+    }
     Dialog(onDismissRequest = onDone, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Column(Modifier.fillMaxSize().background(c.bg).imePadding()) {
             Row(
@@ -118,7 +126,20 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
                 Box(Modifier.size(10.dp).background(c.warn, CircleShape))
                 Column(Modifier.weight(1f)) {
                     Text("You are in control", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.text)
-                    Text(url.removePrefix("https://").removePrefix("http://").ifBlank { "Bench is waiting" }, fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // The address: tap it to open another page.
+                    if (editing) BasicTextField(
+                        address, { address = it }, singleLine = true,
+                        textStyle = TextStyle(fontSize = 14.sp, color = c.text),
+                        cursorBrush = SolidColor(c.accent),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go, keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri),
+                        keyboardActions = KeyboardActions(onGo = { if (address.isNotBlank()) send("go") { put("url", address.trim()) }; editing = false }),
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp).clip(RoundedCornerShape(8.dp)).background(c.bg).padding(horizontal = 8.dp, vertical = 5.dp),
+                        decorationBox = { inner -> Box { if (address.isEmpty()) Text("Web address or search", fontSize = 14.sp, color = c.muted); inner() } },
+                    ) else {
+                        val shown = url.removePrefix("https://").removePrefix("http://").takeIf { it.isNotBlank() && it != "about:blank" }
+                        Text(shown ?: "Tap to open a web address", fontSize = 12.5.sp, color = if (shown == null) c.accent else c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable { address = shown.orEmpty(); editing = true })
+                    }
                 }
                 BigButton("Done", primary = true, height = 40.dp, fill = false, onClick = onDone)
             }
