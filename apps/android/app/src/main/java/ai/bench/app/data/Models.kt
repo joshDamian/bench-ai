@@ -171,6 +171,9 @@ data class MeetingState(
     val trusted: Boolean = false,
     /** Showing a deck in the call. */
     val presenting: Boolean = false,
+    /** Whether the call is getting Bench's voice: ok, muted, silent or unknown; and why not. */
+    val audio_out: String = "unknown",
+    val audio_problem: String? = null,
     val voice: Int = 3,
     val speed: Double = 1.05,
     val heard: Int = 0,

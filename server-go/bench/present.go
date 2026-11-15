@@ -8,20 +8,28 @@ package bench
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 )
 
 // DeckTitlePrefix is what a tab's title starts with for the browser to share it on its own.
 const DeckTitlePrefix = "Bench presents"
+
+// deckAccess is how the person gets to a deck themselves.
+const deckAccess = "it is one self-contained file, and the person can open it on their phone from Home in the Bench app (Ready for you) or from this session's files."
 
 var (
 	mdImage  = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)\)`)
@@ -147,6 +155,11 @@ func (m *Meeting) present(sessionID, title, md string) (string, error) {
 	page, n := Deck(title, md)
 	dir := ReportsDir(m.svc.Runtime.AttachmentsDir(sessionID))
 	os.MkdirAll(dir, 0o755)
+	cwd := ""
+	if ss := m.svc.Store.GetSession(sessionID); ss != nil {
+		cwd = ss.Str("cwd")
+	}
+	page = inlineImages(page, cwd)
 	slug := strings.Trim(regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(strings.ToLower(title), "-"), "-")
 	if slug == "" {
 		slug = "slides"
@@ -159,16 +172,34 @@ func (m *Meeting) present(sessionID, title, md string) (string, error) {
 	if err := b.Start(); err != nil {
 		return "", err
 	}
+	fileURL := (&url.URL{Scheme: "file", Path: file}).String()
+	// A deck already open (and likely being shared) is reused: the new one loads in its tab, so
+	// the share carries on and there is never a second "Bench presents" tab to choose between.
+	m.mu.Lock()
+	old := m.deckTab
+	m.mu.Unlock()
+	if t := b.tab(old); t != nil {
+		if _, err := cdpCall(t.ws, "Page.navigate", map[string]any{"url": fileURL}); err != nil {
+			return "", fmt.Errorf("could not load the deck: %v", err)
+		}
+		b.front(old)
+		m.mu.Lock()
+		m.presenting = true
+		m.mu.Unlock()
+		m.svc.Emit("meeting", nil)
+		return fmt.Sprintf("The new deck (%d slides) replaced the last one in the same tab, so if it was being shared it still is - nothing to click. Saved as %s; %s Move it with meeting_slide.", n, file, deckAccess), nil
+	}
 	var tab map[string]any
-	if err := b.putJSON("/json/new?"+(&url.URL{Scheme: "file", Path: file}).String(), &tab); err != nil {
+	if err := b.putJSON("/json/new?"+fileURL, &tab); err != nil {
 		return "", fmt.Errorf("could not open the deck: %v", err)
 	}
 	id, _ := tab["id"].(string)
+	b.front(id)
 	m.mu.Lock()
 	m.deckTab, m.presenting = id, true
 	m.mu.Unlock()
 	m.svc.Emit("meeting", nil)
-	return fmt.Sprintf("The deck (%d slides) is open in a new tab and saved as %s. To present it: in the call's tab, click Meet's \"Share screen\" (or \"Present now\") button - the browser shares the deck's tab on its own, with no picker, because its title starts with %q. Stay in the call's tab. Move the deck with meeting_slide (next, prev, a number, or end) and narrate each slide with meeting_say kind \"slide\". When done: meeting_slide end, then click Meet's \"Stop presenting\".", n, file, DeckTitlePrefix), nil
+	return fmt.Sprintf("The deck (%d slides) is open in a new tab, saved as %s; %s To present it: in the call's tab, click Meet's \"Share screen\" (or \"Present now\") button - the browser shares the deck's tab on its own, with no picker, because its title starts with %q. Stay in the call's tab. Move the deck with meeting_slide (next, prev, a number, or end) and narrate each slide with meeting_say kind \"slide\". When done: meeting_slide end, then click Meet's \"Stop presenting\".", n, file, deckAccess, DeckTitlePrefix), nil
 }
 
 // slide moves the deck: "next", "prev", a slide number, or "end" (stops presenting it).
@@ -179,22 +210,22 @@ func (m *Meeting) slide(to string) (string, error) {
 	if id == "" {
 		return "", fmt.Errorf("No deck is open: make one with meeting_present")
 	}
+	b := m.svc.Runtime.Browser()
 	if to == "end" {
 		m.mu.Lock()
 		m.presenting = false
 		m.mu.Unlock()
+		b.frontCall()
 		m.svc.Emit("meeting", nil)
 		return "Presenting ended for speech: lines follow the person's rule again. Click Meet's \"Stop presenting\" in the call's tab; the deck stays in your reports.", nil
 	}
-	var ws string
-	for _, t := range m.svc.Runtime.Browser().tabs() {
-		if t.id == id {
-			ws = t.ws
-		}
-	}
-	if ws == "" {
+	t := b.tab(id)
+	if t == nil {
 		return "", fmt.Errorf("The deck's tab was closed: open it again with meeting_present")
 	}
+	ws := t.ws
+	// The shared tab in front, so it is drawn and the call sees the new slide.
+	b.front(id)
 	expr := "deck.next()"
 	switch {
 	case to == "prev" || to == "back":
@@ -202,12 +233,98 @@ func (m *Meeting) slide(to string) (string, error) {
 	case regexp.MustCompile(`^\d+$`).MatchString(to):
 		expr = "deck.go(" + to + ")"
 	}
-	r, err := cdpCall(ws, "Runtime.evaluate", map[string]any{"expression": "JSON.stringify(" + expr + ")", "returnByValue": true})
+	// Moved, then two frames waited for: the slide has been drawn, not just chosen.
+	r, err := cdpCall(ws, "Runtime.evaluate", map[string]any{
+		"expression":    "new Promise(ok=>{const w=" + expr + ";requestAnimationFrame(()=>requestAnimationFrame(()=>ok(JSON.stringify({at:w.at,of:w.of,seen:document.visibilityState}))))})",
+		"awaitPromise":  true,
+		"returnByValue": true,
+	})
 	if err != nil {
 		return "", err
 	}
 	v, _ := r["result"].(map[string]any)["value"].(string)
-	return "On slide " + strings.Trim(strings.ReplaceAll(strings.ReplaceAll(v, `"at":`, ""), `,"of":`, " of "), "{}") + ".", nil
+	var w struct {
+		At, Of int
+		Seen   string
+	}
+	json.Unmarshal([]byte(v), &w)
+	if w.Seen != "visible" {
+		return fmt.Sprintf("Moved to slide %d of %d, but the deck's tab is %s, so the call may still show the old slide. Say so if they mention it.", w.At, w.Of, w.Seen), nil
+	}
+	return fmt.Sprintf("On slide %d of %d, drawn in the shared tab.", w.At, w.Of), nil
+}
+
+var imgSrc = regexp.MustCompile(`<img alt="([^"]*)" src="([^"]+)">`)
+
+// inlineImages puts each image into the page itself, so the deck is one file that opens
+// anywhere: a web image is fetched, a file is read (relative to the session's folder). One
+// that can't be had becomes its alt text.
+func inlineImages(page, base string) string {
+	client := &http.Client{Timeout: 10 * time.Second}
+	return imgSrc.ReplaceAllStringFunc(page, func(tag string) string {
+		m := imgSrc.FindStringSubmatch(tag)
+		alt, src := m[1], html.UnescapeString(m[2])
+		var data []byte
+		if strings.HasPrefix(src, "data:") {
+			return tag
+		}
+		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+			if r, err := client.Get(src); err == nil {
+				if r.StatusCode < 400 {
+					data, _ = io.ReadAll(io.LimitReader(r.Body, 6<<20))
+				}
+				r.Body.Close()
+			}
+		} else {
+			p := strings.TrimPrefix(src, "file://")
+			if !filepath.IsAbs(p) && base != "" {
+				p = filepath.Join(base, p)
+			}
+			data, _ = os.ReadFile(p)
+		}
+		if len(data) == 0 || len(data) > 5<<20 {
+			return `<p><em>` + html.EscapeString(alt) + `</em></p>`
+		}
+		mime := http.DetectContentType(data)
+		if strings.HasSuffix(strings.ToLower(src), ".svg") {
+			mime = "image/svg+xml"
+		}
+		if !strings.HasPrefix(mime, "image/") {
+			return `<p><em>` + html.EscapeString(alt) + `</em></p>`
+		}
+		return `<img alt="` + html.EscapeString(alt) + `" src="data:` + mime + `;base64,` + base64.StdEncoding.EncodeToString(data) + `">`
+	})
+}
+
+// tab is one open tab by id, or nil.
+func (b *Browser) tab(id string) *browserTab {
+	if id == "" {
+		return nil
+	}
+	for _, t := range b.tabs() {
+		if t.id == id {
+			return &t
+		}
+	}
+	return nil
+}
+
+// front brings a tab to the front of the browser's window.
+func (b *Browser) front(id string) {
+	c := &http.Client{Timeout: 2 * time.Second}
+	if r, err := c.Get(b.Endpoint() + "/json/activate/" + id); err == nil {
+		r.Body.Close()
+	}
+}
+
+// frontCall brings the call's tab back to the front, after presenting.
+func (b *Browser) frontCall() {
+	for _, t := range b.tabs() {
+		if strings.Contains(t.url, "meet.google.com/") || strings.Contains(t.url, "zoom.us/") || strings.Contains(t.url, "teams.microsoft.com") {
+			b.front(t.id)
+			return
+		}
+	}
 }
 
 func presentToolList() []any {
@@ -216,7 +333,7 @@ func presentToolList() []any {
 			"annotations", O("readOnlyHint", readOnly, "destructiveHint", false), "execution", O("taskSupport", "forbidden"))
 	}
 	return []any{
-		tool("meeting_present", "Makes slides into a deck and opens it in a new browser tab, ready to share in the call. Write the slides in Markdown, one slide per part, parts separated by a line of ---. Keep each slide short: a heading and at most 4 short points, or one image.", false,
+		tool("meeting_present", "Makes slides into a deck and opens it in a new browser tab, ready to share in the call. Write the slides in Markdown, one slide per part, parts separated by a line of ---. Size the deck to the point, not to the data: lead with the answer or the decision and the ranked shortlist, group everything else on one slide, and keep it to about 4 to 8 slides - never one slide per item. Each slide: a heading and at most 4 short points, or one image.", false,
 			macSchema(O("title", strProp("The deck's title"), "slides", strProp("The slides in Markdown, separated by lines of ---")), "title", "slides")),
 		tool("meeting_slide", "Moves the shared deck without leaving the call's tab: next, prev, a slide number, or end (when done presenting).", false,
 			macSchema(O("to", strProp("next, prev, a slide number, or end")), "to")),
@@ -264,19 +381,57 @@ func (b *Browser) grantMedia() {
 		cancel()
 		return
 	}
-	msg, _ := json.Marshal(map[string]any{"id": 1, "method": "Browser.grantPermissions", "params": map[string]any{"permissions": []any{"audioCapture", "videoCapture"}}})
-	if c.Write(ctx, websocket.MessageText, msg) != nil {
+	var wmu sync.Mutex
+	next := 0
+	send := func(sessionID, method string, params map[string]any) error {
+		wmu.Lock()
+		defer wmu.Unlock()
+		next++
+		m := map[string]any{"id": next, "method": method, "params": params}
+		if sessionID != "" {
+			m["sessionId"] = sessionID
+		}
+		msg, _ := json.Marshal(m)
+		return c.Write(ctx, websocket.MessageText, msg)
+	}
+	if send("", "Browser.grantPermissions", map[string]any{"permissions": []any{"audioCapture", "videoCapture"}}) != nil {
 		cancel()
 		return
 	}
+	// Every page gets the call-audio hook (callAudioHook) before its own scripts run, so a
+	// call's audio connections can be checked: new pages wait for it, open ones get it for
+	// their next load.
+	send("", "Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true})
 	b.mu.Lock()
 	b.grant = cancel
 	b.mu.Unlock()
 	go func() {
 		// Held until the browser goes; then the next start grants again.
 		for {
-			if _, _, err := c.Read(ctx); err != nil {
+			_, data, err := c.Read(ctx)
+			if err != nil {
 				break
+			}
+			var ev struct {
+				Method string `json:"method"`
+				Params struct {
+					SessionID  string `json:"sessionId"`
+					TargetInfo struct {
+						Type string `json:"type"`
+					} `json:"targetInfo"`
+					Waiting bool `json:"waitingForDebugger"`
+				} `json:"params"`
+			}
+			if json.Unmarshal(data, &ev) != nil || ev.Method != "Target.attachedToTarget" {
+				continue
+			}
+			sid := ev.Params.SessionID
+			if ev.Params.TargetInfo.Type == "page" {
+				send(sid, "Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": callAudioHook})
+				send(sid, "Runtime.evaluate", map[string]any{"expression": callAudioHook})
+			}
+			if ev.Params.Waiting {
+				send(sid, "Runtime.runIfWaitingForDebugger", map[string]any{})
 			}
 		}
 		c.Close(websocket.StatusNormalClosure, "")

@@ -172,6 +172,9 @@ func (b *Browser) launch(bin string, noSandbox bool) error {
 	// ordinary user agent.
 	args := []string{"--remote-debugging-port=" + strconv.Itoa(b.Port), "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + b.Profile,
 		"--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled",
+		// A shared deck sits behind the call's tab: background tabs must keep drawing, or the
+		// call shows a frozen slide.
+		"--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
 		"--window-size=1280,900", "--lang=en-US"}
 	display := b.screen()
 	// Calls: Chromium plays into Bench's speaker and hears Bench's microphone, and does not

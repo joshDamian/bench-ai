@@ -10,7 +10,8 @@
 #   venv/                  Python with sherpa-onnx
 #   bench_voice.py         the helper
 #   models/kokoro          the voice (Kokoro v1.0: 54 voices)
-#   models/asr             hearing (NeMo fast-conformer, streaming, English)
+#   models/asr             hearing, live (NeMo fast-conformer, streaming, English)
+#   models/accurate        hearing, second pass (NVIDIA Parakeet TDT 0.6B v2, English)
 # Then it restarts bench-go, whose browser starts again with the speaker and microphone.
 set -eu
 
@@ -44,6 +45,8 @@ fetch() { # name, folder in models
 }
 fetch kokoro-multi-lang-v1_0 kokoro "$REL/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
 fetch sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms asr "$REL/asr-models/sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms.tar.bz2"
+# The accurate second pass (about 650 MB): each finished sentence is heard again by it.
+fetch sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8 accurate "$REL/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2"
 
 # A quick check: say something.
 if printf '{"id":"1","text":"Bench can speak."}\n' | "$VOICE_DIR/venv/bin/python" "$VOICE_DIR/bench_voice.py" say --models "$VOICE_DIR/models" 2>/dev/null | grep -q '"file"'; then

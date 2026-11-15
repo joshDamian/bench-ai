@@ -58,7 +58,7 @@ func TestPresentLive(t *testing.T) {
 	}
 	t.Logf("%v", mic["result"].(map[string]any)["value"])
 	r, err := cdpCall(callWS, "Runtime.evaluate", map[string]any{
-		"expression": `navigator.mediaDevices.getDisplayMedia({video:true}).then(s=>s.getVideoTracks()[0].getSettings().displaySurface).catch(e=>"ERR "+e.name+": "+e.message)`,
+		"expression":   `navigator.mediaDevices.getDisplayMedia({video:true}).then(s=>s.getVideoTracks()[0].getSettings().displaySurface).catch(e=>"ERR "+e.name+": "+e.message)`,
 		"awaitPromise": true, "userGesture": true, "returnByValue": true,
 	})
 	if err != nil {
@@ -87,6 +87,23 @@ func TestPresentLive(t *testing.T) {
 				os.WriteFile(os.Getenv("SHOT"), png, 0o644)
 			}
 		}
+	}
+	// A second deck replaces the first in the same tab: one "Bench presents" tab, still shared.
+	first := m.deckTab
+	out2, err := m.present("s1", "Follow-up", "# Follow-up\n\n---\n\n## Next steps\n\n- Draft the email")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Second)
+	n := 0
+	for _, x := range b.tabs() {
+		if strings.HasPrefix(x.title, DeckTitlePrefix) {
+			n++
+		}
+	}
+	t.Logf("%d deck tab(s); %s", n, out2[:60])
+	if n != 1 || m.deckTab != first {
+		t.Fatal("the second deck opened another tab")
 	}
 	m.slide("end")
 }
