@@ -9,6 +9,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -137,7 +143,7 @@ fun RulesScreen(store: BenchStore, onBack: () -> Unit) {
 
 /** Can reach: what Bench can use beyond its own folders, grouped by kind (the Can reach board). */
 @Composable
-fun CanReachScreen(store: BenchStore, onBack: () -> Unit, onBrowser: () -> Unit = {}) {
+fun CanReachScreen(store: BenchStore, onBack: () -> Unit, onBrowser: () -> Unit = {}, onDevice: (String) -> Unit = {}) {
     val c = Bench.colors
     var reach by remember { mutableStateOf<ai.bench.app.data.Reach?>(null) }
     LaunchedEffect(Unit) { reach = runCatching { store.api.reach() }.getOrNull() }
@@ -145,8 +151,8 @@ fun CanReachScreen(store: BenchStore, onBack: () -> Unit, onBrowser: () -> Unit 
         val r = reach ?: return@Page
         section("Devices")
         item("devices") {
-            if (r.devices.isEmpty()) Text("No devices yet. Your Mac's shares show here once Bench for Mac shares something.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp))
-            else Card { r.devices.forEach { d -> NavRow(d.name, d.detail, chevron = false) } }
+            if (r.devices.isEmpty()) Text("No devices yet. Open Bench for Mac and share something under Settings › Shared with Bench.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp))
+            else Card { r.devices.forEach { d -> NavRow(d.name, d.detail) { onDevice(d.key) } } }
         }
         section("Accounts")
         item("accounts") {
@@ -243,5 +249,127 @@ fun ArchiveScreen(store: BenchStore, onBack: () -> Unit) {
     if (emptying) Confirm("Empty the archive?", "Everything in it is removed for good. This can't be undone.", "Empty", onDismiss = { emptying = false }) {
         emptying = false
         scope.launch { runCatching { store.api.emptyArchive() }; load() }
+    }
+}
+
+/** "~/Projects/kron", "Read and write": a share's two lines, as the device page lists them. */
+private fun shareLines(s: ai.bench.app.data.Device.Share): Pair<String, String> = when (s.kind) {
+    "folder" -> (s.path ?: s.name) to (if (s.access == "write") "Read and write" else "Read only")
+    "app" -> s.name to "Open it and use it"
+    "screen" -> "Screen" to "Look only: screenshots"
+    else -> s.name to "Runs ${s.path?.substringAfterLast('/') ?: s.name}"
+}
+
+/**
+ * A device's page (the Mac board): what it shares, in three groups, set on the device. From
+ * here you can only ask for more; the device says yes or no itself.
+ */
+@Composable
+fun DeviceScreen(store: BenchStore, id: String, onBack: () -> Unit) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    val devices by store.devices.collectAsState()
+    var asking by remember { mutableStateOf(false) }
+    var forgetting by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { store.loadDevices() }
+    val d = devices.firstOrNull { it.id == id }
+    Page(d?.name ?: "Device", null, onBack, bottom = {
+        if (d != null) Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) { BigButton("Ask for more…") { asking = true } }
+    }) {
+        if (d == null) return@Page
+        item("state") {
+            Column(Modifier.padding(start = 6.dp, top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(8.dp).background(if (d.online) c.good else c.muted, androidx.compose.foundation.shape.CircleShape))
+                    Text(listOfNotNull(if (d.online) "Online" else "Offline" + (d.last_seen?.let { " · seen ${ai.bench.app.data.Format.ago(it)} ago" } ?: ""), d.version?.takeIf { it.isNotBlank() }?.let { "Bench for Mac $it" }).joinToString(" · "), fontSize = 14.sp, color = c.muted)
+                }
+                Text("Shared by this Mac · set on the Mac", fontSize = 13.sp, color = c.muted)
+            }
+        }
+        listOf("Folders" to listOf("folder"), "Apps and screen" to listOf("app", "screen"), "Things it can run" to listOf("run")).forEach { (title, kinds) ->
+            val list = d.shares.filter { it.kind in kinds }
+            if (list.isNotEmpty()) {
+                section(title)
+                item("g-$title") {
+                    Card { list.forEach { s -> val (a, b) = shareLines(s); NavRow(a, if (s.rule == "allow") "Allowed" else "Asks first", b, chevron = false) } }
+                }
+            }
+        }
+        if (d.shares.isEmpty()) item("none") { Text("Nothing is shared yet. Share folders, apps or commands in Bench for Mac, under Settings › Shared with Bench, or ask for one here.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 18.dp)) }
+        if (d.asks.isNotEmpty()) {
+            section("Waiting on the Mac")
+            item("asks") {
+                Card {
+                    d.asks.forEach { a ->
+                        NavRow(askTitle(a), "Cancel", if (d.online) "Waiting for you on the Mac" else "Waits until the Mac is awake", valueColor = c.accent, chevron = false) {
+                            scope.launch { runCatching { store.api.cancelDeviceAsk(a.id) }; store.loadDevices() }
+                        }
+                    }
+                }
+            }
+        }
+        item("note") { Text("Nothing else on this Mac is reachable. Each share's rule is set on the Mac.", fontSize = 13.sp, lineHeight = 18.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 14.dp)) }
+        item("forget") { androidx.compose.material3.TextButton(onClick = { forgetting = true }, modifier = Modifier.padding(top = 8.dp)) { Text("Forget this device", color = c.muted) } }
+    }
+    if (asking && d != null) AskDeviceSheet(store, d, onDismiss = { asking = false })
+    if (forgetting && d != null) Confirm("Forget ${d.name}?", "Sessions stop reaching it. It shows here again when Bench for Mac links.", "Forget", onDismiss = { forgetting = false }) {
+        scope.launch { runCatching { store.api.forgetDevice(d.id) }; store.loadDevices(); onBack() }
+    }
+}
+
+/** "~/Projects/novara · read and write": an ask as one line. */
+fun askTitle(a: ai.bench.app.data.DeviceAsk): String = when (a.kind) {
+    "screen" -> "The screen · look only"
+    "app" -> "${a.path} · open it"
+    "run" -> "Run ${a.path}"
+    else -> "${a.path} · ${if (a.access == "write") "read and write" else "read only"}"
+}
+
+/** Ask your Mac for more (the "Ask your Mac for more" board): sent to the Mac, decided there. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun AskDeviceSheet(store: BenchStore, d: ai.bench.app.data.Device, onDismiss: () -> Unit) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    var kind by remember { mutableStateOf("folder") }
+    var path by remember { mutableStateOf("") }
+    var access by remember { mutableStateOf("write") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) },
+    ) {
+        Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Ask your Mac for more", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("You approve it on the Mac. Nothing changes until then.", fontSize = 14.sp, color = c.muted)
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("folder" to "A folder", "app" to "An app", "run" to "A command", "screen" to "Screen").forEach { (k, label) ->
+                    val on = k == kind
+                    Text(label, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = if (on) c.bg else c.text,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) c.text else c.surface3).clickable { kind = k }.padding(horizontal = 14.dp, vertical = 9.dp))
+                }
+            }
+            if (kind != "screen") androidx.compose.foundation.text.BasicTextField(
+                path, { path = it }, singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = c.text),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+                modifier = Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 15.dp),
+                decorationBox = { inner -> Box { if (path.isEmpty()) Text(when (kind) { "folder" -> "~/Projects/novara"; "app" -> "Xcode"; else -> "adb" }, fontSize = 16.sp, color = c.muted); inner() } },
+            )
+            if (kind == "folder") Segmented(listOf("read" to "Read only", "write" to "Read and write"), access, { access = it })
+            error?.let { Text(it, fontSize = 14.sp, color = c.bad) }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+            BigButton("Send to my Mac", primary = true, enabled = !busy && (kind == "screen" || path.isNotBlank())) {
+                busy = true
+                scope.launch {
+                    runCatching { store.api.askDevice(d.id, kind, path.trim(), access) }
+                        .onSuccess { store.loadDevices(); onDismiss() }
+                        .onFailure { error = it.message; busy = false }
+                }
+            }
+        }
     }
 }

@@ -458,5 +458,5 @@ func (s *Service) Reach() *Obj {
 	for _, n := range apps {
 		accounts = append(accounts, O("key", "app:"+n, "name", n, "detail", "Connected app"))
 	}
-	return O("server", []any{O("key", "server", "name", "Files, shell and the web", "detail", "Always")}, "accounts", accounts, "browser", s.Runtime.Browser().Status(), "devices", []any{})
+	return O("server", []any{O("key", "server", "name", "Files, shell and the web", "detail", "Always")}, "accounts", accounts, "browser", s.Runtime.Browser().Status(), "devices", s.Devices().Reach())
 }

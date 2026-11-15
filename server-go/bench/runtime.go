@@ -232,6 +232,9 @@ type Runtime struct {
 	Store        *Store
 	idle         time.Duration
 	mcp          func(sessionID string) *MCPServer
+	// DevicesNote and ShareRule come from the service: what linked devices share (devices.go).
+	DevicesNote func() string
+	ShareRule   func(tool string, in *Obj) string
 	mu           sync.Mutex
 	startMu      sync.Mutex
 	live         map[string]*live
@@ -788,6 +791,9 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		add(ReportsNote(ReportsDir(r.AttachmentsDir(id))))
 		add(r.About().Note())
 		add(r.Rules().Note())
+		if r.DevicesNote != nil {
+			add(r.DevicesNote())
+		}
 		if browserMCP != nil {
 			add(BrowserNote)
 		}
@@ -1435,6 +1441,15 @@ func (r *Runtime) SetModel(id string, providerID string, modelID any, hasModel b
 }
 
 func (r *Runtime) beforeTool(sid string, in *Obj) *Obj {
+	// A call into a device's share follows that share's rule, set on the device.
+	if r.ShareRule != nil {
+		switch r.ShareRule(in.Str("tool_name"), in.ObjAt("tool_input")) {
+		case "allow":
+			return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "allow", "permissionDecisionReason", "Allowed for this share on the device"))
+		case "ask":
+			return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "ask", "permissionDecisionReason", "Asks first: this share on the device"))
+		}
+	}
 	// The person's Never list: stopped here, before the tool runs, in every permission mode.
 	rule, value := r.Rules().Decide(in.Str("tool_name"), in.ObjAt("tool_input"))
 	// Asks first: put to the person even in a mode that would let it run.

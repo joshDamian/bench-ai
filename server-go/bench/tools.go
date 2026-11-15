@@ -1568,7 +1568,7 @@ func BenchServer(svc *Service, sessionID string) *MCPServer {
 		}
 		return strings.Join(out, "\n"), nil
 	})
-	return newMCP("bench", tools)
+	return withDevices(svc, sessionID, newMCP("bench", tools))
 }
 
 func waitReport(ctx context.Context, svc *Service, target, a *Obj, me string) (string, error) {

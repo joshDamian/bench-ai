@@ -47,6 +47,7 @@ fun parseServerMessage(text: String): ServerMessage? {
             "commands" -> ServerMessage.Commands(o["session_id"].str()!!, j.decodeFromJsonElement(o["commands"] ?: JsonArray(emptyList())))
             "git" -> ServerMessage.Git(o["project_id"].str() ?: "")
             "pong" -> ServerMessage.Pong
+            "devices" -> ServerMessage.DevicesChanged
             else -> null
         }
     }.getOrNull()

@@ -464,6 +464,7 @@ func (s *Server) wire() {
 	})
 	s.Svc.On("task", func(t any) { s.broadcast(O("type", "task", "task", t), "") })
 	s.Svc.On("git", func(p any) { s.broadcast(O("type", "git", "project_id", p), "") })
+	s.Svc.On("devices", func(any) { s.broadcast(O("type", "devices"), "") })
 }
 
 // --- helpers -------------------------------------------------------------------------------
@@ -1338,6 +1339,11 @@ func (s *Server) routesInit() {
 	s.route("GET", "/api/archive", func(c *ctxt) (any, error) { return svc.Archive(), nil })
 	s.route("POST", "/api/archive/restore", func(c *ctxt) (any, error) { return svc.Restore(c.body.Str("kind"), c.body.Str("id")) })
 	s.route("DELETE", "/api/archive", func(c *ctxt) (any, error) { return svc.EmptyArchive(), nil })
+	s.route("GET", "/api/devices", func(c *ctxt) (any, error) { return svc.Devices().List(), nil })
+	s.route("GET", "/api/devices/:id", func(c *ctxt) (any, error) { return svc.Devices().Device(c.params[0]) })
+	s.route("DELETE", "/api/devices/:id", func(c *ctxt) (any, error) { return svc.Devices().Forget(c.params[0]) })
+	s.route("POST", "/api/devices/:id/ask", func(c *ctxt) (any, error) { return svc.Devices().Ask(c.params[0], c.body, "") })
+	s.route("DELETE", "/api/device-asks/:id", func(c *ctxt) (any, error) { return svc.Devices().CancelAsk(c.params[0]) })
 	s.route("GET", "/api/recipes", func(c *ctxt) (any, error) { return svc.Recipes(), nil })
 	s.route("POST", "/api/recipes", func(c *ctxt) (any, error) { return svc.AddRecipe(c.body) })
 	s.route("PATCH", "/api/recipes/:id", func(c *ctxt) (any, error) { return svc.UpdateRecipe(c.params[0], c.body) })
@@ -2032,6 +2038,13 @@ func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
 		delete(s.clients, c)
 		s.hubMu.Unlock()
 		c.close(websocket.StatusNormalClosure, "")
+	case "/api/devices/link":
+		// Bench for Mac: what it shares, and the calls sessions make into it.
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
+		if err != nil {
+			return
+		}
+		s.Svc.Devices().Link(ws)
 	case "/api/browser/view":
 		// The take-over view: the server's browser, streamed to the person, their input sent back.
 		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})

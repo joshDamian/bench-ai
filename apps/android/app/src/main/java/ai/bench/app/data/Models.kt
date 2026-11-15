@@ -144,6 +144,26 @@ data class Spending(
 data class BrowserStatus(val installed: Boolean = false, val running: Boolean = false, val sites: List<String> = emptyList())
 
 /** Can reach (GET /api/reach): what Bench can use beyond its own folders. */
+/** A device that shares part of itself with Bench (GET /api/devices): the person's Mac. Go server only. */
+@Serializable
+data class Device(
+    val id: String,
+    val name: String,
+    val version: String? = null,
+    val online: Boolean = false,
+    val last_seen: String? = null,
+    val shares: List<Share> = emptyList(),
+    val asks: List<DeviceAsk> = emptyList(),
+) {
+    /** kind: folder, app, screen or run; rule: allow or ask. Set on the device only. */
+    @Serializable
+    data class Share(val id: String, val kind: String, val name: String = "", val path: String? = null, val access: String = "", val rule: String = "ask")
+}
+
+/** Something Bench asked a device to share, waiting there for the person to decide. */
+@Serializable
+data class DeviceAsk(val id: String, val device_id: String, val kind: String, val path: String = "", val access: String = "", val why: String = "", val session_id: String? = null, val created_at: String = "")
+
 @Serializable
 data class Reach(val server: List<Item> = emptyList(), val accounts: List<Item> = emptyList(), val browser: BrowserStatus? = null, val devices: List<Item> = emptyList()) {
     @Serializable
@@ -392,4 +412,6 @@ sealed interface ServerMessage {
     data class Commands(val sessionId: String, val commands: List<SlashCommand>) : ServerMessage
     data class Git(val projectId: String) : ServerMessage
     data object Pong : ServerMessage
+    /** A device linked, went offline, or changed what it shares or what waits on it. */
+    data object DevicesChanged : ServerMessage
 }

@@ -105,6 +105,7 @@ type Service struct {
 
 	mu       sync.Mutex
 	spending *Spending
+	devices  *Devices
 }
 
 func NewService(root string) (*Service, error) {
@@ -122,6 +123,9 @@ func NewService(root string) (*Service, error) {
 	s.Loop = NewLoop(s)
 	s.Resumer = NewResumer(s)
 	s.Scheduler = NewScheduler(s)
+	// What the person's other devices share: told to sessions, and the rule each call follows.
+	s.Runtime.DevicesNote = func() string { return s.Devices().Note() }
+	s.Runtime.ShareRule = func(tool string, in *Obj) string { return s.Devices().Rule(tool, in) }
 	s.Runtime.On("turn-done", func(x any) {
 		td := x.(TurnDone)
 		if td.Session != nil && td.Session.Str("project_id") != "" {

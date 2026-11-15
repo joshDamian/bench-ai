@@ -260,7 +260,10 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     val finished = live.filter { it.status == "idle" && it.unseen && it.id !in waitingOn && it.id !in carded && !it.capped }.sortedByDescending { it.updated_at }
     val readyCards = (if (reads.isNotEmpty()) 1 else 0) + (if (drafts.isNotEmpty()) 1 else 0)
     val readyCount = readyCards + finished.size
-    val needCount = s.approvals.size + failed.size + capped.size
+    // What a run asked the Mac for: it waits on the Mac, and the run carries on meanwhile.
+    val devices by store.devices.collectAsState()
+    val macAsks = devices.flatMap { d -> d.asks.filter { it.session_id != null }.map { d to it } }
+    val needCount = s.approvals.size + failed.size + capped.size + macAsks.size
     // Timed runs by when they start, then the pages being watched.
     val next = schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at } + schedules.filter { it.enabled && it.watch != null }
     val shown = (working + failed + finished + capped).map { it.id }.toSet() + waitingOn + carded
@@ -368,6 +371,10 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                             scope.launch { runCatching { store.api.setSpending(paused = false) }.onSuccess { store.setSpending(it) } }
                         }.padding(4.dp))
                     }
+                }
+                items(macAsks, key = { "m-${it.second.id}" }) { (d, a) ->
+                    val run = s.sessions.firstOrNull { it.id == a.session_id }
+                    MacAskCard(d, a, run, store, Modifier.padding(top = 10.dp).animateItem(), onOpen = { a.session_id?.let(onOpen) })
                 }
                 items(capped, key = { "c-${it.id}" }) { r ->
                     CapCard(r, spending?.run_cap ?: 2.0, store, Modifier.padding(top = 10.dp).animateItem(), onOpen = { onOpen(r.id) }) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
@@ -605,6 +612,28 @@ private fun CapCard(r: ai.bench.app.data.Session, runCap: Double, store: BenchSt
         Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BigButton("Add ${dollars(runCap)} and go on", primary = true, height = 44.dp, fill = false, enabled = !busy) { act("more") }
             BigButton("Stop here", height = 44.dp, fill = false, enabled = !busy) { act("stop") }
+        }
+    }
+}
+
+/** A run asked the Mac for something: it is decided on the Mac (the "Approve on your Mac" board). */
+@Composable
+private fun MacAskCard(d: ai.bench.app.data.Device, a: ai.bench.app.data.DeviceAsk, run: ai.bench.app.data.Session?, store: BenchStore, modifier: Modifier, onOpen: () -> Unit) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surface1).clickable(onClick = onOpen).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(listOfNotNull(run?.title, store.state.value.projects.firstOrNull { it.id == run?.project_id }?.name).joinToString(" · "), fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("Approve on your Mac", fontSize = 16.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            "It asked for ${askTitle(a).replaceFirstChar { it.lowercase() }}. " +
+                if (d.online) "It is waiting on your ${d.name}." else "Your ${d.name} is asleep, so the request waits there; the run carries on with other steps.",
+            fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted,
+        )
+        Row(Modifier.padding(top = 6.dp)) {
+            BigButton("Cancel request", height = 44.dp, fill = false) { scope.launch { runCatching { store.api.cancelDeviceAsk(a.id) }; store.loadDevices() } }
         }
     }
 }

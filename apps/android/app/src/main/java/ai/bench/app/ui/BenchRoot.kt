@@ -143,7 +143,10 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
             composable("about") { AboutScreen(store, onBack = { nav.popBackStack() }, onOpen = open, onRules = { nav.navigate("rules") }) }
             composable("rules") { RulesScreen(store, onBack = { nav.popBackStack() }) }
-            composable("reach") { CanReachScreen(store, onBack = { nav.popBackStack() }, onBrowser = { nav.navigate("browser") }) }
+            composable("reach") { CanReachScreen(store, onBack = { nav.popBackStack() }, onBrowser = { nav.navigate("browser") }, onDevice = { nav.navigate("device/$it") }) }
+            composable("device/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { e ->
+                DeviceScreen(store, e.arguments?.getString("id") ?: "", onBack = { nav.popBackStack() })
+            }
             composable("browser") { BrowserScreen(store, onBack = { nav.popBackStack() }) }
             composable("housekeeping") { HousekeepingScreen(store, onBack = { nav.popBackStack() }, onArchive = { nav.navigate("archive") }) }
             composable("archive") { ArchiveScreen(store, onBack = { nav.popBackStack() }) }

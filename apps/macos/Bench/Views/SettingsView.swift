@@ -6,11 +6,12 @@ import SwiftUI
 /// Settings style, each a page of grouped rows.
 struct SettingsView: View {
     enum Section: String, CaseIterable, Identifiable {
-        case server, models, subagents, limit, devices, notifications, appearance, shortcuts
+        case server, shared, models, subagents, limit, devices, notifications, appearance, shortcuts
         var id: String { rawValue }
         var title: String {
             switch self {
             case .server: "Server"
+            case .shared: "Shared with Bench"
             case .models: "Models"
             case .subagents: "Subagents"
             case .limit: "Usage limit"
@@ -23,6 +24,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .server: "server.rack"
+            case .shared: "lock"
             case .models: "cpu"
             case .subagents: "point.3.connected.trianglepath.dotted"
             case .limit: "gauge.with.dots.needle.67percent"
@@ -35,6 +37,7 @@ struct SettingsView: View {
         var tint: Color {
             switch self {
             case .models: .blue
+            case .shared: .green
             case .subagents: .purple
             case .limit: .orange
             case .notifications: .red
@@ -89,6 +92,7 @@ struct SettingsView: View {
                         if let store = model.store {
                             switch section {
                             case .server: ServerPage(store: store)
+                            case .shared: SharedPage(link: store.link, server: store.api.config.baseURL)
                             case .models: ModelsPage(store: store)
                             case .subagents: SubagentsPage(store: store)
                             case .limit: LimitPage(store: store)
