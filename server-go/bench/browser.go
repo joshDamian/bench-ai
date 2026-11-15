@@ -85,6 +85,8 @@ type Browser struct {
 	cmd     *exec.Cmd
 	// noSandbox: the sandbox failed here once, so Chromium starts without it from then on.
 	noSandbox bool
+	// grant ends the connection that holds the microphone permission (grantMedia).
+	grant context.CancelFunc
 	// xvfb and display: the invisible screen a windowed Chromium draws on.
 	xvfb    *exec.Cmd
 	display string
@@ -136,8 +138,10 @@ func (b *Browser) Ensure() bool { return b.Start() == nil }
 // server), with the end of what Chromium printed.
 func (b *Browser) Start() error {
 	if b.Running() {
+		b.grantMedia()
 		return nil
 	}
+	defer b.grantMedia()
 	bin := ChromiumPath()
 	if bin == "" {
 		return fmt.Errorf("Chromium isn't installed on the server. Install it there with: npx playwright install --with-deps chromium")
@@ -174,7 +178,11 @@ func (b *Browser) launch(bin string, noSandbox bool) error {
 	// ask before using them. Without PulseAudio it has no sound, as before.
 	audio := AudioSetup() == nil
 	if audio {
-		args = append(args, "--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required")
+		// The microphone is allowed through the browser's permissions (grantMedia), not
+		// --use-fake-ui-for-media-stream, which would also answer screen sharing with the whole
+		// screen, and that cannot be captured under Xvfb. A tab titled "Bench presents…" (a deck)
+		// is shared without the picker no tool can click.
+		args = append(args, "--auto-select-tab-capture-source-by-title="+DeckTitlePrefix, "--autoplay-policy=no-user-gesture-required")
 	}
 	if display == "" {
 		args = append(args, "--headless=new")
@@ -287,6 +295,9 @@ func (b *Browser) Stop() {
 		b.cmd.Process.Kill()
 	}
 	b.cmd = nil
+	if b.grant != nil {
+		b.grant()
+	}
 	if b.xvfb != nil && b.xvfb.Process != nil {
 		b.xvfb.Process.Kill()
 	}

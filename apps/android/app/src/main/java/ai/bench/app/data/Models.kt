@@ -169,6 +169,8 @@ data class MeetingState(
     val speech: String = "ask",
     /** A one-on-one: only you are in the call; it hears you and talks back freely. */
     val trusted: Boolean = false,
+    /** Showing a deck in the call. */
+    val presenting: Boolean = false,
     val voice: Int = 3,
     val speed: Double = 1.05,
     val heard: Int = 0,

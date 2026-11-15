@@ -115,7 +115,11 @@ func withDevices(svc *Service, sessionID string, m *MCPServer) *MCPServer {
 	}
 	if calls {
 		extraList = append(extraList, meetingToolList()...)
+		extraList = append(extraList, presentToolList()...)
 		for k, v := range meetingTools(svc, sessionID) {
+			extra[k] = v
+		}
+		for k, v := range presentTools(svc, sessionID) {
 			extra[k] = v
 		}
 	}

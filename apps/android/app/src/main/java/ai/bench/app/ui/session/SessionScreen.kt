@@ -702,7 +702,7 @@ private fun CallBar(m: ai.bench.app.data.MeetingState, store: ai.bench.app.data.
             Box(Modifier.size(8.dp).background(c.bad, androidx.compose.foundation.shape.CircleShape))
             Column(Modifier.weight(1f)) {
                 Text(
-                    when { m.trusted -> "One-on-one call"; m.ready.listen -> "In a call · listening"; else -> "In a call · can't hear it" },
+                    when { m.presenting -> if (m.trusted) "One-on-one · presenting" else "In a call · presenting"; m.trusted -> "One-on-one call"; m.ready.listen -> "In a call · listening"; else -> "In a call · can't hear it" },
                     fontSize = 14.sp, fontWeight = FontWeight.Medium,
                 )
                 m.error?.let { Text(it, fontSize = 12.5.sp, color = c.bad, maxLines = 2, overflow = TextOverflow.Ellipsis) }
