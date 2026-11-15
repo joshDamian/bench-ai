@@ -95,16 +95,19 @@ fun ResearchScreen(
         running.forEach { store.watch(it.id) }
         onDispose { running.forEach { store.unwatch(it.id) } }
     }
-    val readable = reports.filter { it.kind != "file" && hit(it.title, it.gist, sessionTitle(it.session_id)) }
+    val readable = reports.filter { it.kind != "file" && !it.title.startsWith("Bench presents") && hit(it.title, it.gist, sessionTitle(it.session_id)) }
     val fresh = readable.filter { (it.kind == "drafts" && (it.unsent ?: 0) > 0) || (it.kind != "drafts" && !it.seen) }
     val kept = researchSchedules.filter { it.enabled && hit(it.title) }
     // Everything already read, and research conversations that made no file.
     val made = reports.map { it.session_id }.toSet()
     val talks = live.filter { it.project_id == researchId && it.status != "running" && it.id !in made && hit(it.title) }
-    val earlier = (readable.filter { it !in fresh }.map { it.modified to (it as Any) } + talks.map { it.updated_at to (it as Any) })
-        .sortedByDescending { it.first }.map { it.second }
+    // Everything already read, under the session that made it (named once, not on every row),
+    // and research conversations that made no file. Newest first.
+    val earlier = (readable.filter { it !in fresh }.groupBy { it.session_id }.map { (sid, list) -> EarlierGroup(sid, sessionTitle(sid) ?: "Session", list.maxOf { it.modified }, list) } +
+        talks.map { EarlierGroup(it.id, it.title, it.updated_at, emptyList()) }).sortedByDescending { it.at }
     val nothing = running.isEmpty() && fresh.isEmpty() && kept.isEmpty() && earlier.isEmpty()
 
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides c.text) {
     Column(Modifier.fillMaxSize().background(c.bg)) {
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(start = 22.dp, end = 16.dp, top = 10.dp, bottom = 4.dp),
@@ -176,9 +179,14 @@ fun ResearchScreen(
 
                 if (earlier.isNotEmpty()) {
                     item("old-l") { Label("Earlier") }
-                    items(earlier, key = { if (it is Report) "r-${it.path}" else "s-${(it as ai.bench.app.data.Session).id}" }) { x ->
-                        if (x is Report) LibraryRow(x.title, listOfNotNull(if (x.kind == "drafts") "${x.drafts ?: 0} drafts" else readLabel(x), x.gist ?: sessionTitle(x.session_id)).joinToString(" · "), dayLabel(x.modified)) { opened = x }
-                        else (x as ai.bench.app.data.Session).let { t -> LibraryRow(t.title, "Conversation", dayLabel(t.updated_at)) { onOpen(t.id) } }
+                    earlier.forEach { g ->
+                        if (g.reports.isEmpty()) item("s-${g.sessionId}") { LibraryRow(g.title, "Conversation", dayLabel(g.at)) { onOpen(g.sessionId) } }
+                        else {
+                            item("h-${g.sessionId}") { FromSession(g.title) { onOpen(g.sessionId) } }
+                            items(g.reports, key = { "r-${it.path}" }) { x ->
+                                LibraryRow(x.title, listOfNotNull(if (x.kind == "drafts") "${x.drafts ?: 0} drafts" else readLabel(x), x.gist).joinToString(" · "), dayLabel(x.modified)) { opened = x }
+                            }
+                        }
                     }
                 }
 
@@ -188,7 +196,19 @@ fun ResearchScreen(
         }
     }
 
+    }
     opened?.let { r -> ReportViewer(store, r, onOpen = onOpen, onAbout = onAbout) { opened = null } }
+}
+
+private class EarlierGroup(val sessionId: String, val title: String, val at: String, val reports: List<Report>)
+
+/** The session some reports came from: named once above them; opens the conversation. */
+@Composable
+private fun FromSession(title: String, onClick: () -> Unit) {
+    Text(
+        title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Bench.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 6.dp),
+    )
 }
 
 /** A research schedule: how fresh it is, and how often it runs. */
