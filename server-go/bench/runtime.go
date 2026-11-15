@@ -1122,6 +1122,13 @@ func (r *Runtime) onResult(l *live, id string, m *Obj, priced *Obj) {
 	if capped {
 		patch.Set("capped", true)
 	}
+	if m.Str("subtype") == "success" {
+		if steps := ThenSteps(m.Str("result")); steps != nil {
+			patch.Set("next_steps", steps)
+		} else {
+			patch.Set("next_steps", nil)
+		}
+	}
 	if truthy(m.Get("is_error")) && m.Str("subtype") != "error_during_execution" && !capped {
 		var errs []string
 		for _, e := range arr(m.Get("errors")) {

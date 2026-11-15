@@ -144,6 +144,8 @@ export class Store {
     // budget: the most one query of an unattended run may spend; capped: it stopped there.
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'budget')) this.db.exec('ALTER TABLE sessions ADD COLUMN budget REAL');
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'capped')) this.db.exec('ALTER TABLE sessions ADD COLUMN capped INTEGER');
+    // next_steps: the "Then: …" steps a session's last reply offered, as JSON.
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'next_steps')) this.db.exec('ALTER TABLE sessions ADD COLUMN next_steps TEXT');
     // keep_board: the schedule keeps one board up to date instead of a report per run.
     if (!this.db.prepare('PRAGMA table_info(schedules)').all().some((c) => c.name === 'keep_board')) this.db.exec('ALTER TABLE schedules ADD COLUMN keep_board INTEGER');
     // watch: a page the schedule runs on when it changes, as JSON {url, every_hours}, instead of
@@ -458,7 +460,7 @@ export class Store {
   /** A session row, with its JSON columns read back. @param {any} r @returns {Session|undefined} */
   #session(r) {
     if (!r) return r;
-    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume, pinned: !!r.pinned, capped: !!r.capped };
+    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume, pinned: !!r.pinned, capped: !!r.capped, next_steps: r.next_steps ? JSON.parse(r.next_steps) : null };
   }
 
   /** What unattended runs (the ones a schedule started) have spent since a moment. @param {string} since */
@@ -551,7 +553,7 @@ export class Store {
   updateSession(id, patch) {
     /** @type {Record<string, any>} */
     const row = { ...patch, updated_at: now() };
-    for (const k of /** @type {const} */ (['pause', 'model_usage'])) if (row[k] !== undefined) row[k] = row[k] === null ? null : JSON.stringify(row[k]);
+    for (const k of /** @type {const} */ (['pause', 'model_usage', 'next_steps'])) if (row[k] !== undefined) row[k] = row[k] === null ? null : JSON.stringify(row[k]);
     if (row.auto_resume !== undefined) row.auto_resume = row.auto_resume === null ? null : row.auto_resume ? 1 : 0;
     if (row.capped !== undefined) row.capped = row.capped ? 1 : 0;
     this.#patch('sessions', id, row);

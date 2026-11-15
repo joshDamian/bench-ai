@@ -21,7 +21,15 @@ When the person asked for something to read or use - research, a shortlist, a co
 - To use: one self-contained HTML page (.html) when it needs sorting, filtering, checkboxes or a chart. Inline its CSS and script; it gets no network. Use the CSS variables --bg, --surface, --text, --muted, --accent, --line for colours, so it matches the person's light or dark theme, and keep state in localStorage. For choices use buttons or chips, not <select>: a select opens the phone's own unstyled picker.
 - Emails to send: a drafts file (name.drafts.json): {"title": "...", "drafts": [{"to": "address", "subject": "...", "body": "plain text", "why": "one line on why this person"}]}. Bench never sends them; the person opens each in their own email app. Never send email yourself.
 
-One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file.`;
+One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file.
+
+When there is an obvious next step the person may want, end your reply with it on its own line, as "Then: " and the step in a few words they would say themselves ("Then: Draft cold emails for the top 3"). Two at most; none when nothing follows.`;
+
+/** The next steps a reply offered, from its "Then: …" lines; null when it offered none. @param {string|null|undefined} reply */
+export function thenSteps(reply) {
+  const steps = [...String(reply ?? '').matchAll(/^[ \t]*(?:[-*][ \t]*)?\**Then:\**[ \t]*(.+?)[ \t]*$/gim)].map((m) => m[1].replace(/\*+$/, '').trim()).filter((x) => x && x.length <= 120);
+  return steps.length ? steps.slice(0, 2) : null;
+}
 
 /** @param {string} file */
 export function kindOf(file) {

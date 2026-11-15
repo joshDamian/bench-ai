@@ -167,7 +167,8 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
                 val id = entry.arguments?.getString("id") ?: return@composable
                 val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })
                 androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
-                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") }, onResume = { nav.navigate("shell/claude/$id") })
+                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") }, onResume = { nav.navigate("shell/claude/$id") },
+                    onKeepWatching = { store.schedulePrefill = it; nav.navigate("schedule/new") })
                 }
             }
             composable("terminal/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
@@ -211,7 +212,9 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     }
     }
 
-    if (newMenu) NewMenu(onDismiss = { newMenu = false }) { pick ->
+    val recipes by store.recipes.collectAsState()
+    var recipe by remember { mutableStateOf<ai.bench.app.data.Recipe?>(null) }
+    if (newMenu) NewMenu(onDismiss = { newMenu = false }, recipes = recipes, onRecipe = { newMenu = false; recipe = it }) { pick ->
         newMenu = false
         when (pick) {
             "session" -> newSession = true
@@ -220,6 +223,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             "project" -> addProject = true
         }
     }
+    recipe?.let { r -> RunRecipeSheet(store, r, onDismiss = { recipe = null }) { recipe = null; open(it) } }
     if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) })
     if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true)
     if (addProject) AddProjectSheet(store, onDismiss = { addProject = false }, onAdded = { addProject = false; nav.navigate("project/$it") })

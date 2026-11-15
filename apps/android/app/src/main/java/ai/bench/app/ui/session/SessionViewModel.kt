@@ -40,7 +40,7 @@ data class Stream(val text: String = "", val thinking: String = "")
 /** The server's page size for a transcript read (src/store.mjs listEvents). */
 private const val PAGE = 400
 
-class SessionViewModel(val sessionId: String, private val store: BenchStore) : ViewModel() {
+class SessionViewModel(val sessionId: String, val store: BenchStore) : ViewModel() {
     val api = store.api
 
     /** Looking at a session clears it from Home's "Ready for you". */

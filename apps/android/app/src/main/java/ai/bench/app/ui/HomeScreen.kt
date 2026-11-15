@@ -462,11 +462,34 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                         scope.launch { runCatching { store.api.saveSchedule(sch.id, kotlinx.serialization.json.buildJsonObject { put("keepBoard", true) }) }; store.loadExtras() }
                     }) { offered = false; BoardOffers.dismiss(sch.id) }
                 }),
+                bottom = s.sessions.firstOrNull { it.id == r.session_id }?.next_steps?.takeIf { it.isNotEmpty() }?.let { steps -> @Composable {
+                    ThenSteps(steps) { step ->
+                        opened = null
+                        scope.launch { runCatching { store.api.send(r.session_id, step) } }
+                        onOpen(r.session_id)
+                    }
+                } },
             ) { opened = null }
         }
     }
     if (takingOver) BrowserView(store.api) { takingOver = false }
     listing?.let { list -> ReportList(list, s.sessions, onDismiss = { listing = null }) { listing = null; opened = it } }
+}
+
+/** "Then": what the run offered to do next, under a result (the chains board). A tap does it. */
+@Composable
+fun ThenSteps(steps: List<String>, onPick: (String) -> Unit) {
+    val c = Bench.colors
+    Column(
+        Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Then", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 4.dp))
+        steps.forEach { step ->
+            Text(step, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surface3).clickable { onPick(step) }.padding(horizontal = 16.dp, vertical = 13.dp))
+        }
+    }
 }
 
 /**

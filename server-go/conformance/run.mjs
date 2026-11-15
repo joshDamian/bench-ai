@@ -214,6 +214,12 @@ async function scenario(srv, repo, root) {
   await step('session model', () => api('PATCH', `/api/sessions/${s1.id}`, { modelId: 'anthropic:claude-sonnet-5' }));
   await step('session model: wrong provider', () => api('PATCH', `/api/sessions/${s1.id}`, { modelId: 'deepseek:deepseek-flash' }));
   await step('session limit', () => api('POST', `/api/sessions/${s1.id}/limit`, { autoResume: false }));
+  await step('then: a reply offers next steps', async () => {
+    const r = await api('POST', `/api/sessions/${s1.id}/messages`, { text: 'done\nThen: Draft cold emails for the top 3' });
+    await until(async () => (await api('GET', `/api/sessions/${s1.id}`)).body.session.status === 'idle');
+    return r;
+  });
+  await step('then: the session holds them', async () => (await api('GET', `/api/sessions/${s1.id}`)).body.session.next_steps);
   await step('send nothing', () => api('POST', `/api/sessions/${s1.id}/messages`, { text: '  ' }));
   await step('upload', () => fetch(`${srv.base}/api/sessions/${s1.id}/uploads?name=report.txt&type=text/plain`, { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: 'hello file' }).then(async (r) => ({ status: r.status, body: await r.json() })));
   await step('upload: wrong type', () => fetch(`${srv.base}/api/sessions/${s1.id}/uploads?name=x`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: 'x' }).then(async (r) => ({ status: r.status, body: await r.json() })));
@@ -328,6 +334,16 @@ async function scenario(srv, repo, root) {
     await step('board: turn off', () => api('PATCH', `/api/schedules/${board.id}`, { keepBoard: false }));
     await step('board: delete', () => api('DELETE', `/api/schedules/${board.id}`));
   }
+  // Recipes: saved prompts with blanks.
+  await step('recipes: none', () => api('GET', '/api/recipes'));
+  await step('recipe: no name', () => api('POST', '/api/recipes', { title: ' ', prompt: 'x' }));
+  await step('recipe: unknown project', () => api('POST', '/api/recipes', { title: 'x', prompt: 'x', projectId: 'nope' }));
+  const recipe = (await step('recipe add', () => api('POST', '/api/recipes', { title: 'Job hunt', prompt: 'Find 5 remote {role} jobs in {region}, {role} only', projectId: project.id }))).body;
+  await step('recipe edit', () => api('PATCH', `/api/recipes/${recipe.id}`, { title: 'Jobs', projectId: null }));
+  await step('recipe edit: unknown', () => api('PATCH', '/api/recipes/nope', { title: 'x' }));
+  await step('recipes', () => api('GET', '/api/recipes'));
+  await step('recipe delete', () => api('DELETE', `/api/recipes/${recipe.id}`));
+  await step('recipe delete: again', () => api('DELETE', `/api/recipes/${recipe.id}`));
   // A watch: a schedule that runs when a page changes, with no days or time.
   await step('watch: bad address', () => api('POST', '/api/schedules', { title: 'Roles', projectId: project.id, prompt: 'tell me', watch: { url: 'jobs page' } }));
   await step('watch: bad hours', () => api('POST', '/api/schedules', { title: 'Roles', projectId: project.id, prompt: 'tell me', watch: { url: 'https://example.com/jobs', everyHours: 0 } }));

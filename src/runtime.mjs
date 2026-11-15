@@ -18,7 +18,7 @@ import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
 import { askApproval, ASK_TOOLS, ASK_BRIEF } from './ask.mjs';
-import { REPORTS_NOTE, reportsDir } from './reports.mjs';
+import { REPORTS_NOTE, reportsDir, thenSteps } from './reports.mjs';
 import { resolveRouting, subagents, ROUTING_NOTE } from './routing.mjs';
 import { parseLimit, limitFromEvent } from './limits.mjs';
 import { snapshot, appeared } from './artifacts.mjs';
@@ -835,6 +835,7 @@ export class Runtime extends EventEmitter {
         ...(Object.keys(byModel).length ? { model_usage: byModel } : {}),
         ...(m.is_error && m.subtype !== 'error_during_execution' && m.subtype !== 'error_max_budget_usd' ? { error: (m.errors || []).join('\n').slice(0, 2000) || null } : {}),
         ...(m.subtype === 'error_max_budget_usd' ? { capped: true } : {}),
+        ...(m.subtype === 'success' ? { next_steps: thenSteps(m.result) } : {}),
       });
       if (m.subtype === 'error_max_budget_usd') this.#event(id, 'notice', { text: `Stopped at its $${s.budget} cap.` });
       live.writeUp = false;

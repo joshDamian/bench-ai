@@ -17,6 +17,7 @@ import { listReports, markDraft } from './reports.mjs';
 import { Spending, startOfDay } from './spending.mjs';
 import { snapshotBoard, BOARD_NOTE, findBoard, boardTitle, newCount, boardHistory } from './boards.mjs';
 import { routingPatch, DEFAULT_ROUTING } from './routing.mjs';
+import { Recipes } from './recipes.mjs';
 import { watchFields, watchPrompt, isNothingNew, watchFile } from './watch.mjs';
 import { holders, removable, sizeOf } from './artifacts.mjs';
 import * as g from './git.mjs';
@@ -1197,6 +1198,8 @@ export class Service extends EventEmitter {
   }
   /** @type {Spending|undefined} */
   #spending;
+  /** @type {Recipes|undefined} */
+  #recipes;
 
   spending() {
     const { spent, runs } = this.store.unattendedSince(startOfDay());
@@ -1207,6 +1210,50 @@ export class Service extends EventEmitter {
   setSpending(o) {
     this.spendingStore.set(o);
     return this.spending();
+  }
+
+  // -- recipes ------------------------------------------------------------------
+
+  get recipesStore() {
+    return (this.#recipes ??= new Recipes(this.store.dir));
+  }
+
+  recipes() {
+    return this.recipesStore.list();
+  }
+
+  /** @param {Record<string, any>} o @param {boolean} [partial] */
+  #recipeFields(o, partial = false) {
+    /** @type {Record<string, any>} */
+    const row = {};
+    if (!partial || o.title !== undefined) {
+      if (!String(o.title || '').trim()) throw fail('A recipe needs a name');
+      row.title = String(o.title).trim();
+    }
+    if (!partial || o.prompt !== undefined) {
+      if (!String(o.prompt || '').trim()) throw fail('A recipe needs a prompt');
+      row.prompt = String(o.prompt).trim();
+    }
+    if (!partial || o.projectId !== undefined) row.project_id = o.projectId ? this.project(o.projectId).id : null;
+    return row;
+  }
+
+  /** @param {Record<string, any>} o */
+  addRecipe(o) {
+    return this.recipesStore.add(/** @type {any} */ (this.#recipeFields(o)));
+  }
+
+  /** @param {string} id @param {Record<string, any>} o */
+  updateRecipe(id, o) {
+    const r = this.recipesStore.update(id, this.#recipeFields(o, true));
+    if (!r) throw fail('No such recipe', 404);
+    return r;
+  }
+
+  /** @param {string} id */
+  deleteRecipe(id) {
+    if (!this.recipesStore.remove(id)) throw fail('No such recipe', 404);
+    return { ok: true };
   }
 
   /** Whether an unattended run may start now, and if not why. */

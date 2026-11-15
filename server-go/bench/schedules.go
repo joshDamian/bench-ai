@@ -450,7 +450,8 @@ func ReportsNote(dir string) string {
 		"- To read: Markdown (.md). Lead with the answer, then the detail; links inline.\n" +
 		"- To use: one self-contained HTML page (.html) when it needs sorting, filtering, checkboxes or a chart. Inline its CSS and script; it gets no network. Use the CSS variables --bg, --surface, --text, --muted, --accent, --line for colours, so it matches the person's light or dark theme, and keep state in localStorage. For choices use buttons or chips, not <select>: a select opens the phone's own unstyled picker.\n" +
 		"- Emails to send: a drafts file (name.drafts.json): {\"title\": \"...\", \"drafts\": [{\"to\": \"address\", \"subject\": \"...\", \"body\": \"plain text\", \"why\": \"one line on why this person\"}]}. Bench never sends them; the person opens each in their own email app. Never send email yourself.\n\n" +
-		"One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file."
+		"One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file.\n\n" +
+		"When there is an obvious next step the person may want, end your reply with it on its own line, as \"Then: \" and the step in a few words they would say themselves (\"Then: Draft cold emails for the top 3\"). Two at most; none when nothing follows."
 }
 
 func reportKind(file string) string {

@@ -17,6 +17,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Folder
@@ -97,17 +100,19 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
     val st by store.state.collectAsState()
     val all by store.schedules.collectAsState()
     val existing = remember(id) { id?.let { i -> all.firstOrNull { it.id == i } } }
+    // From a session's Keep watching: its prompt, kept on one board.
+    val prefill = remember(id) { if (id == null) store.schedulePrefill.also { store.schedulePrefill = null } else null }
     val scope = rememberCoroutineScope()
-    var title by remember { mutableStateOf(existing?.title.orEmpty()) }
-    var prompt by remember { mutableStateOf(existing?.prompt.orEmpty()) }
+    var title by remember { mutableStateOf(existing?.title ?: prefill?.title.orEmpty()) }
+    var prompt by remember { mutableStateOf(existing?.prompt ?: prefill?.prompt.orEmpty()) }
     var days by remember { mutableStateOf(existing?.days?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet() ?: setOf(1)) }
     var time by remember { mutableStateOf(existing?.time ?: "08:00") }
     var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
-    var keepBoard by remember { mutableStateOf(existing?.keep_board ?: false) }
+    var keepBoard by remember { mutableStateOf(existing?.keep_board ?: (prefill != null)) }
     var watching by remember { mutableStateOf(existing?.watch != null) }
     var url by remember { mutableStateOf(existing?.watch?.url.orEmpty()) }
     var everyHours by remember { mutableStateOf(existing?.watch?.every_hours ?: 6) }
-    var projectId by remember { mutableStateOf(existing?.project_id) }
+    var projectId by remember { mutableStateOf(existing?.project_id ?: prefill?.projectId) }
     var modelId by remember { mutableStateOf(existing?.model_id) }
     var providerId by remember { mutableStateOf(existing?.provider_id) }
     var effort by remember { mutableStateOf(existing?.effort) }
@@ -258,7 +263,7 @@ private fun Input(value: String, onChange: (String) -> Unit, hint: String, singl
 /** Home's New: one button, a sheet of what you can start (the "New opens a menu" board). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewMenu(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+fun NewMenu(onDismiss: () -> Unit, recipes: List<ai.bench.app.data.Recipe> = emptyList(), onRecipe: (ai.bench.app.data.Recipe) -> Unit = {}, onPick: (String) -> Unit) {
     val c = Bench.colors
     androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onDismiss, containerColor = c.surface2,
@@ -281,6 +286,24 @@ fun NewMenu(onDismiss: () -> Unit, onPick: (String) -> Unit) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(text.first, fontSize = 16.5.sp, fontWeight = FontWeight.Medium)
                         Text(text.second, fontSize = 13.5.sp, color = c.muted)
+                    }
+                }
+            }
+            // Saved prompts with blanks: under the four, so the four never move.
+            if (recipes.isNotEmpty()) {
+                Text("Your recipes", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 10.dp, bottom = 4.dp))
+                Column(Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState())) {
+                    recipes.forEach { r ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { onRecipe(r) }.heightIn(min = 52.dp).padding(horizontal = 6.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(r.title, fontSize = 15.5.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                if (r.blanks.isNotEmpty()) Text(r.blanks.joinToString(" · "), fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            }
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
             }

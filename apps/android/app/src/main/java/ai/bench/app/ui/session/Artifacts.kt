@@ -166,7 +166,7 @@ private val CODE = setOf("kt", "kts", "java", "swift", "js", "mjs", "cjs", "ts",
 private val LANG = mapOf("kt" to "kotlin", "kts" to "kotlin", "js" to "javascript", "mjs" to "javascript", "cjs" to "javascript", "jsx" to "javascript", "ts" to "typescript", "tsx" to "typescript", "py" to "python", "rb" to "ruby", "rs" to "rust", "h" to "c", "cs" to "csharp", "sh" to "shell", "bash" to "shell", "zsh" to "shell", "yml" to "yaml")
 
 @Composable
-fun FileViewer(files: SessionFiles, f: FileInfo, top: (@Composable () -> Unit)? = null, onDismiss: () -> Unit) {
+fun FileViewer(files: SessionFiles, f: FileInfo, top: (@Composable () -> Unit)? = null, bottom: (@Composable () -> Unit)? = null, onDismiss: () -> Unit) {
     val c = Bench.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -216,6 +216,7 @@ fun FileViewer(files: SessionFiles, f: FileInfo, top: (@Composable () -> Unit)? 
                     )
                 }
             }
+            bottom?.invoke()
         }
         }
     }

@@ -117,7 +117,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}, onResume: () -> Unit = {}) {
+fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}, onResume: () -> Unit = {}, onKeepWatching: (ai.bench.app.data.SchedulePrefill) -> Unit = {}) {
     var providers by remember { mutableStateOf<List<ai.bench.app.data.ProviderInfo>>(emptyList()) }
     var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { providers = vm.providers() }
@@ -133,6 +133,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     val loading by vm.loading.collectAsState()
     val hasOlder by vm.hasOlder.collectAsState()
     val suggestion by vm.suggestion.collectAsState()
+    var savingRecipe by remember { mutableStateOf(false) }
     val attachments by vm.attachments.collectAsState()
     val busy by vm.busyApprovals.collectAsState()
     val thinking by vm.thinking.collectAsState()
@@ -329,6 +330,14 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                         }
                     }
                 }
+            } else if (!session?.next_steps.isNullOrEmpty() && !running && approvals.isEmpty() && draft.isEmpty()) {
+                // What the reply offered to do next ("Then: …"): a tap puts it in the composer.
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    session?.next_steps.orEmpty().forEach { step ->
+                        Text(step, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.background(Bench.colors.surface1, RoundedCornerShape(18.dp)).clickable { draft = step }.padding(horizontal = 14.dp, vertical = 9.dp))
+                    }
+                }
             } else if (suggestion.isNotBlank() && !running && approvals.isEmpty() && draft.isEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp)) {
                     Text(suggestion, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -385,7 +394,12 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     } } }
 
     if (menu) session?.let { ses ->
-        SessionSheet(ses, providers, vm, onDismiss = { menu = false }, onRename = { menu = false; renaming = true }, onTask = onTask, onResume = { menu = false; onResume() }, onDeleted = onBack)
+        SessionSheet(ses, providers, vm, onDismiss = { menu = false }, onRename = { menu = false; renaming = true }, onTask = onTask, onResume = { menu = false; onResume() }, onDeleted = onBack,
+            onRecipe = { menu = false; savingRecipe = true },
+            onKeepWatching = { menu = false; onKeepWatching(ai.bench.app.data.SchedulePrefill(ses.title, firstPrompt(rows), ses.project_id)) })
+    }
+    if (savingRecipe) session?.let { ses ->
+        ai.bench.app.ui.SaveRecipeSheet(vm.store, ses.title, firstPrompt(rows), ses.project_id, onDismiss = { savingRecipe = false }) { savingRecipe = false }
     }
 
     if (picking) session?.let { ses ->
@@ -530,6 +544,10 @@ private fun Composer(
     }
 }
 
+/** The session's first message: what a recipe or a schedule made from it repeats. */
+private fun firstPrompt(rows: List<ai.bench.app.data.Row>): String =
+    rows.firstNotNullOfOrNull { (it as? ai.bench.app.data.Row.User)?.text?.takeIf { t -> t.isNotBlank() } }.orEmpty()
+
 /** The list's keys in drawing order (newest first), for finding a remembered item again. */
 private fun listKeys(bl: List<Block>, streaming: Boolean): List<String> =
     (if (streaming) listOf("stream") else emptyList()) + bl.asReversed().map { it.key }
@@ -540,6 +558,7 @@ private fun listKeys(bl: List<Block>, streaming: Boolean): List<String> =
 private fun SessionSheet(
     s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>, vm: SessionViewModel,
     onDismiss: () -> Unit, onRename: () -> Unit, onTask: (String) -> Unit, onResume: () -> Unit, onDeleted: () -> Unit,
+    onRecipe: () -> Unit = {}, onKeepWatching: () -> Unit = {},
 ) {
     val c = Bench.colors
     var mode by remember { mutableStateOf(false) }
@@ -568,6 +587,11 @@ private fun SessionSheet(
                 SwitchRow("Resume after the usage limit", s.pause?.let { "Paused: ${it.message}" } ?: "Picks up where it stopped when the limit lifts", s.auto_resume ?: true) { vm.setAutoResume(it) }
                 SwitchRow("Keep on Home", "Stays on Home after you've looked at it", s.pinned) { vm.setPinned(it) }
                 if (s.pause != null) NavRow("Resume now", labelColor = c.accent, chevron = false) { vm.resumeNow(); onDismiss() }
+            }
+            // Doing it again: with new details each time, or on its own.
+            Card {
+                NavRow("Save as a recipe", null, "Run it again with new details") { onRecipe() }
+                if (s.schedule_id == null && s.project_id != null) NavRow("Keep watching", null, "Run it again on a schedule, on one board") { onKeepWatching() }
             }
             val usage = s.model_usage?.entries?.mapNotNull { (k, v) -> (v as? kotlinx.serialization.json.JsonObject)?.get("cost")?.let { k to (it.toString().toDoubleOrNull() ?: 0.0) } }.orEmpty().sortedByDescending { it.second }
             Card {

@@ -191,6 +191,8 @@ func NewStore(root string) (*Store, error) {
 	// budget: the most one query of an unattended run may spend; capped: it stopped there.
 	s.addColumn("sessions", "budget", "REAL")
 	s.addColumn("sessions", "capped", "INTEGER")
+	// next_steps: the "Then: …" steps a session's last reply offered, as JSON.
+	s.addColumn("sessions", "next_steps", "TEXT")
 	// keep_board: the schedule keeps one board up to date instead of a report per run.
 	s.addColumn("schedules", "keep_board", "INTEGER")
 	// watch: a page the schedule runs on when it changes, as JSON {url, every_hours}, instead of
@@ -788,6 +790,7 @@ func (s *Store) session(r *Obj) *Obj {
 	}
 	r.Set("pinned", truthy(r.Get("pinned")))
 	r.Set("capped", truthy(r.Get("capped")))
+	r.Set("next_steps", jsonCol(r.Get("next_steps")))
 	return r
 }
 
@@ -836,7 +839,7 @@ func (s *Store) UpdateSession(id string, patch *Obj) *Obj {
 			continue
 		}
 		switch k {
-		case "pause", "model_usage":
+		case "pause", "model_usage", "next_steps":
 			if v == nil {
 				row.Set(k, nil)
 			} else {

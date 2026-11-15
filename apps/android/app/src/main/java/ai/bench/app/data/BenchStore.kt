@@ -53,6 +53,12 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     private val _spending = MutableStateFlow<Spending?>(null)
     val spending: StateFlow<Spending?> = _spending.asStateFlow()
     fun setSpending(s: Spending) { _spending.value = s }
+    /** Saved prompts with blanks, for New. */
+    private val _recipes = MutableStateFlow<List<Recipe>>(emptyList())
+    val recipes: StateFlow<List<Recipe>> = _recipes.asStateFlow()
+    fun setRecipes(list: List<Recipe>) { _recipes.value = list }
+    /** A new schedule's starting fields, set by Keep watching and taken once by the form. */
+    var schedulePrefill: SchedulePrefill? = null
     private var extrasJob: Job? = null
 
     /** Reloads reports and schedules; a burst of calls makes one request. */
@@ -63,6 +69,7 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
             runCatching { api.reports() }.onSuccess { _reports.value = it }
             runCatching { api.schedules() }.onSuccess { _schedules.value = it }
             runCatching { api.spending() }.onSuccess { _spending.value = it }
+            runCatching { api.recipes() }.onSuccess { _recipes.value = it }
         }
     }
 

@@ -88,6 +88,8 @@ data class Session(
     val budget: Double? = null,
     /** It stopped at its budget and waits for the person. */
     val capped: Boolean = false,
+    /** The "Then: …" steps its last reply offered. */
+    val next_steps: List<String>? = null,
 ) {
     /** Changed since the person last looked: a reply, a finish, an error. */
     val unseen get() = seen_at == null || updated_at > seen_at
@@ -176,6 +178,13 @@ data class Schedule(
     /** When the watched page was last looked at. */
     val checked_at: String? = null,
 )
+
+/** A saved prompt with blanks, run again from New (GET /api/recipes). */
+@Serializable
+data class Recipe(val id: String, val title: String, val prompt: String, val project_id: String? = null, val blanks: List<String> = emptyList())
+
+/** What a new schedule starts with when it comes from a session's Keep watching. */
+data class SchedulePrefill(val title: String, val prompt: String, val projectId: String?)
 
 @Serializable
 data class Watch(val url: String, val every_hours: Int = 6)
