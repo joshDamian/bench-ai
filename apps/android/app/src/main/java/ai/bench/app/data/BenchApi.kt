@@ -107,11 +107,11 @@ class BenchApi(val config: ServerConfig) {
     suspend fun aboutFromCv(): Pair<Session, String> = post("/api/about/from-cv").let { r -> r["session"].decode<Session>() to (r["prompt"].str() ?: "") }
     suspend fun rules(): List<Rule> = get("/api/rules").lossy()
     suspend fun reach(): Reach = get("/api/reach").decode()
-    suspend fun devices(): List<Device> = get("/api/devices").lossy()
+    suspend fun linkedDevices(): List<LinkedDevice> = get("/api/linked-devices").lossy()
     suspend fun askDevice(id: String, kind: String, path: String, access: String): DeviceAsk =
-        post("/api/devices/${enc(id)}/ask", buildJsonObject { put("kind", kind); put("path", path); put("access", access) }).decode()
-    suspend fun cancelDeviceAsk(id: String) = delete("/api/device-asks/${enc(id)}")
-    suspend fun forgetDevice(id: String) = delete("/api/devices/${enc(id)}")
+        post("/api/linked-devices/${enc(id)}/ask", buildJsonObject { put("kind", kind); put("path", path); put("access", access) }).decode()
+    suspend fun cancelDeviceAsk(id: String) = delete("/api/linked-devices/asks/${enc(id)}")
+    suspend fun forgetDevice(id: String) = delete("/api/linked-devices/${enc(id)}")
     suspend fun browser(): BrowserStatus = get("/api/browser").decode()
     suspend fun signOut(site: String): BrowserStatus = post("/api/browser/sign-out", buildJsonObject { put("site", site) }).decode()
     suspend fun spending(): Spending = get("/api/spending").decode()

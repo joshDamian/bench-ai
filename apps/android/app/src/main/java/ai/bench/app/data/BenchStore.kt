@@ -62,9 +62,9 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     val recipes: StateFlow<List<Recipe>> = _recipes.asStateFlow()
     fun setRecipes(list: List<Recipe>) { _recipes.value = list }
     /** Devices that share part of themselves (the Mac), with what waits on them. */
-    private val _devices = MutableStateFlow<List<Device>>(emptyList())
-    val devices: StateFlow<List<Device>> = _devices.asStateFlow()
-    fun loadDevices() { scope.launch { runCatching { api.devices() }.onSuccess { _devices.value = it } } }
+    private val _devices = MutableStateFlow<List<LinkedDevice>>(emptyList())
+    val devices: StateFlow<List<LinkedDevice>> = _devices.asStateFlow()
+    fun loadDevices() { scope.launch { runCatching { api.linkedDevices() }.onSuccess { _devices.value = it } } }
     /** A new schedule's starting fields, set by Keep watching and taken once by the form. */
     var schedulePrefill: SchedulePrefill? = null
     private var extrasJob: Job? = null
@@ -78,7 +78,7 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
             runCatching { api.schedules() }.onSuccess { _schedules.value = it }
             runCatching { api.spending() }.onSuccess { _spending.value = it }
             runCatching { api.recipes() }.onSuccess { _recipes.value = it }
-            runCatching { api.devices() }.onSuccess { _devices.value = it }
+            runCatching { api.linkedDevices() }.onSuccess { _devices.value = it }
             runCatching { api.activity() }.onSuccess { _activityUnseen.value = it.unseen }
         }
     }

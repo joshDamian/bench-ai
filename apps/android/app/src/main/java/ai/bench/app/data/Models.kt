@@ -146,7 +146,7 @@ data class BrowserStatus(val installed: Boolean = false, val running: Boolean = 
 /** Can reach (GET /api/reach): what Bench can use beyond its own folders. */
 /** A device that shares part of itself with Bench (GET /api/devices): the person's Mac. Go server only. */
 @Serializable
-data class Device(
+data class LinkedDevice(
     val id: String,
     val name: String,
     val version: String? = null,

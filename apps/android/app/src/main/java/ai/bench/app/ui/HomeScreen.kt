@@ -618,7 +618,7 @@ private fun CapCard(r: ai.bench.app.data.Session, runCap: Double, store: BenchSt
 
 /** A run asked the Mac for something: it is decided on the Mac (the "Approve on your Mac" board). */
 @Composable
-private fun MacAskCard(d: ai.bench.app.data.Device, a: ai.bench.app.data.DeviceAsk, run: ai.bench.app.data.Session?, store: BenchStore, modifier: Modifier, onOpen: () -> Unit) {
+private fun MacAskCard(d: ai.bench.app.data.LinkedDevice, a: ai.bench.app.data.DeviceAsk, run: ai.bench.app.data.Session?, store: BenchStore, modifier: Modifier, onOpen: () -> Unit) {
     val c = Bench.colors
     val scope = rememberCoroutineScope()
     Column(

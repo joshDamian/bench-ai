@@ -57,7 +57,7 @@ struct ShareAsk: Identifiable, Hashable {
 
 // MARK: - The link
 
-/// This Mac's link to the server (/api/devices/link): it says what is shared, answers the calls
+/// This Mac's link to the server (/api/linked-devices/link): it says what is shared, answers the calls
 /// sessions make into a share, and holds asks until the person decides them here.
 @MainActor
 @Observable
@@ -106,8 +106,8 @@ final class MacLink {
 
     private func connect() {
         guard started else { return }
-        var r = api.request("/api/devices/link")
-        r.url = URL(string: api.socketURL.absoluteString.replacingOccurrences(of: "/api/ws", with: "/api/devices/link"))
+        var r = api.request("/api/linked-devices/link")
+        r.url = URL(string: api.socketURL.absoluteString.replacingOccurrences(of: "/api/ws", with: "/api/linked-devices/link"))
         let ws = api.session.webSocketTask(with: r)
         ws.maximumMessageSize = 32 * 1024 * 1024
         socket = ws

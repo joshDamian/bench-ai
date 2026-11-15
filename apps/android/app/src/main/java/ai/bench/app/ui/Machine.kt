@@ -253,7 +253,7 @@ fun ArchiveScreen(store: BenchStore, onBack: () -> Unit) {
 }
 
 /** "~/Projects/kron", "Read and write": a share's two lines, as the device page lists them. */
-private fun shareLines(s: ai.bench.app.data.Device.Share): Pair<String, String> = when (s.kind) {
+private fun shareLines(s: ai.bench.app.data.LinkedDevice.Share): Pair<String, String> = when (s.kind) {
     "folder" -> (s.path ?: s.name) to (if (s.access == "write") "Read and write" else "Read only")
     "app" -> s.name to "Open it and use it"
     "screen" -> "Screen" to "Look only: screenshots"
@@ -328,7 +328,7 @@ fun askTitle(a: ai.bench.app.data.DeviceAsk): String = when (a.kind) {
 /** Ask your Mac for more (the "Ask your Mac for more" board): sent to the Mac, decided there. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun AskDeviceSheet(store: BenchStore, d: ai.bench.app.data.Device, onDismiss: () -> Unit) {
+private fun AskDeviceSheet(store: BenchStore, d: ai.bench.app.data.LinkedDevice, onDismiss: () -> Unit) {
     val c = Bench.colors
     val scope = rememberCoroutineScope()
     var kind by remember { mutableStateOf("folder") }
