@@ -1346,7 +1346,7 @@ func (s *Server) routesInit() {
 	s.route("POST", "/api/archive/restore", func(c *ctxt) (any, error) { return svc.Restore(c.body.Str("kind"), c.body.Str("id")) })
 	s.route("DELETE", "/api/archive", func(c *ctxt) (any, error) { return svc.EmptyArchive(), nil })
 	s.route("GET", "/api/meeting", func(c *ctxt) (any, error) { return svc.Meeting().View(), nil })
-	s.route("PUT", "/api/meeting", func(c *ctxt) (any, error) { return svc.Meeting().SetSpeech(c.body.Str("speech")) })
+	s.route("PUT", "/api/meeting", func(c *ctxt) (any, error) { return svc.Meeting().Set(c.body) })
 	s.route("POST", "/api/meeting/stop", func(c *ctxt) (any, error) { return svc.Meeting().Stop(), nil })
 	s.route("GET", "/api/linked-devices", func(c *ctxt) (any, error) { return svc.Devices().List(), nil })
 	s.route("GET", "/api/linked-devices/:id", func(c *ctxt) (any, error) { return svc.Devices().Device(c.params[0]) })

@@ -682,27 +682,54 @@ private fun RecentSheet(store: ai.bench.app.data.BenchStore, current: String, on
     }
 }
 
-/** The call bar: the session is in a call, listening, and speaks as its rule says. */
+/**
+ * The call bar: the session is in a call. A one-on-one (only you in the call) hears you and
+ * talks back freely; otherwise it speaks as your rule says. The voice is chosen here too.
+ */
 @Composable
 private fun CallBar(m: ai.bench.app.data.MeetingState, store: ai.bench.app.data.BenchStore) {
     val c = Bench.colors
     val scope = rememberCoroutineScope()
-    var picking by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf<String?>(null) }
     val words = mapOf("ask" to "Asks before each line", "some" to "Small talk on its own", "allow" to "Speaks freely")
-    Row(
-        Modifier.padding(horizontal = Space.lg, vertical = Space.xs).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surface1).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    fun set(body: kotlinx.serialization.json.JsonObject) = scope.launch { runCatching { store.api.setMeeting(body) }.onSuccess { store.setMeeting(it) } }
+    val voice = m.voices.firstOrNull { it.id == m.voice }?.name ?: "Voice"
+    Column(
+        Modifier.padding(horizontal = Space.lg, vertical = Space.xs).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surface1).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(Modifier.size(8.dp).background(c.bad, androidx.compose.foundation.shape.CircleShape))
-        Column(Modifier.weight(1f)) {
-            Text(if (m.ready.listen) "In a call · listening" else "In a call · can't hear it", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            Text(m.error ?: (words[m.speech] ?: m.speech), fontSize = 12.5.sp, color = if (m.error != null) c.bad else c.accent, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.clickable { picking = true })
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(8.dp).background(c.bad, androidx.compose.foundation.shape.CircleShape))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    when { m.trusted -> "One-on-one call"; m.ready.listen -> "In a call · listening"; else -> "In a call · can't hear it" },
+                    fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                )
+                m.error?.let { Text(it, fontSize = 12.5.sp, color = c.bad, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            }
+            androidx.compose.material3.TextButton(onClick = { scope.launch { runCatching { store.api.stopMeeting() }.onSuccess { store.setMeeting(it) } } }) { Text("Stop", color = c.muted) }
         }
-        androidx.compose.material3.TextButton(onClick = { scope.launch { runCatching { store.api.stopMeeting() }.onSuccess { store.setMeeting(it) } } }) { Text("Stop", color = c.muted) }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CallChip("One-on-one", on = m.trusted) { set(kotlinx.serialization.json.buildJsonObject { put("trusted", !m.trusted) }) }
+            if (!m.trusted) CallChip(words[m.speech] ?: m.speech) { picking = "speech" }
+            if (m.ready.voice == "kokoro" && m.voices.isNotEmpty()) CallChip("Voice · $voice") { picking = "voice" }
+        }
     }
-    if (picking) ai.bench.app.ui.PickDialog("In the call", words.entries.map { it.key to it.value }, m.speech, onDismiss = { picking = false }) { v ->
-        picking = false
-        scope.launch { runCatching { store.api.setMeetingSpeech(v) }.onSuccess { store.setMeeting(it) } }
+    when (picking) {
+        "speech" -> ai.bench.app.ui.PickDialog("In the call", words.entries.map { it.key to it.value }, m.speech, onDismiss = { picking = null }) { v ->
+            picking = null; set(kotlinx.serialization.json.buildJsonObject { put("speech", v) })
+        }
+        "voice" -> ai.bench.app.ui.PickDialog("Voice", m.voices.map { it.id.toString() to "${it.name} · ${it.detail}" }, m.voice.toString(), onDismiss = { picking = null }) { v ->
+            picking = null; set(kotlinx.serialization.json.buildJsonObject { put("voice", v.toInt()) })
+        }
     }
+}
+
+@Composable
+private fun CallChip(text: String, on: Boolean = false, onClick: () -> Unit) {
+    val c = Bench.colors
+    Text(
+        text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (on) c.onAccent else c.text,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) c.accent else c.surface3).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
+    )
 }

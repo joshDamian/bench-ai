@@ -167,12 +167,20 @@ data class MeetingState(
     val session_id: String? = null,
     val since: String? = null,
     val speech: String = "ask",
+    /** A one-on-one: only you are in the call; it hears you and talks back freely. */
+    val trusted: Boolean = false,
+    val voice: Int = 3,
+    val speed: Double = 1.05,
     val heard: Int = 0,
     val error: String? = null,
     val ready: Ready = Ready(),
+    val voices: List<Voice> = emptyList(),
 ) {
+    /** voice: kokoro, espeak or null. */
     @Serializable
-    data class Ready(val audio: Boolean = false, val voice: Boolean = false, val listen: Boolean = false)
+    data class Ready(val audio: Boolean = false, val voice: String? = null, val listen: Boolean = false)
+    @Serializable
+    data class Voice(val id: Int, val name: String, val detail: String = "")
 }
 
 /** Something Bench asked a device to share, waiting there for the person to decide. */

@@ -1,7 +1,6 @@
 package bench
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"testing"
@@ -47,42 +46,5 @@ func TestZZAudioLive(t *testing.T) {
 	t.Logf("peak RMS on the microphone: %.0f", peak)
 	if peak < 350 {
 		t.Fatal("the microphone heard nothing")
-	}
-}
-
-func TestZZListenLive(t *testing.T) {
-	if os.Getenv("LIVE") == "" {
-		t.Skip()
-	}
-	if err := AudioSetup(); err != nil {
-		t.Fatal(err)
-	}
-	clips := make(chan int, 10)
-	transcribeFn = func(pcm []byte) string { clips <- len(pcm); return "" }
-	defer func() { transcribeFn = transcribe }()
-	svc, _ := NewService(t.TempDir())
-	defer svc.Scheduler.Stop()
-	m := svc.Meeting()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go m.listen(ctx, "s1")
-	time.Sleep(500 * time.Millisecond)
-	// Two sentences into the call's speaker, with a pause between: two utterances.
-	for _, line := range []string{"Can you hear me?", "What is Joshua working on today?"} {
-		f := t.TempDir() + "/x.wav"
-		exec.Command("espeak-ng", "-w", f, line).Run()
-		exec.Command("paplay", "--device="+sinkOut, f).Run()
-		time.Sleep(1500 * time.Millisecond)
-	}
-	n := 0
-	timeout := time.After(3 * time.Second)
-	for n < 2 {
-		select {
-		case b := <-clips:
-			n++
-			t.Logf("utterance %d: %.1fs", n, float64(b)/32000)
-		case <-timeout:
-			t.Fatalf("heard %d utterances, want 2", n)
-		}
 	}
 }

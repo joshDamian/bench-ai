@@ -1,67 +1,64 @@
 #!/bin/sh
-# Sets up calls for bench-go: a speaker and microphone Bench can use (PulseAudio), a voice
-# (Piper) and listening (whisper.cpp). Run it once as the account Bench runs as:
+# Sets up calls for bench-go: a speaker and microphone Bench can use (PulseAudio), and its
+# voice and hearing (server-go/voice/bench_voice.py: Kokoro to speak, a streaming recogniser
+# to hear, both through sherpa-onnx, models kept loaded). Run it once, as the account Bench
+# runs as:
 #
 #   sh server-go/meeting-setup
 #
-# It asks for sudo once, for the system packages. The rest goes in ~/.local/share/bench-go:
-#   piper/piper, piper/voice.onnx      the voice (en_US lessac, medium)
-#   whisper/whisper-cli, whisper/ggml-base.en.bin   listening
+# It asks for sudo once, for the system packages. The rest goes in ~/.local/share/bench-go/voice:
+#   venv/                  Python with sherpa-onnx
+#   bench_voice.py         the helper
+#   models/kokoro          the voice (Kokoro v1.0: 54 voices)
+#   models/asr             hearing (NeMo fast-conformer, streaming, English)
 # Then it restarts bench-go, whose browser starts again with the speaker and microphone.
-#
-# Overrides: BENCH_GO_HOME, PIPER_VOICE (a voice name from huggingface.co/rhasspy/piper-voices,
-# e.g. en_GB-alan-medium), WHISPER_MODEL (tiny.en, base.en, small.en; bigger is slower).
 set -eu
 
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 HOME_DIR="${BENCH_GO_HOME:-$HOME/.local/share/bench-go}"
-VOICE="${PIPER_VOICE:-en_US-lessac-medium}"
-MODEL="${WHISPER_MODEL:-base.en}"
+VOICE_DIR="$HOME_DIR/voice"
+SHERPA_PY=1.13.8
+REL=https://github.com/k2-fsa/sherpa-onnx/releases/download
 say() { for l in "$@"; do printf '%s\n' "$l"; done; }
 
-case "$(uname -m)" in
-  x86_64|amd64) ARCH=x86_64 ;;
-  aarch64|arm64) ARCH=aarch64 ;;
-  *) say "meeting-setup: no Piper build for $(uname -m)" >&2; exit 1 ;;
-esac
-
-say "System packages (PulseAudio, and what building whisper.cpp needs)…"
+say "System packages (PulseAudio, Python)…"
 sudo apt-get update -qq
-sudo apt-get install -y -qq pulseaudio pulseaudio-utils cmake g++ git curl >/dev/null
+sudo apt-get install -y -qq pulseaudio pulseaudio-utils python3-venv curl bzip2 >/dev/null
 
 # PulseAudio for this account, kept running: Bench's speaker and microphone live in it.
 systemctl --user enable --now pulseaudio.socket pulseaudio.service >/dev/null 2>&1 || pulseaudio --start --exit-idle-time=-1 || true
 
-say "The voice (Piper, $VOICE)…"
-mkdir -p "$HOME_DIR"
-if [ ! -x "$HOME_DIR/piper/piper" ]; then
-  curl -fsSL "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_$ARCH.tar.gz" | tar -xz -C "$HOME_DIR"
-fi
-LANG_DIR="$(printf '%s' "$VOICE" | cut -d_ -f1)"
-REGION="$(printf '%s' "$VOICE" | cut -d- -f1)"
-NAME="$(printf '%s' "$VOICE" | cut -d- -f2)"
-QUALITY="$(printf '%s' "$VOICE" | cut -d- -f3)"
-BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main/$LANG_DIR/$REGION/$NAME/$QUALITY/$VOICE"
-curl -fsSL "$BASE.onnx" -o "$HOME_DIR/piper/voice.onnx"
-curl -fsSL "$BASE.onnx.json" -o "$HOME_DIR/piper/voice.onnx.json"
+say "The voice helper…"
+mkdir -p "$VOICE_DIR/models"
+[ -x "$VOICE_DIR/venv/bin/python" ] || python3 -m venv "$VOICE_DIR/venv"
+"$VOICE_DIR/venv/bin/pip" install -q --upgrade pip >/dev/null
+"$VOICE_DIR/venv/bin/pip" install -q "sherpa-onnx==$SHERPA_PY" numpy
+cp "$ROOT/server-go/voice/bench_voice.py" "$VOICE_DIR/bench_voice.py"
 
-say "Listening (whisper.cpp, $MODEL)…"
-mkdir -p "$HOME_DIR/whisper"
-if [ ! -x "$HOME_DIR/whisper/whisper-cli" ]; then
-  SRC="$HOME_DIR/whisper/src"
-  [ -d "$SRC" ] || git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp "$SRC"
-  cmake -S "$SRC" -B "$SRC/build" -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release >/dev/null
-  cmake --build "$SRC/build" -j"$(nproc)" --target whisper-cli >/dev/null
-  cp "$SRC/build/bin/whisper-cli" "$HOME_DIR/whisper/whisper-cli"
-fi
-curl -fsSL "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin" -o "$HOME_DIR/whisper/ggml-base.en.bin"
+fetch() { # name, folder in models
+  if [ ! -d "$VOICE_DIR/models/$2" ]; then
+    say "  $1…"
+    curl -fsSL "$3" | tar -xj -C "$VOICE_DIR/models"
+    mv "$VOICE_DIR/models/$1" "$VOICE_DIR/models/$2"
+  fi
+}
+fetch kokoro-multi-lang-v1_0 kokoro "$REL/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
+fetch sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms asr "$REL/asr-models/sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms.tar.bz2"
 
-# A quick check: say something into a file.
-printf 'Bench can speak.' | "$HOME_DIR/piper/piper" --model "$HOME_DIR/piper/voice.onnx" --output_file /tmp/bench-voice-check.wav >/dev/null 2>&1 \
-  && say "Voice: works" || say "Voice: Piper did not run; check $HOME_DIR/piper"
-rm -f /tmp/bench-voice-check.wav
+# A quick check: say something.
+if printf '{"id":"1","text":"Bench can speak."}\n' | "$VOICE_DIR/venv/bin/python" "$VOICE_DIR/bench_voice.py" say --models "$VOICE_DIR/models" 2>/dev/null | grep -q '"file"'; then
+  say "Voice: works"
+else
+  say "Voice: the helper did not speak; check $VOICE_DIR"
+fi
+rm -f /tmp/bench-say-*.wav
+
+# What the first version of this script installed, no longer used.
+rm -rf "$HOME_DIR/piper" "$HOME_DIR/whisper"
 
 if systemctl --user is-active --quiet bench-go.service 2>/dev/null; then
   systemctl --user restart bench-go.service
   say "Restarted bench-go: its browser now has a speaker and microphone."
 fi
-say "" "Done. In a session: join a call in the browser, and Bench listens and speaks there."
+say "" "Done. In a session: join a call in the browser, and Bench listens and speaks there." \
+    "For a one-on-one, turn it on from the call bar in the app."

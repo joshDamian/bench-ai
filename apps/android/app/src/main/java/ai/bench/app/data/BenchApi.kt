@@ -109,6 +109,7 @@ class BenchApi(val config: ServerConfig) {
     suspend fun reach(): Reach = get("/api/reach").decode()
     suspend fun meeting(): MeetingState = get("/api/meeting").decode()
     suspend fun setMeetingSpeech(v: String): MeetingState = put("/api/meeting", buildJsonObject { put("speech", v) }).decode()
+    suspend fun setMeeting(body: JsonObject): MeetingState = put("/api/meeting", body).decode()
     suspend fun stopMeeting(): MeetingState = post("/api/meeting/stop").decode()
     suspend fun linkedDevices(): List<LinkedDevice> = get("/api/linked-devices").lossy()
     suspend fun askDevice(id: String, kind: String, path: String, access: String): DeviceAsk =
