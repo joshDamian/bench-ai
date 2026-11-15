@@ -113,7 +113,14 @@ data class Report(
     val schedule_id: String? = null,
     /** A board: how many entries its last run marked new. */
     val new: Int? = null,
+    /** Its first paragraph, for Home. */
+    val gist: String? = null,
+    /** Up to three things it lists; for drafts, the first unsent emails (subject, who to). */
+    val preview: List<PreviewLine>? = null,
 )
+
+@Serializable
+data class PreviewLine(val title: String = "", val sub: String? = null)
 
 /** Who the person is, read by every session (GET /api/about). */
 @Serializable

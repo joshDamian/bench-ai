@@ -527,6 +527,117 @@ func reportTitle(full, kind string) string {
 	return name
 }
 
+// reportPreview adds what Home shows of a report without opening it: "gist", its first
+// paragraph, and "preview", up to three lines of what it lists ({title, sub}). For drafts, the
+// first unsent emails: who to, and the subject.
+func reportPreview(item *Obj, full, kind string) {
+	switch kind {
+	case "drafts":
+		lines := []any{}
+		for _, x := range draftList(full) {
+			d, ok := x.(*Obj)
+			if !ok || truthy(d.Get("sent_at")) {
+				continue
+			}
+			lines = append(lines, O("title", clip(d.Str("subject"), 90), "sub", clip("To "+d.Str("to"), 60)))
+			if len(lines) == 2 {
+				break
+			}
+		}
+		item.Set("preview", lines)
+	case "report", "board":
+		b, err := os.ReadFile(full)
+		if err != nil {
+			return
+		}
+		text := string(b)
+		if len(text) > 40000 {
+			text = text[:40000]
+		}
+		gist, lines := mdPreview(text)
+		if gist != "" {
+			item.Set("gist", gist)
+		}
+		if len(lines) > 0 {
+			item.Set("preview", lines)
+		}
+	}
+}
+
+var mdMark = regexp.MustCompile(`\*\*|__|` + "`" + `|\[([^\]]*)\]\([^)]*\)`)
+
+func plainMD(s string) string {
+	return strings.TrimSpace(mdMark.ReplaceAllStringFunc(s, func(m string) string {
+		if strings.HasPrefix(m, "[") {
+			return mdMark.FindStringSubmatch(m)[1]
+		}
+		return ""
+	}))
+}
+
+// mdPreview: the first paragraph after the title, and the first three items the report lists
+// (sub-headings, else list items), each split at a dash or colon into a title and the rest.
+func mdPreview(text string) (string, []any) {
+	gist := ""
+	var heads, items []any
+	para := []string{}
+	split := func(s string) *Obj {
+		s = plainMD(s)
+		for _, sep := range []string{" — ", " – ", " - ", ": "} {
+			if i := strings.Index(s, sep); i > 0 && i < 70 {
+				return O("title", clip(strings.TrimSpace(s[:i]), 70), "sub", clip(strings.TrimSpace(s[i+len(sep):]), 90))
+			}
+		}
+		return O("title", clip(s, 90))
+	}
+	for _, raw := range strings.Split(text, "\n") {
+		l := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(l, "# "):
+			continue
+		case strings.HasPrefix(l, "## ") || strings.HasPrefix(l, "### "):
+			if gist == "" && len(para) > 0 {
+				gist = strings.Join(para, " ")
+			}
+			h := strings.TrimSpace(strings.TrimLeft(l, "#"))
+			if len(heads) < 3 && !strings.EqualFold(h, "summary") && !strings.EqualFold(h, "sources") {
+				heads = append(heads, split(h))
+			}
+		case strings.HasPrefix(l, "- ") || strings.HasPrefix(l, "* ") || (len(l) > 3 && l[0] >= '0' && l[0] <= '9' && strings.HasPrefix(l[1:], ". ")):
+			if gist == "" && len(para) > 0 {
+				gist = strings.Join(para, " ")
+			}
+			if len(items) < 3 {
+				items = append(items, split(strings.TrimSpace(l[strings.Index(l, " ")+1:])))
+			}
+		case l == "" || strings.HasPrefix(l, "|") || strings.HasPrefix(l, ">") || strings.HasPrefix(l, "!["):
+			if gist == "" && len(para) > 0 {
+				gist = strings.Join(para, " ")
+			}
+		default:
+			if gist == "" {
+				para = append(para, l)
+			}
+		}
+	}
+	if gist == "" && len(para) > 0 {
+		gist = strings.Join(para, " ")
+	}
+	lines := heads
+	if len(lines) == 0 {
+		lines = items
+	}
+	return clip(plainMD(gist), 220), lines
+}
+
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n-1])) + "…"
+}
+
 func draftList(full string) []any {
 	b, err := os.ReadFile(full)
 	if err != nil {
@@ -579,6 +690,7 @@ func (s *Service) Reports() []*Obj {
 				item.Set("drafts", len(list))
 				item.Set("unsent", unsent)
 			}
+			reportPreview(item, full, kind)
 			out = append(out, item)
 		}
 	}

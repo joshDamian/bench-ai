@@ -64,6 +64,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -259,13 +268,13 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     // A session whose output is already a card is not listed again under it.
     val finished = live.filter { it.status == "idle" && it.unseen && it.id !in waitingOn && it.id !in carded && !it.capped }.sortedByDescending { it.updated_at }
     val readyCards = (if (reads.isNotEmpty()) 1 else 0) + (if (drafts.isNotEmpty()) 1 else 0)
-    val readyCount = readyCards + finished.size
+    val readyCount = reads.size + drafts.size + finished.size
     // What a run asked the Mac for: it waits on the Mac, and the run carries on meanwhile.
     val devices by store.devices.collectAsState()
     val macAsks = devices.flatMap { d -> d.asks.filter { it.session_id != null }.map { d to it } }
     val needCount = s.approvals.size + failed.size + capped.size + macAsks.size
     // Timed runs by when they start, then the pages being watched.
-    val next = schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at } + schedules.filter { it.enabled && it.watch != null }
+    val next = (schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at } + schedules.filter { it.enabled && it.watch != null }).distinctBy { it.id }
     val shown = (working + failed + finished + capped).map { it.id }.toSet() + waitingOn + carded
     val pinned = live.filter { it.pinned && it.id !in shown }
     val quiet = live.count { it.id !in shown && !it.pinned }
@@ -288,19 +297,22 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
         onDispose { workingIds.forEach { store.unwatch(it) } }
     }
 
-    // The header: the most urgent group in a few words, the others on one line under it.
-    val (headline, tone) = when {
-        needCount > 0 -> "$needCount need${if (needCount == 1) "s" else ""} you" to c.warn
-        readyCount > 0 -> "$readyCount ready" to c.text
-        working.isNotEmpty() -> "${working.size} working" to c.text
-        else -> "All caught up" to c.text
+    // Four tiles: the day at a glance, and which list is open under them. Home opens on the most
+    // urgent list that has something; a tile you pick stays picked until you leave the app.
+    val workCount = working.size
+    val auto = when {
+        needCount > 0 -> "need"
+        readyCount > 0 -> "ready"
+        workCount > 0 -> "work"
+        else -> "next"
     }
-    val subline = when {
-        needCount > 0 -> listOfNotNull(readyCount.takeIf { it > 0 }?.let { "$it ready" }, working.size.takeIf { it > 0 }?.let { "$it working" }).joinToString(" · ")
-        readyCount > 0 -> working.size.takeIf { it > 0 }?.let { "$it working" }.orEmpty()
-        working.isNotEmpty() -> ""
-        else -> "Nothing is running or waiting"
-    }
+    var picked by rememberSaveable { mutableStateOf<String?>(null) }
+    val open = picked ?: auto
+    val order = listOf("need", "ready", "work", "next")
+    val caughtUp = needCount + readyCount + workCount == 0
+    val timed = next.firstOrNull { it.next_run_at != null }
+    val nextTile: Pair<String?, String> = timed?.next_run_at?.let { tileWhen(it) } ?: (if (next.isNotEmpty()) "Watching" to "${next.size}" else null to "—")
+    val (nextDay, nextTime) = nextTile
 
     Scaffold(
         containerColor = c.bg,
@@ -309,12 +321,9 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             Column {
                 Row(
                     Modifier.fillMaxWidth().statusBarsPadding().padding(start = 22.dp, end = 16.dp, top = 10.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.Top,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.weight(1f).padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(if (s.ready) headline else "Bench", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp, color = tone, maxLines = 1)
-                        if (s.ready && subline.isNotEmpty()) Text(subline, fontSize = 14.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                    Text("Bench", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp, modifier = Modifier.weight(1f), maxLines = 1)
                     IconButton(onClick = onSearch, modifier = Modifier.size(44.dp).background(c.surface1, CircleShape)) {
                         Icon(Icons.Default.Search, "Search sessions", tint = c.text)
                     }
@@ -331,35 +340,39 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
             onRefresh = { scope.launch { refreshing = true; store.refresh(); store.reconnectNow(); refreshing = false } },
             modifier = Modifier.fillMaxSize().padding(pad),
         ) {
+            // A sideways swipe moves to the next or previous list. Rows that swipe themselves
+            // (archive) take the drag first.
+            val swipeAt = with(androidx.compose.ui.platform.LocalDensity.current) { 72.dp.toPx() }
             LazyColumn(
                 state = homeList,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 112.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().pointerInput(open) {
+                    var dx = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dx = 0f },
+                        onDragEnd = {
+                            val i = order.indexOf(open)
+                            if (dx < -swipeAt && i < order.size - 1) picked = order[i + 1]
+                            if (dx > swipeAt && i > 0) picked = order[i - 1]
+                        },
+                    ) { _, d -> dx += d }
+                },
             ) {
                 if (shared.isNotEmpty() || sharedText != null) item("share") {
                     Text(if (shared.isEmpty()) "Choose a session to send what you shared to" else "Choose a session to attach ${shared.size} shared file${if (shared.size == 1) "" else "s"} to", color = c.info, fontSize = 14.sp,
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp).background(c.info.copy(alpha = 0.10f), RoundedCornerShape(18.dp)).padding(16.dp))
                 }
-                // -- Needs you: approvals and questions, answered here; sessions that stopped with an error.
-                items(s.approvals, key = { "a-${it.id}" }) { a ->
-                    val session = s.sessions.firstOrNull { it.id == a.session_id }
-                    ApprovalCard(
-                        approval = a,
-                        cwd = session?.cwd.orEmpty(),
-                        sessionTitle = listOfNotNull(session?.title, s.projects.firstOrNull { it.id == session?.project_id }?.name ?: "Ask Bench").joinToString(" · "),
-                        busy = a.id in answering,
-                        onOpen = { onOpen(a.session_id) },
-                        onTakeOver = { takingOver = true },
-                        modifier = Modifier.padding(top = 10.dp).animateItem(),
-                        onAnswer = { body ->
-                            answering = answering + a.id
-                            scope.launch {
-                                try { store.api.answer(a.id, body); store.dropApproval(a.id) }
-                                catch (e: BenchError) { snackbar.showSnackbar(e.message ?: "Could not answer") }
-                                finally { answering = answering - a.id }
-                            }
-                        },
-                    )
+                item("tiles") {
+                    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HomeTile(Icons.Outlined.Notifications, "$needCount", null, "Needs you", open == "need", warn = needCount > 0, empty = needCount == 0, Modifier.weight(1f)) { picked = "need" }
+                            HomeTile(Icons.Outlined.Inbox, "$readyCount", null, "Ready", open == "ready", empty = readyCount == 0, modifier = Modifier.weight(1f)) { picked = "ready" }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HomeTile(Icons.Outlined.Bolt, "$workCount", null, "Working", open == "work", empty = workCount == 0, modifier = Modifier.weight(1f)) { picked = "work" }
+                            HomeTile(Icons.Outlined.Schedule, nextTime, nextDay, "Coming up", open == "next", empty = next.isEmpty(), modifier = Modifier.weight(1f)) { picked = "next" }
+                        }
+                    }
                 }
                 if (spending?.paused == true) item("paused") {
                     Row(
@@ -372,73 +385,101 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                         }.padding(4.dp))
                     }
                 }
-                items(macAsks, key = { "m-${it.second.id}" }) { (d, a) ->
-                    val run = s.sessions.firstOrNull { it.id == a.session_id }
-                    MacAskCard(d, a, run, store, Modifier.padding(top = 10.dp).animateItem(), onOpen = { a.session_id?.let(onOpen) })
-                }
-                items(capped, key = { "c-${it.id}" }) { r ->
-                    CapCard(r, spending?.run_cap ?: 2.0, store, Modifier.padding(top = 10.dp).animateItem(), onOpen = { onOpen(r.id) }) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
-                }
-                items(failed, key = { "f-${it.id}" }) { f ->
-                    HomeCard(where(f, store, null).ifBlank { f.title }, "Stopped with an error", c.bad, "Open", Modifier.padding(top = 10.dp).animateItem()) { onOpen(f.id) }
+                if (caughtUp && s.ready && s.sessions.isNotEmpty() && picked == null) item("caught") {
+                    Column(Modifier.padding(start = 6.dp, top = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("All caught up", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Nothing needs you, and nothing is running.", fontSize = 14.sp, color = c.muted)
+                    }
                 }
 
-                // -- Ready for you: what sessions made, as cards; finished conversations under them.
-                if (readyCount > 0) {
-                    item("ready-l") { Label("Ready for you") }
-                    if (readyCards > 0) item("ready-cards") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
-                            if (reads.isNotEmpty()) ReadyCard(
-                                if (reads.size == 1) readLabel(reads[0]) else "${reads.size} ready to read",
-                                reads[0].title, if (reads.size > 1) "+${reads.size - 1} more" else s.sessions.firstOrNull { it.id == reads[0].session_id }?.title,
-                                Modifier.weight(1f).fillMaxHeight(),
-                            ) { if (reads.size == 1) opened = reads[0] else listing = reads }
-                            if (drafts.isNotEmpty()) {
-                                val n = drafts.sumOf { it.unsent ?: it.drafts ?: 0 }
-                                ReadyCard(
-                                    "$n draft${if (n == 1) "" else "s"}", drafts[0].title + if (drafts.size > 1) " and ${drafts.size - 1} more" else "",
-                                    s.sessions.firstOrNull { it.id == drafts[0].session_id }?.title,
-                                    Modifier.weight(1f).fillMaxHeight(),
-                                ) { if (drafts.size == 1) opened = drafts[0] else listing = drafts }
+                when (open) {
+                    // -- Needs you: approvals and questions, answered here; what waits on the Mac; runs at their cap; errors.
+                    "need" -> {
+                        item("need-l") { Label("Needs you") }
+                        items(s.approvals, key = { "a-${it.id}" }) { a ->
+                            val session = s.sessions.firstOrNull { it.id == a.session_id }
+                            ApprovalCard(
+                                approval = a,
+                                cwd = session?.cwd.orEmpty(),
+                                sessionTitle = listOfNotNull(session?.title, s.projects.firstOrNull { it.id == session?.project_id }?.name ?: "Ask Bench").joinToString(" · "),
+                                busy = a.id in answering,
+                                onOpen = { onOpen(a.session_id) },
+                                onTakeOver = { takingOver = true },
+                                modifier = Modifier.padding(top = 10.dp).animateItem(),
+                                onAnswer = { body ->
+                                    answering = answering + a.id
+                                    scope.launch {
+                                        try { store.api.answer(a.id, body); store.dropApproval(a.id) }
+                                        catch (e: BenchError) { snackbar.showSnackbar(e.message ?: "Could not answer") }
+                                        finally { answering = answering - a.id }
+                                    }
+                                },
+                            )
+                        }
+                        items(macAsks, key = { "m-${it.second.id}" }) { (d, a) ->
+                            val run = s.sessions.firstOrNull { it.id == a.session_id }
+                            MacAskCard(d, a, run, store, Modifier.padding(top = 10.dp).animateItem(), onOpen = { a.session_id?.let(onOpen) })
+                        }
+                        items(capped, key = { "c-${it.id}" }) { r ->
+                            CapCard(r, spending?.run_cap ?: 2.0, store, Modifier.padding(top = 10.dp).animateItem(), onOpen = { onOpen(r.id) }) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+                        }
+                        items(failed, key = { "f-${it.id}" }) { f ->
+                            // The error itself, so you can tell what broke before opening it.
+                            val why = f.error?.lineSequence()?.map { it.trim() }?.firstOrNull { it.isNotEmpty() }?.take(140)
+                            HomeCard(listOf(f.title, where(f, store, null)).filter { it.isNotBlank() }.joinToString(" · "), why ?: "Stopped with an error", c.bad, "Open", Modifier.padding(top = 10.dp).animateItem()) { onOpen(f.id) }
+                        }
+                        if (needCount == 0) item("need-none") { Quiet("Nothing needs you.") }
+                    }
+
+                    // -- Ready: what each session made, shown; finished conversations under them.
+                    "ready" -> {
+                        item("ready-l") { Label("Ready for you") }
+                        items(reads, key = { "rd-${it.path}" }) { r ->
+                            ReportCard(r, s.sessions.firstOrNull { it.id == r.session_id }?.title, Modifier.padding(top = 10.dp).animateItem()) { opened = r }
+                        }
+                        items(drafts, key = { "dr-${it.path}" }) { r ->
+                            DraftsCard(r, s.sessions.firstOrNull { it.id == r.session_id }?.title, Modifier.padding(top = 10.dp).animateItem()) { opened = r }
+                        }
+                        if (readyCards > 0 && finished.isNotEmpty()) item("ready-gap") { Box(Modifier.height(8.dp)) }
+                        // Folded after five: the first screen stays the first screen on a busy day.
+                        val visible = if (moreReady) finished else finished.take(5)
+                        items(visible, key = { "r-${it.id}" }) { r ->
+                            SwipeToArchive(onArchive = {
+                                scope.launch {
+                                    runCatching { store.api.archive(r.id, true) }
+                                    val undo = snackbar.showSnackbar("Archived “${r.title}”", actionLabel = "Undo", duration = androidx.compose.material3.SnackbarDuration.Short)
+                                    if (undo == androidx.compose.material3.SnackbarResult.ActionPerformed) runCatching { store.api.archive(r.id, false) }
+                                    store.refresh()
+                                }
+                            }) {
+                                HomeRow(r.title, if (r.pause != null) "Paused" else "Finished", if (r.pause != null) c.warn else c.muted, where(r, store, null), Format.ago(r.updated_at), r.id, r.id == selected) { onOpen(r.id) }
                             }
                         }
-                    }
-                    // Folded after three items: the first screen stays the first screen on a busy day.
-                    val room = (3 - readyCards).coerceAtLeast(1)
-                    val visible = if (moreReady) finished else finished.take(room)
-                    items(visible, key = { "r-${it.id}" }) { r ->
-                        SwipeToArchive(onArchive = {
-                            scope.launch {
-                                runCatching { store.api.archive(r.id, true) }
-                                val undo = snackbar.showSnackbar("Archived “${r.title}”", actionLabel = "Undo", duration = androidx.compose.material3.SnackbarDuration.Short)
-                                if (undo == androidx.compose.material3.SnackbarResult.ActionPerformed) runCatching { store.api.archive(r.id, false) }
-                                store.refresh()
-                            }
-                        }) {
-                            HomeRow(r.title, if (r.pause != null) "Paused" else "Finished", if (r.pause != null) c.warn else c.muted, where(r, store, null), Format.ago(r.updated_at), r.id, r.id == selected) { onOpen(r.id) }
+                        if (finished.size > visible.size) item("ready-more") {
+                            MoreLine("${finished.size - visible.size} more finished") { moreReady = true }
                         }
+                        if (readyCount == 0) item("ready-none") { Quiet("Nothing new to read.") }
                     }
-                    if (finished.size > visible.size) item("ready-more") {
-                        MoreLine("${finished.size - visible.size} more finished") { moreReady = true }
-                    }
-                }
 
-                // -- Working: each with what it is doing now.
-                if (working.isNotEmpty()) {
-                    item("working-l") { Label("Working") }
-                    items(working, key = { "w-${it.id}" }) { w ->
-                        HomeRow(w.title, steps[w.id] ?: "Working", c.accent, where(w, store, if (w.schedule_id != null) "scheduled" else null), Format.ago(w.updated_at), w.id, w.id == selected) { onOpen(w.id) }
+                    // -- Working: each with what it is doing now.
+                    "work" -> {
+                        item("work-l") { Label("Working") }
+                        items(working, key = { "w-${it.id}" }) { w ->
+                            WorkCard(w.title, steps[w.id] ?: "Working", where(w, store, if (w.schedule_id != null) "scheduled" else null), Format.ago(w.updated_at), w.id, Modifier.padding(top = 10.dp).animateItem()) { onOpen(w.id) }
+                        }
+                        if (workCount == 0) item("work-none") { Quiet("Nothing is running.") }
                     }
-                }
 
-                // -- Coming up: the next scheduled run (the next two when there is nothing else).
-                if (next.isNotEmpty()) {
-                    item("next-l") { Label("Coming up") }
-                    items(next.take(if (needCount + readyCount + working.size == 0) 2 else 1), key = { "n-${it.id}" }) { n ->
-                        val waits = if (spending?.paused == true) " · waits while paused" else ""
-                        val w = n.watch
-                        if (w != null) UpcomingRow(n.title, ai.bench.app.data.pageName(w.url) + waits, checkedLabel(n)) { onSchedule(n.id) }
-                        else UpcomingRow(n.title, scheduleDays(n.days) + waits, whenNext(n.next_run_at)) { onSchedule(n.id) }
+                    // -- Coming up: timed runs by when they start, then the pages being watched.
+                    else -> {
+                        item("next-l") { Label("Coming up", trailing = "All schedules", onTrailing = onSchedules) }
+                        items(next, key = { "n-${it.id}" }) { n ->
+                            val waits = if (spending?.paused == true) " · waits while paused" else ""
+                            val w = n.watch
+                            if (w != null) UpcomingRow(n.title, ai.bench.app.data.pageName(w.url) + waits, checkedLabel(n)) { onSchedule(n.id) }
+                            else UpcomingRow(n.title, scheduleDays(n.days) + waits, whenNext(n.next_run_at)) { onSchedule(n.id) }
+                        }
+                        if (next.isEmpty()) item("next-none") { Quiet("Nothing scheduled.") }
                     }
                 }
 
@@ -654,20 +695,6 @@ private fun HomeCard(context: String, title: String, titleColor: Color, action: 
     }
 }
 
-/** A report or a set of drafts, as a card you open to read. */
-@Composable
-private fun ReadyCard(label: String, title: String, foot: String?, modifier: Modifier, onClick: () -> Unit) {
-    val c = Bench.colors
-    Column(
-        modifier.clip(RoundedCornerShape(20.dp)).background(c.surface1).clickable(onClick = onClick).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(label, fontSize = 12.5.sp, color = c.muted)
-        Text(title, fontSize = 15.5.sp, fontWeight = FontWeight.Medium, lineHeight = 21.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        foot?.let { Text(it, fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-    }
-}
-
 @Composable
 private fun MoreLine(text: String, onClick: () -> Unit) {
     val c = Bench.colors
@@ -719,10 +746,129 @@ private fun FilterChip(text: String, on: Boolean, onClick: () -> Unit) {
 
 /** A section label: more space above than below, so it belongs to what follows. */
 @Composable
-private fun Label(text: String, color: Color = Bench.colors.muted, trailing: String? = null) {
-    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 20.dp, bottom = 6.dp)) {
+private fun Label(text: String, color: Color = Bench.colors.muted, trailing: String? = null, onTrailing: (() -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = color, modifier = Modifier.weight(1f))
-        trailing?.let { Text(it, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = color) }
+        trailing?.let { Text(it, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = color, modifier = if (onTrailing != null) Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onTrailing).padding(4.dp) else Modifier) }
+    }
+}
+
+/** A list with nothing in it: one muted line. */
+@Composable
+private fun Quiet(text: String) {
+    Text(text, fontSize = 15.sp, color = Bench.colors.muted, modifier = Modifier.padding(start = 6.dp, top = 6.dp))
+}
+
+/** The next run for the Coming up tile: the day above, the time large. */
+private fun tileWhen(iso: String): Pair<String?, String> {
+    val t = runCatching { java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault()) }.getOrNull() ?: return null to "—"
+    val today = java.time.LocalDate.now()
+    val time = t.format(java.time.format.DateTimeFormatter.ofPattern("H:mm"))
+    val day = when (t.toLocalDate()) {
+        today -> "Today"
+        today.plusDays(1) -> "Tomorrow"
+        in today.plusDays(2)..today.plusDays(5) -> t.format(java.time.format.DateTimeFormatter.ofPattern("EEEE"))
+        else -> t.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM"))
+    }
+    return day to time
+}
+
+/**
+ * One of Home's four tiles: how many, and the tab for that list. Only Needs you takes a colour,
+ * and only when something needs you; the open tile is a quiet fill.
+ */
+@Composable
+private fun HomeTile(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String, small: String?, label: String, on: Boolean, warn: Boolean = false, empty: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val c = Bench.colors
+    val bg by androidx.compose.animation.animateColorAsState(if (on) c.surface3 else c.surface1, label = "tile")
+    Column(
+        modifier.height(96.dp).clip(RoundedCornerShape(18.dp)).background(bg)
+            .clickable(onClickLabel = "Show $label", onClick = onClick)
+            .semantics { selected = on; contentDescription = "$label: ${listOfNotNull(small, value).joinToString(" ")}" }
+            .padding(14.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Box(Modifier.size(34.dp).background(if (warn) c.warn else if (on) c.surface1 else c.surface2, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = if (warn) c.bg else if (empty) c.muted.copy(alpha = 0.7f) else c.text, modifier = Modifier.size(18.dp))
+            }
+            Box(Modifier.weight(1f))
+            Column(horizontalAlignment = Alignment.End) {
+                small?.let { Text(it, fontSize = 12.sp, lineHeight = 14.sp, color = c.muted, maxLines = 1) }
+                Text(value, fontSize = if (small != null) 22.sp else 26.sp, lineHeight = if (small != null) 26.sp else 30.sp, fontWeight = FontWeight.SemiBold, color = if (empty) c.muted.copy(alpha = 0.7f) else c.text, maxLines = 1)
+            }
+        }
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (on) c.text else if (empty) c.muted.copy(alpha = 0.7f) else c.muted, maxLines = 1)
+    }
+}
+
+/** A report, page or board as Home shows it: what it says before you open it. */
+@Composable
+private fun ReportCard(r: Report, from: String?, modifier: Modifier, onOpen: () -> Unit) {
+    val c = Bench.colors
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(c.surface1).clickable(onClick = onOpen).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(listOfNotNull(readLabel(r), from, Format.ago(r.modified)).joinToString(" · "), fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(r.title, fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        r.gist?.let { Text(it, fontSize = 14.5.sp, lineHeight = 21.sp, color = c.muted, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+        val lines = r.preview.orEmpty()
+        if (lines.isNotEmpty()) Column(Modifier.padding(top = 4.dp)) {
+            lines.forEach { l ->
+                HorizontalDivider(color = c.line)
+                Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(l.title, fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    l.sub?.let { Text(it, fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f))
+            Text("Read", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clip(RoundedCornerShape(50)).background(c.surface3).clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 9.dp))
+        }
+    }
+}
+
+/** Email drafts as Home shows them: the first ones, who to and the subject. */
+@Composable
+private fun DraftsCard(r: Report, from: String?, modifier: Modifier, onOpen: () -> Unit) {
+    val c = Bench.colors
+    val n = r.unsent ?: r.drafts ?: 0
+    val lines = r.preview.orEmpty()
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(c.surface1).clickable(onClick = onOpen).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(listOfNotNull("$n draft${if (n == 1) "" else "s"} to send", from, Format.ago(r.modified)).joinToString(" · "), fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(r.title, fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        lines.forEach { l ->
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surface2).padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                l.sub?.let { Text(it, fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                Text(l.title, fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (n > lines.size && lines.isNotEmpty()) "+${n - lines.size} more" else "", fontSize = 13.sp, color = c.muted, modifier = Modifier.weight(1f))
+            Text("Review", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clip(RoundedCornerShape(50)).background(c.surface3).clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 9.dp))
+        }
+    }
+}
+
+/** A working session: what it is doing now, in the accent. */
+@Composable
+private fun WorkCard(title: String, step: String, where: String, ago: String, id: String, modifier: Modifier, onClick: () -> Unit) {
+    val c = Bench.colors
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surface1).clickable(onClick = onClick).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).sharedTitle(id))
+            Text(ago, fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 12.dp))
+        }
+        Text(step, fontSize = 14.5.sp, color = c.accent, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (where.isNotEmpty()) Text(where, fontSize = 12.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
     }
 }
 

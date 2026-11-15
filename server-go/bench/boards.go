@@ -170,7 +170,9 @@ func (s *Service) boardReports() []*Obj {
 		}
 		modified := isoTime(st.ModTime())
 		seen := last.Str("seen_at") != "" && last.Str("seen_at") >= modified
-		out = append(out, O("session_id", last.Get("id"), "path", f, "name", filepath.Base(f), "kind", "board", "title", BoardTitle(f, sch.Str("title")), "size", st.Size(), "modified", modified, "seen", seen, "schedule_id", sch.Get("id"), "new", NewCount(f)))
+		item := O("session_id", last.Get("id"), "path", f, "name", filepath.Base(f), "kind", "board", "title", BoardTitle(f, sch.Str("title")), "size", st.Size(), "modified", modified, "seen", seen, "schedule_id", sch.Get("id"), "new", NewCount(f))
+		reportPreview(item, f, "board")
+		out = append(out, item)
 	}
 	return out
 }

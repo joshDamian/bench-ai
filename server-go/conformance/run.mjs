@@ -63,6 +63,8 @@ function normaliser(root, repo, home) {
     return map.get(v);
   };
   const VOLATILE = new Set(['push', 'key', 'created_at', 'updated_at', 'archived_at', 'last_seen_at', 'merged_at', 'check_at', 'started_at', 'ended_at', 'mtime', 'at', 'uptimeMs', 'startedAt', 'pid', 'ms', 'duration_ms', 'expiresIn', 'code_hash', 'qr', 'code', 'removed_at', 'size', 'loadavg', 'memFree', 'diskFree', 'until', 'seen_at', 'next_run_at', 'last_run_at', 'modified', 'sent_at']);
+  // What only the Go server gives (Node is no longer developed): left out of the comparison.
+  const GO_ONLY = new Set(['gist', 'preview']);
   const str = (s) => {
     s = s.split(root).join('<root>').split(repo).join('<repo>').split(home).join('<home>');
     for (const m of s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || []) tag(ids, m, 'id');
@@ -80,7 +82,7 @@ function normaliser(root, repo, home) {
     if (key && VOLATILE.has(key) && v !== null && v !== undefined) return `<${key}>`;
     if (typeof v === 'string') return str(v);
     if (Array.isArray(v)) return v.map((x) => walk(x));
-    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [str(k), walk(x, k)]));
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([k]) => !GO_ONLY.has(k)).map(([k, x]) => [str(k), walk(x, k)]));
     return v;
   };
   return walk;
