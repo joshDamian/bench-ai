@@ -127,7 +127,7 @@ fun RulesScreen(store: BenchStore, onBack: () -> Unit) {
                 }
             }
         }
-        item("note") { Text("Never is enforced: Bench stops before the action and says so in the conversation. Never also shows in About me.", fontSize = 13.sp, lineHeight = 18.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 12.dp)) }
+        item("note") { Text("Bench stops before anything on the Never list and says so in the session.", fontSize = 13.sp, lineHeight = 18.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 12.dp)) }
     }
     picking?.let { r ->
         PickDialog(r.label, words.entries.map { it.key to it.value }, r.value, onDismiss = { picking = null }) { v ->
@@ -149,9 +149,9 @@ fun CanReachScreen(store: BenchStore, onBack: () -> Unit, onBrowser: () -> Unit 
     LaunchedEffect(Unit) { reach = runCatching { store.api.reach() }.getOrNull() }
     Page("Can reach", "What Bench can use beyond its own folders.", onBack) {
         val r = reach ?: return@Page
-        section("Devices")
+        section("Your Mac")
         item("devices") {
-            if (r.devices.isEmpty()) Text("No devices yet. Open Bench for Mac and share something under Settings › Shared with Bench.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp))
+            if (r.devices.isEmpty()) Text("Not linked. In Bench for Mac, share something under Settings › Shared with Bench.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp))
             else Card { r.devices.forEach { d -> NavRow(d.name, d.detail) { onDevice(d.key) } } }
         }
         section("Accounts")
@@ -182,7 +182,7 @@ fun HousekeepingScreen(store: BenchStore, onBack: () -> Unit, onArchive: () -> U
     fun set(key: String, on: Boolean) = scope.launch { runCatching { store.api.setHousekeeping(key, on) }.onSuccess { h = it } }
     Page("Housekeeping", "Bench does these on its own and says what it did in Activity. What it archives can come back.", onBack) {
         if (failed) {
-            item("old") { Text("This server can't do housekeeping yet. Update it to the Go server.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 24.dp)) }
+            item("old") { Text("Housekeeping needs the Go server.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 24.dp)) }
             return@Page
         }
         val x = h ?: return@Page
@@ -295,7 +295,7 @@ fun DeviceScreen(store: BenchStore, id: String, onBack: () -> Unit) {
                 }
             }
         }
-        if (d.shares.isEmpty()) item("none") { Text("Nothing is shared yet. Share folders, apps or commands in Bench for Mac, under Settings › Shared with Bench, or ask for one here.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 18.dp)) }
+        if (d.shares.isEmpty()) item("none") { Text("Nothing is shared yet. Share folders, apps or commands in Bench for Mac under Settings › Shared with Bench, or ask for one here.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 18.dp)) }
         if (d.asks.isNotEmpty()) {
             section("Waiting on the Mac")
             item("asks") {

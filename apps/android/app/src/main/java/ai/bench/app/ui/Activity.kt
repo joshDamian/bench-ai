@@ -55,7 +55,7 @@ fun ActivityScreen(store: BenchStore, onBack: () -> Unit, onOpen: (String) -> Un
     val today = LocalDate.now(zone)
     Page("Activity", "Every run, who started it and what it touched.", onBack) {
         if (failed) {
-            item("old") { Text("This server can't show Activity yet. Update it to the Go server.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 24.dp)) }
+            item("old") { Text("Activity needs the Go server.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 24.dp)) }
             return@Page
         }
         val f = feed ?: return@Page

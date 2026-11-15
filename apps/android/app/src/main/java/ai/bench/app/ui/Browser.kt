@@ -172,10 +172,10 @@ fun BrowserScreen(store: BenchStore, onBack: () -> Unit) {
     var status by remember { mutableStateOf<ai.bench.app.data.BrowserStatus?>(null) }
     var viewing by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { status = runCatching { store.api.browser() }.getOrNull() }
-    Page("Browser", "A browser on your server that runs can use. Sign-ins stay there as cookies; passwords are never kept.", onBack) {
+    Page("Browser", "A browser on your server that sessions use. Sign-ins stay there; passwords are never kept.", onBack) {
         val s = status ?: return@Page
         if (!s.installed) {
-            item("none") { Text("There is no Chromium on the server yet. Install it there with: npx playwright install chromium", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 18.dp)) }
+            item("none") { Text("Chromium isn't installed on the server. Install it there with: npx playwright install chromium", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 18.dp)) }
             return@Page
         }
         section("Signed in")

@@ -69,7 +69,7 @@ fun SchedulesScreen(store: BenchStore, onBack: () -> Unit, onEdit: (String?) -> 
     val list by store.schedules.collectAsState()
     val s by store.state.collectAsState()
     LaunchedEffect(Unit) { store.loadExtras() }
-    Page("Schedules", "Sessions that start on their own, at a time or when a page changes", onBack, actions = {
+    Page("Schedules", "Sessions that start on their own", onBack, actions = {
         IconButton(onClick = { onEdit(null) }) { Icon(Icons.Default.Add, "New schedule") }
     }) {
         if (list.isEmpty()) item("empty") {
@@ -111,8 +111,10 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
     var keepBoard by remember { mutableStateOf(existing?.keep_board ?: (prefill != null)) }
     // A new schedule starts as Housekeeping says: one board per schedule, or a report per run.
     LaunchedEffect(Unit) { if (existing == null && prefill == null) runCatching { store.api.housekeeping() }.onSuccess { keepBoard = it.keep_board } }
-    var watching by remember { mutableStateOf(existing?.watch != null) }
-    var url by remember { mutableStateOf(existing?.watch?.url.orEmpty()) }
+    // A prompt that names a page starts as a watch on it.
+    val prefillUrl = remember(prefill) { prefill?.prompt?.let { Regex("""https?://[^\s)]+""").find(it)?.value } }
+    var watching by remember { mutableStateOf(existing?.watch != null || prefillUrl != null) }
+    var url by remember { mutableStateOf(existing?.watch?.url ?: prefillUrl.orEmpty()) }
     var everyHours by remember { mutableStateOf(existing?.watch?.every_hours ?: 6) }
     var projectId by remember { mutableStateOf(existing?.project_id ?: prefill?.projectId) }
     var modelId by remember { mutableStateOf(existing?.model_id) }
@@ -190,7 +192,7 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
         item("rows") {
             Column(Modifier.padding(top = 12.dp)) {
                 Card {
-                    if (watching) NavRow("Check every", hoursLabel(everyHours), "Bench only tells you when the change matters") { picking = "every" }
+                    if (watching) NavRow("Check every", hoursLabel(everyHours), "You hear about a change only when it matters") { picking = "every" }
                     else NavRow("Time", time) { picking = "time" }
                     NavRow("Project", projectName) { picking = "project" }
                     NavRow("Model", modelName) { picking = "model" }

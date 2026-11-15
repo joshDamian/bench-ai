@@ -214,7 +214,7 @@ fun DevicesScreen(store: BenchStore, onBack: () -> Unit) {
     val me = store.state.value.me?.device?.id
     suspend fun load() { devices = runCatching { store.api.get("/api/devices").arr().orEmpty().toList() }.getOrDefault(devices) }
     LaunchedEffect(Unit) { load() }
-    Page("Devices", "Phones and computers paired with this server", onBack) {
+    Page("Paired devices", "Phones and computers that can open this server", onBack) {
         section("Paired", "${devices.size}")
         item {
             Card {

@@ -115,7 +115,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
             item("machine") {
                 Card {
                     NavRow("Activity", null, "Every run, who started it and what it touched") { onOpen("activity") }
-                    NavRow("Can reach", null, "Devices and accounts it can use") { onOpen("reach") }
+                    NavRow("Can reach", null, "Your Mac, accounts and the browser") { onOpen("reach") }
                     NavRow("Asks first", null, "What it does on its own, asks about, never does") { onOpen("rules") }
                     NavRow("Spending", store.spending.collectAsState().value?.let { "${dollars(it.today)} today" }) { onOpen("spending") }
                     NavRow("Schedules", store.schedules.collectAsState().value.count { it.enabled }.takeIf { it > 0 }?.toString() ?: "None") { onOpen("schedules") }
@@ -156,7 +156,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                     if (canUpdate) NavRow("Update Bench", "Ready to install") {
                         scope.launch { runCatching { store.api.post("/api/server/update") } }
                     }
-                    NavRow("Devices", deviceCount?.toString()) { onOpen("devices") }
+                    NavRow("Paired devices", deviceCount?.toString()) { onOpen("devices") }
                     NavRow("Dashboard", "Memory, CPU, spend") { onOpen("dashboard") }
                     NavRow("Projects folder", defaults["projectsDir"].str()?.replace(Regex("^/(home|Users)/[^/]+"), "~")) { page = "dir" }
                     NavRow("Diagnostics") { onOpen("diagnostics") }

@@ -230,7 +230,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         }
     }
     recipe?.let { r -> RunRecipeSheet(store, r, onDismiss = { recipe = null }) { recipe = null; open(it) } }
-    if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) })
+    if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) }, onSchedule = { newSession = false; store.schedulePrefill = it; nav.navigate("schedule/new") })
     if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true)
     if (addProject) AddProjectSheet(store, onDismiss = { addProject = false }, onAdded = { addProject = false; nav.navigate("project/$it") })
 }
