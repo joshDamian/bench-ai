@@ -119,6 +119,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                     NavRow("Asks first", null, "What it does on its own, asks about, never does") { onOpen("rules") }
                     NavRow("Spending", store.spending.collectAsState().value?.let { "${dollars(it.today)} today" }) { onOpen("spending") }
                     NavRow("Schedules", store.schedules.collectAsState().value.count { it.enabled }.takeIf { it > 0 }?.toString() ?: "None") { onOpen("schedules") }
+                    NavRow("Housekeeping", null, "What it tidies on its own, and the archive") { onOpen("housekeeping") }
                 }
             }
             section("Server")

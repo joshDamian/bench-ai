@@ -74,7 +74,13 @@ fun ActivityScreen(store: BenchStore, onBack: () -> Unit, onOpen: (String) -> Un
                     }
                     items.forEach { a ->
                         HorizontalDivider(color = c.line)
-                        ActivityRow(a, zone) { a.session_id?.let(onOpen) }
+                        ActivityRow(a, zone, onUndo = if (a.undo && a.id != null) ({
+                            scope.launch {
+                                runCatching { store.api.undoActivity(a.id) }
+                                feed = runCatching { store.api.activity() }.getOrNull() ?: feed
+                                store.refresh()
+                            }
+                        }) else null) { a.session_id?.let(onOpen) }
                     }
                 }
             }
@@ -94,7 +100,7 @@ fun ActivityScreen(store: BenchStore, onBack: () -> Unit, onOpen: (String) -> Un
 }
 
 @Composable
-private fun ActivityRow(a: ActivityItem, zone: ZoneId, onClick: () -> Unit) {
+private fun ActivityRow(a: ActivityItem, zone: ZoneId, onUndo: (() -> Unit)? = null, onClick: () -> Unit) {
     val c = Bench.colors
     val time = runCatching { Instant.parse(a.at).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm")) }.getOrDefault("")
     Row(
@@ -106,6 +112,7 @@ private fun ActivityRow(a: ActivityItem, zone: ZoneId, onClick: () -> Unit) {
             Text(a.title, fontSize = 16.sp, lineHeight = 21.sp)
             a.by?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 13.sp, color = c.muted) }
             a.detail?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 13.sp, color = c.muted) }
+            onUndo?.let { u -> Text("Undo", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = c.accent, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = u).padding(vertical = 4.dp)) }
         }
         a.badge?.let { b ->
             val color = when (b) { "Never" -> c.warn; "Ready" -> c.accent; else -> c.muted }

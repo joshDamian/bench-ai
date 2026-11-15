@@ -3,6 +3,7 @@ package ai.bench.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -42,6 +45,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -136,16 +141,23 @@ fun BigDot(status: String) {
 }
 
 @Composable
-fun ListRow(title: String, sub: String?, dot: String, trailing: String? = null, trailingColor: Color = Bench.colors.muted, id: String? = null, selected: Boolean = false, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun ListRow(title: String, sub: String?, dot: String, trailing: String? = null, trailingColor: Color = Bench.colors.muted, id: String? = null, selected: Boolean = false, checked: Boolean? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(14.dp))
             .background(if (selected) Bench.colors.accent.copy(alpha = 0.12f) else Color.Transparent)
-            .clickable(onClick = onClick).padding(horizontal = 6.dp),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // A mark only for states that need one; idle rows start at the edge, no empty gutter.
-        if (dot in setOf("running", "waiting", "error")) BigDot(dot)
+        // Selecting many: a check in front of every row. Otherwise a mark only for states that
+        // need one; idle rows start at the edge, no empty gutter.
+        if (checked != null) Box(
+            Modifier.size(22.dp).background(if (checked) Bench.colors.accent else Color.Transparent, androidx.compose.foundation.shape.CircleShape)
+                .then(if (checked) Modifier else Modifier.border(1.5.dp, Bench.colors.muted, androidx.compose.foundation.shape.CircleShape)),
+            contentAlignment = Alignment.Center,
+        ) { if (checked) Icon(Icons.Default.Check, null, tint = Bench.colors.onAccent, modifier = Modifier.size(15.dp)) }
+        else if (dot in setOf("running", "waiting", "error")) BigDot(dot)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, fontSize = 15.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedTitle(id))
             sub?.let { Text(it, fontSize = 13.sp, color = Bench.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -696,12 +708,35 @@ fun SessionsScreen(store: BenchStore, onOpen: (String) -> Unit, onBack: () -> Un
     val c = Bench.colors
     var query by rememberSaveable { mutableStateOf("") }
     var archived by rememberSaveable { mutableStateOf(false) }
+    // Long-press starts selecting; then a tap adds or removes a row.
+    var picked by remember { mutableStateOf(setOf<String>()) }
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { if (!askOnly) runCatching { focus.requestFocus() } }
     val needs = s.approvals.map { it.session_id }.toSet()
     val rows = s.sessions.filter { (!askOnly || it.project_id == null) && (archived || it.archived_at == null) && (query.isBlank() || it.title.contains(query, true) || where(it, store, null).contains(query, true)) }
         .sortedByDescending { it.updated_at }
-    Scaffold(containerColor = c.bg, topBar = {
+    androidx.activity.compose.BackHandler(enabled = picked.isNotEmpty()) { picked = emptySet() }
+    fun archiveAll(on: Boolean) {
+        val ids = picked.toList()
+        picked = emptySet()
+        scope.launch {
+            ids.forEach { runCatching { store.api.archive(it, on) } }
+            store.refresh()
+            val r = snackbar.showSnackbar("${if (on) "Archived" else "Restored"} ${ids.size}", "Undo", duration = SnackbarDuration.Short)
+            if (r == SnackbarResult.ActionPerformed) { ids.forEach { runCatching { store.api.archive(it, !on) } }; store.refresh() }
+        }
+    }
+    Scaffold(containerColor = c.bg, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+        if (picked.isNotEmpty()) {
+            val allArchived = picked.all { id -> s.sessions.firstOrNull { it.id == id }?.archived_at != null }
+            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 6.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { picked = emptySet() }, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Close, "Stop selecting") }
+                Text("${picked.size} selected", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onClick = { archiveAll(!allArchived) }) { Text(if (allArchived) "Restore" else "Archive", fontSize = 16.sp, color = c.accent) }
+            }
+        } else
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 6.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
             Row(Modifier.weight(1f).height(48.dp).background(c.surface1, RoundedCornerShape(24.dp)).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -727,7 +762,9 @@ fun SessionsScreen(store: BenchStore, onOpen: (String) -> Unit, onBack: () -> Un
                             r.archived_at != null -> "Archived" to c.muted
                             else -> Format.ago(r.updated_at) to c.muted
                         }
-                        ListRow(r.title, where(r, store, null), if (r.id in needs) "waiting" else r.status, state, color) { onOpen(r.id) }
+                        val toggle = { picked = if (r.id in picked) picked - r.id else picked + r.id }
+                        ListRow(r.title, where(r, store, null), if (r.id in needs) "waiting" else r.status, state, color,
+                            checked = if (picked.isEmpty()) null else r.id in picked, onLongClick = toggle) { if (picked.isEmpty()) onOpen(r.id) else toggle() }
                     }
                 }
             }

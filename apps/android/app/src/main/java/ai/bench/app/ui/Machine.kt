@@ -161,3 +161,87 @@ fun CanReachScreen(store: BenchStore, onBack: () -> Unit, onBrowser: () -> Unit 
         item("server") { Card { r.server.forEach { x -> NavRow(x.name, x.detail, chevron = false) } } }
     }
 }
+
+/**
+ * Housekeeping (the Housekeeping board): what Bench tidies on its own, once a day. It says what
+ * it did in Activity, and what it archives can come back.
+ */
+@Composable
+fun HousekeepingScreen(store: BenchStore, onBack: () -> Unit, onArchive: () -> Unit) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    var h by remember { mutableStateOf<ai.bench.app.data.Housekeeping?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { runCatching { store.api.housekeeping() }.onSuccess { h = it }.onFailure { failed = true } }
+    fun set(key: String, on: Boolean) = scope.launch { runCatching { store.api.setHousekeeping(key, on) }.onSuccess { h = it } }
+    Page("Housekeeping", "Bench does these on its own and says what it did in Activity. What it archives can come back.", onBack) {
+        if (failed) {
+            item("old") { Text("This server can't do housekeeping yet. Update it to the Go server.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 24.dp)) }
+            return@Page
+        }
+        val x = h ?: return@Page
+        item("switches") {
+            Column(Modifier.padding(top = 18.dp)) {
+                Card {
+                    SwitchRow("Archive conversations you have not opened in 30 days", "Pinned ones stay", x.archive_idle) { set("archive_idle", it) }
+                    SwitchRow("Remove branches once merged", "Their work stays in main", x.prune_branches) { set("prune_branches", it) }
+                    SwitchRow("Free disk from old work folders", x.freed?.let { f -> "Last time: ${bytes(f.bytes)} on ${runCatching { java.time.Instant.parse(f.at).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("d MMM")) }.getOrDefault("")}" } ?: "Folders of tasks finished a week ago", x.free_disk) { set("free_disk", it) }
+                    SwitchRow("Keep one board per schedule", "Instead of a new report every run", x.keep_board) { set("keep_board", it) }
+                }
+            }
+        }
+        item("archive") {
+            Column(Modifier.padding(top = 10.dp)) {
+                Card { NavRow("Archive", if (x.archived == 0) "Empty" else "${x.archived} thing${if (x.archived == 1) "" else "s"}", "Bring back anything, or empty it for good") { onArchive() } }
+            }
+        }
+    }
+}
+
+private fun bytes(b: Double): String = when {
+    b >= 1 shl 30 -> "%.1f GB".format(b / (1 shl 30))
+    b >= 1 shl 20 -> "%.0f MB".format(b / (1 shl 20))
+    else -> "%.0f KB".format(b / 1024)
+}
+
+/** The archive: conversations and schedules put away, each with Restore, and Empty for good. */
+@Composable
+fun ArchiveScreen(store: BenchStore, onBack: () -> Unit) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    var list by remember { mutableStateOf<ai.bench.app.data.ArchiveList?>(null) }
+    var emptying by remember { mutableStateOf(false) }
+    suspend fun load() { list = runCatching { store.api.archived() }.getOrNull() }
+    LaunchedEffect(Unit) { load() }
+    fun restore(kind: String, id: String) = scope.launch {
+        runCatching { store.api.restore(kind, id) }
+        load(); store.refresh(); store.loadExtras()
+    }
+    Page("Archive", "What was put away. Restore brings it back where it was.", onBack) {
+        val l = list ?: return@Page
+        if (l.sessions.isEmpty() && l.schedules.isEmpty()) {
+            item("empty") { Text("The archive is empty.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 24.dp)) }
+            return@Page
+        }
+        if (l.schedules.isNotEmpty()) {
+            section("Schedules")
+            item("schedules") { Card { l.schedules.forEach { x -> NavRow(x.title, "Restore", "Comes back off", valueColor = c.accent, chevron = false) { restore("schedule", x.id) } } } }
+        }
+        if (l.sessions.isNotEmpty()) {
+            section("Conversations", l.sessions.size.toString())
+            item("sessions") {
+                Card {
+                    l.sessions.forEach { x ->
+                        val project = store.state.value.projects.firstOrNull { it.id == x.project_id }?.name
+                        NavRow(x.title, "Restore", listOfNotNull(project, x.archived_at?.let { "archived " + ai.bench.app.data.Format.ago(it) + " ago" }).joinToString(" · "), valueColor = c.accent, chevron = false) { restore("session", x.id) }
+                    }
+                }
+            }
+        }
+        item("emptyit") { Column(Modifier.padding(top = 20.dp)) { BigButton("Empty archive…", danger = true, height = 48.dp) { emptying = true } } }
+    }
+    if (emptying) Confirm("Empty the archive?", "Everything in it is removed for good. This can't be undone.", "Empty", onDismiss = { emptying = false }) {
+        emptying = false
+        scope.launch { runCatching { store.api.emptyArchive() }; load() }
+    }
+}

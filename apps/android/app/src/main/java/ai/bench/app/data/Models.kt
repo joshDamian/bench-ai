@@ -197,6 +197,27 @@ data class ActivityItem(
     val id: Long? = null,
 )
 
+/** Housekeeping (GET /api/housekeeping): what Bench tidies on its own. Go server only. */
+@Serializable
+data class Housekeeping(
+    val archive_idle: Boolean = true,
+    val prune_branches: Boolean = true,
+    val free_disk: Boolean = true,
+    val keep_board: Boolean = true,
+    val freed: Freed? = null,
+    val archived: Int = 0,
+) {
+    @Serializable
+    data class Freed(val bytes: Double = 0.0, val at: String = "")
+}
+
+/** The archive (GET /api/archive): what was put away and can come back. */
+@Serializable
+data class ArchiveList(val sessions: List<Item> = emptyList(), val schedules: List<Item> = emptyList()) {
+    @Serializable
+    data class Item(val id: String, val title: String = "", val archived_at: String? = null, val project_id: String? = null)
+}
+
 /** A saved prompt with blanks, run again from New (GET /api/recipes). */
 @Serializable
 data class Recipe(val id: String, val title: String, val prompt: String, val project_id: String? = null, val blanks: List<String> = emptyList())

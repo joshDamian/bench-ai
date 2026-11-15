@@ -86,6 +86,9 @@ import ai.bench.app.data.Block
 import ai.bench.app.data.blocks
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.draw.shadow
 import ai.bench.app.ui.Card
 import ai.bench.app.ui.NavRow
@@ -117,7 +120,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}, onResume: () -> Unit = {}, onKeepWatching: (ai.bench.app.data.SchedulePrefill) -> Unit = {}) {
+fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}, onResume: () -> Unit = {}, onKeepWatching: (ai.bench.app.data.SchedulePrefill) -> Unit = {}, onOpen: (String) -> Unit = {}) {
+    // When you last looked, read before this visit marks it seen: "Since you looked" starts there.
+    val lookedAt = remember(vm.sessionId) { vm.store.state.value.sessions.firstOrNull { it.id == vm.sessionId }?.takeIf { it.unseen }?.seen_at }
+    var recentOpen by remember { mutableStateOf(false) }
     var providers by remember { mutableStateOf<List<ai.bench.app.data.ProviderInfo>>(emptyList()) }
     var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { providers = vm.providers() }
@@ -234,6 +240,11 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bench.colors.bg),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                modifier = Modifier.pointerInput(Unit) {
+                    // Swipe down on the header: the Recent sheet, to jump without going Home.
+                    var pulled = 0f
+                    detectVerticalDragGestures(onDragStart = { pulled = 0f }) { _, dy -> pulled += dy; if (pulled > 60f) { recentOpen = true; pulled = -10_000f } }
+                },
                 title = {
                     val st = session?.status ?: "idle"
                     val waiting = approvals.isNotEmpty() || st == "waiting"
@@ -258,6 +269,21 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
         retry = { t -> scope.launch { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); stick = true; list.scrollToItem(0); vm.send(t) } },
     )) { WithFiles(files) {
         Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
+            var since by remember(vm.sessionId) { mutableStateOf<String?>(null) }
+            LaunchedEffect(loading, lookedAt) { if (!loading && lookedAt != null && since == null) since = vm.sinceYouLooked(lookedAt) }
+            since?.let { line ->
+                Row(
+                    Modifier.padding(horizontal = Space.lg, vertical = Space.xs).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Bench.colors.surface1).clickable { since = null }.padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Text(
+                        androidx.compose.ui.text.buildAnnotatedString {
+                            withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.SemiBold, color = Bench.colors.text)) { append("Since you looked: ") }
+                            append(line)
+                        },
+                        fontSize = 14.sp, lineHeight = 20.sp, color = Bench.colors.muted,
+                    )
+                }
+            }
             Box(Modifier.weight(1f)) {
                 LazyColumn(
                     state = list,
@@ -401,6 +427,8 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     if (savingRecipe) session?.let { ses ->
         ai.bench.app.ui.SaveRecipeSheet(vm.store, ses.title, firstPrompt(rows), ses.project_id, onDismiss = { savingRecipe = false }) { savingRecipe = false }
     }
+
+    if (recentOpen) RecentSheet(vm.store, vm.sessionId, onDismiss = { recentOpen = false }) { recentOpen = false; onOpen(it) }
 
     if (picking) session?.let { ses ->
         ModelSheet(ses, providers, onDismiss = { picking = false }) { vm.configure(it) }
@@ -609,4 +637,43 @@ private fun SessionSheet(
     }
     if (mode) PickDialog("Permission mode", Mode.entries.map { it.wire to it.label }, s.permission_mode, onDismiss = { mode = false }) { vm.setMode(it) }
     if (deleting) Confirm("Delete this session?", "Its conversation is removed from Bench. This can't be undone.", "Delete", onDismiss = { deleting = false }) { vm.delete { onDismiss(); onDeleted() } }
+}
+
+/** Recent: the things you looked at, newest first, to jump between without going Home. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecentSheet(store: ai.bench.app.data.BenchStore, current: String, onDismiss: () -> Unit, onOpen: (String) -> Unit) {
+    val c = Bench.colors
+    val recent by store.recent.collectAsState()
+    val st by store.state.collectAsState()
+    val reports by store.reports.collectAsState()
+    val list = recent.filter { it != current }.mapNotNull { id -> st.sessions.firstOrNull { it.id == id } }.take(8)
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 16.dp)) {
+            Text("Recent", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text("Swipe down on any header to open this", fontSize = 13.5.sp, color = c.muted, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
+            if (list.isEmpty()) Text("Nothing else yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(vertical = 12.dp))
+            list.forEachIndexed { i, s ->
+                val waiting = st.approvals.any { it.session_id == s.id } || s.status == "waiting"
+                val made = reports.firstOrNull { it.session_id == s.id }
+                val (line, tone) = when {
+                    waiting -> "Waiting for you" to c.warn
+                    s.status == "running" -> "Working" to c.muted
+                    s.status == "error" -> "Stopped with an error" to c.bad
+                    made != null && !made.seen -> "Ready · ${made.kind}" to c.accent
+                    made != null -> made.kind.replaceFirstChar { it.uppercase() } to c.muted
+                    else -> statusLabel(s.status) to c.muted
+                }
+                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.surface3))
+                Row(Modifier.fillMaxWidth().clickable { onOpen(s.id) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(s.title, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(line, fontSize = 13.sp, color = tone, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(ai.bench.app.data.Format.ago(s.updated_at), fontSize = 13.5.sp, color = c.muted)
+                }
+            }
+        }
+    }
 }

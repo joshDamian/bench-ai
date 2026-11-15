@@ -35,6 +35,7 @@ func (s *Store) schedule(r *Obj) *Obj {
 	r.Set("enabled", truthy(r.Get("enabled")))
 	r.Set("keep_board", truthy(r.Get("keep_board")))
 	r.Delete("watch_hash")
+	r.Delete("archived_at")
 	if w := r.Str("watch"); w != "" {
 		r.Set("watch", ParseJSON(w))
 	} else {
@@ -52,7 +53,7 @@ func watchColumn(v any) any {
 }
 
 func (s *Store) ListSchedules() []*Obj {
-	rows := s.all("SELECT * FROM schedules ORDER BY created_at")
+	rows := s.all("SELECT * FROM schedules WHERE archived_at IS NULL ORDER BY created_at")
 	for _, r := range rows {
 		s.schedule(r)
 	}
@@ -60,7 +61,18 @@ func (s *Store) ListSchedules() []*Obj {
 }
 
 func (s *Store) GetSchedule(id string) *Obj {
-	return s.schedule(s.one("SELECT * FROM schedules WHERE id=?", id))
+	return s.schedule(s.one("SELECT * FROM schedules WHERE id=? AND archived_at IS NULL", id))
+}
+
+// ArchivedSchedules are the deleted schedules the archive can bring back.
+func (s *Store) ArchivedSchedules() []*Obj {
+	rows := s.all("SELECT id,title,archived_at FROM schedules WHERE archived_at IS NOT NULL ORDER BY archived_at DESC")
+	return nonNil(rows)
+}
+
+// RestoreSchedule brings a deleted schedule back, off, so it does not run until turned on.
+func (s *Store) RestoreSchedule(id string) bool {
+	return changes(s.exec("UPDATE schedules SET archived_at=NULL WHERE id=? AND archived_at IS NOT NULL", id)) > 0
 }
 
 func (s *Store) AddSchedule(o *Obj) *Obj {
@@ -91,7 +103,13 @@ func (s *Store) UpdateSchedule(id string, patch *Obj) *Obj {
 	return s.GetSchedule(id)
 }
 
+// DeleteSchedule puts a schedule in the archive: off, and out of every list.
 func (s *Store) DeleteSchedule(id string) bool {
+	return changes(s.exec("UPDATE schedules SET archived_at=?, enabled=0 WHERE id=? AND archived_at IS NULL", isoNow(), id)) > 0
+}
+
+// PurgeSchedule removes a schedule for good.
+func (s *Store) PurgeSchedule(id string) bool {
 	return changes(s.exec("DELETE FROM schedules WHERE id=?", id)) > 0
 }
 
@@ -211,6 +229,7 @@ func NewScheduler(svc *Service) *Scheduler {
 
 func (sc *Scheduler) Tick(at time.Time) {
 	sc.svc.MorningBrief(at)
+	sc.svc.Housekeep(at, false)
 	for _, sch := range sc.svc.Store.ListSchedules() {
 		if CheckDue(sch, at) {
 			go sc.Look(sch, at)
@@ -389,11 +408,18 @@ func (s *Service) UpdateSchedule(id string, o *Obj) (*Obj, error) {
 	return scheduleView(s.Store.UpdateSchedule(id, row)), nil
 }
 
-func (s *Service) DeleteSchedule(id string) (*Obj, error) {
+// DeleteSchedule puts a schedule in the archive; with runs, the sessions it started go there too.
+func (s *Service) DeleteSchedule(id string, runs bool) (*Obj, error) {
 	if !s.Store.DeleteSchedule(id) {
 		return nil, fail("No such schedule", 404)
 	}
-	os.Remove(watchFile(s.Store.Dir, id))
+	if runs {
+		for _, r := range s.Store.SessionsOfSchedule(id) {
+			if r.Str("archived_at") == "" {
+				s.ArchiveSession(r.Str("id"), true)
+			}
+		}
+	}
 	return O("ok", true), nil
 }
 

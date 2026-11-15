@@ -109,6 +109,8 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
     var time by remember { mutableStateOf(existing?.time ?: "08:00") }
     var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
     var keepBoard by remember { mutableStateOf(existing?.keep_board ?: (prefill != null)) }
+    // A new schedule starts as Housekeeping says: one board per schedule, or a report per run.
+    LaunchedEffect(Unit) { if (existing == null && prefill == null) runCatching { store.api.housekeeping() }.onSuccess { keepBoard = it.keep_board } }
     var watching by remember { mutableStateOf(existing?.watch != null) }
     var url by remember { mutableStateOf(existing?.watch?.url.orEmpty()) }
     var everyHours by remember { mutableStateOf(existing?.watch?.every_hours ?: 6) }
@@ -232,13 +234,28 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
             )
         }
     }
-    if (confirmDelete && existing != null) AlertDialog(
-        onDismissRequest = { confirmDelete = false }, containerColor = c.surface2,
-        title = { Text("Delete “${existing.title}”?") },
-        text = { Text("It stops running. Sessions it already started stay.", color = c.muted) },
-        confirmButton = { TextButton(onClick = { scope.launch { runCatching { store.api.deleteSchedule(existing.id) }; store.loadExtras(); onBack() } }) { Text("Delete", color = c.bad) } },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel", color = c.muted) } },
-    )
+    if (confirmDelete && existing != null) {
+        // A parent asks about its children: the runs it started can go with it.
+        var runs by remember { mutableStateOf<Int?>(null) }
+        var withRuns by remember { mutableStateOf(false) }
+        LaunchedEffect(existing.id) { runs = runCatching { store.api.schedule(existing.id).runs.count { !it.archived } }.getOrNull() }
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false }, containerColor = c.surface2,
+            title = { Text("Delete “${existing.title}”?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("It stops running. You can bring it back from the archive.", color = c.muted)
+                    val n = runs ?: 0
+                    if (n > 0) Row(Modifier.clip(RoundedCornerShape(10.dp)).clickable { withRuns = !withRuns }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        androidx.compose.material3.Checkbox(withRuns, { withRuns = it }, colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = c.accent, checkmarkColor = c.onAccent))
+                        Text("Also archive its $n run${if (n == 1) "" else "s"}", color = c.text)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { scope.launch { runCatching { store.api.deleteSchedule(existing.id, withRuns) }; store.loadExtras(); store.refresh(); onBack() } }) { Text("Delete", color = c.bad) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel", color = c.muted) } },
+        )
+    }
 }
 
 /** "hour", "6 hours", "day". */

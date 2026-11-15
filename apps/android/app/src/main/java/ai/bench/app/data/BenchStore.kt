@@ -78,8 +78,13 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
         }
     }
 
+    /** Sessions the person looked at, newest first: the Recent sheet. Kept for this run of the app. */
+    private val _recent = MutableStateFlow<List<String>>(emptyList())
+    val recent: StateFlow<List<String>> = _recent.asStateFlow()
+
     /** The person looked at a session: Home stops listing it as new. Applied here at once. */
     fun markSeen(id: String) {
+        _recent.update { (listOf(id) + it.filter { x -> x != id }).take(20) }
         val at = java.time.Instant.now().toString()
         _state.update { st -> st.copy(sessions = st.sessions.map { if (it.id == id) it.copy(seen_at = maxOf(at, it.updated_at)) else it }) }
         _reports.update { list -> list.map { if (it.session_id == id) it.copy(seen = true) else it } }

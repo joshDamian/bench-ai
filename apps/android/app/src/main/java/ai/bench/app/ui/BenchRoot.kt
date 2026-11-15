@@ -145,6 +145,8 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("rules") { RulesScreen(store, onBack = { nav.popBackStack() }) }
             composable("reach") { CanReachScreen(store, onBack = { nav.popBackStack() }, onBrowser = { nav.navigate("browser") }) }
             composable("browser") { BrowserScreen(store, onBack = { nav.popBackStack() }) }
+            composable("housekeeping") { HousekeepingScreen(store, onBack = { nav.popBackStack() }, onArchive = { nav.navigate("archive") }) }
+            composable("archive") { ArchiveScreen(store, onBack = { nav.popBackStack() }) }
             composable("activity") { ActivityScreen(store, onBack = { nav.popBackStack() }, onOpen = open) }
             composable("spending") { SpendingScreen(store, onBack = { nav.popBackStack() }) }
             composable("schedules") { SchedulesScreen(store, onBack = { nav.popBackStack() }, onEdit = { nav.navigate("schedule/${it ?: "new"}") }) }
@@ -169,7 +171,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
                 val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })
                 androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
                 SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") }, onResume = { nav.navigate("shell/claude/$id") },
-                    onKeepWatching = { store.schedulePrefill = it; nav.navigate("schedule/new") })
+                    onKeepWatching = { store.schedulePrefill = it; nav.navigate("schedule/new") }, onOpen = { nav.popBackStack(); open(it) })
                 }
             }
             composable("terminal/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->

@@ -200,6 +200,9 @@ func NewStore(root string) (*Store, error) {
 	for _, c := range []string{"watch", "watch_hash", "checked_at"} {
 		s.addColumn("schedules", c, "TEXT")
 	}
+	// archived_at: a deleted schedule, kept for the archive (Go only; it is also turned off,
+	// so a Node server reading the same database shows it as Off and never runs it).
+	s.addColumn("schedules", "archived_at", "TEXT")
 	s.addColumn("projects", "routing", "TEXT")
 	s.addColumn("tasks", "routing", "TEXT")
 	if err := s.projectlessSessions(); err != nil {
