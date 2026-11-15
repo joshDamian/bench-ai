@@ -60,6 +60,7 @@ import kotlinx.coroutines.launch
  * researched now, what is new to read, what schedules keep up to date, and the rest by date.
  * Before this, a report was on Home once and then only under Projects, Research, its session.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ResearchScreen(
     store: BenchStore,
