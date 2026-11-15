@@ -128,6 +128,14 @@ func NewService(root string) (*Service, error) {
 			s.Emit("git", td.Session.Str("project_id"))
 		}
 	})
+	// A watch's run that found nothing that matters is put away, read, without a word.
+	s.Runtime.On("turn-done", func(x any) {
+		td := x.(TurnDone)
+		if s.QuietRun(td.Session, td.Reply) {
+			s.ArchiveSession(td.Session.Str("id"), true)
+			s.Store.MarkSeen(td.Session.Str("id"))
+		}
+	})
 	s.Runtime.On("task", func(t any) { s.Emit("task", t) })
 	seen := map[string]bool{}
 	for _, a := range store.ListArtifacts(ArtifactQuery{}) {

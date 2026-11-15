@@ -17,6 +17,7 @@ import { listReports, markDraft } from './reports.mjs';
 import { Spending, startOfDay } from './spending.mjs';
 import { snapshotBoard, BOARD_NOTE, findBoard, boardTitle, newCount, boardHistory } from './boards.mjs';
 import { routingPatch, DEFAULT_ROUTING } from './routing.mjs';
+import { watchFields, watchPrompt, isNothingNew, watchFile } from './watch.mjs';
 import { holders, removable, sizeOf } from './artifacts.mjs';
 import * as g from './git.mjs';
 
@@ -90,6 +91,13 @@ export class Service extends EventEmitter {
     this.scheduler = new Scheduler(this);
     this.scheduler.start();
     this.runtime.on('turn-done', ({ session }) => session?.project_id && this.emit('git', session.project_id));
+    // A watch's run that found nothing that matters is put away, read, without a word.
+    this.runtime.on('turn-done', ({ session, reply }) => {
+      if (session && this.quietRun(session, reply)) {
+        this.archiveSession(session.id);
+        this.store.markSeen(session.id);
+      }
+    });
     this.runtime.on('task', (t) => this.emit('task', t));
     this.#importLegacy();
     // What archived sessions left in /tmp that was still open when they were archived, or
@@ -1083,12 +1091,19 @@ export class Service extends EventEmitter {
       row.prompt = String(o.prompt).trim();
     }
     if (need('projectId')) row.project_id = this.project(o.projectId).id;
-    if (need('days')) {
+    if (o.watch !== undefined) row.watch = watchFields(o.watch, (m) => fail(m));
+    // A watch runs when its page changes, so it needs no days or time.
+    const watching = !!row.watch;
+    if (row.watch && !partial) {
+      if (o.days === undefined) row.days = '';
+      if (o.time === undefined) row.time = '00:00';
+    }
+    if (need('days') && !(watching && o.days === undefined)) {
       const days = (Array.isArray(o.days) ? o.days : String(o.days || '').split(',')).filter((/** @type {any} */ x) => String(x).trim() !== '').map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
       if (!days.length) throw fail('Pick at least one day');
       row.days = [...new Set(days)].sort().join(',');
     }
-    if (need('time')) {
+    if (need('time') && !(watching && o.time === undefined)) {
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(o.time || ''))) throw fail('Time is HH:MM, 24-hour');
       row.time = o.time;
     }
@@ -1114,18 +1129,32 @@ export class Service extends EventEmitter {
 
   /** @param {string} id @param {Record<string, any>} o */
   updateSchedule(id, o) {
-    if (!this.store.getSchedule(id)) throw fail('No such schedule', 404);
-    return scheduleView(this.store.updateSchedule(id, this.#scheduleFields(o, true)));
+    const was = this.store.getSchedule(id);
+    if (!was) throw fail('No such schedule', 404);
+    const row = this.#scheduleFields(o, true);
+    // A different page starts again from its first look.
+    if (row.watch !== undefined && row.watch?.url !== was.watch?.url) {
+      Object.assign(row, { watch_hash: null, checked_at: null });
+      fs.rmSync(watchFile(this.store.dir, id), { force: true });
+    }
+    return scheduleView(this.store.updateSchedule(id, row));
+  }
+
+  /** Whether a turn was a watch's run that found nothing that matters. @param {Session} s @param {string|null|undefined} reply */
+  quietRun(s, reply) {
+    return !!s.schedule_id && !!this.store.getSchedule(s.schedule_id)?.watch && isNothingNew(reply);
   }
 
   /** @param {string} id */
   deleteSchedule(id) {
     if (!this.store.deleteSchedule(id)) throw fail('No such schedule', 404);
+    fs.rmSync(watchFile(this.store.dir, id), { force: true });
     return { ok: true };
   }
 
-  /** Starts a schedule's session now, as its time would. @param {string} id */
-  runSchedule(id) {
+  /** Starts a schedule's session now, as its time would; for a watch, with what changed on its page.
+   * @param {string} id @param {{added?: string}} [o] */
+  runSchedule(id, o = {}) {
     const sch = this.store.getSchedule(id);
     if (!sch) throw fail('No such schedule', 404);
     const s = this.createSession({ projectId: sch.project_id, title: sch.title, mode: sch.mode || undefined, providerId: sch.provider_id || undefined, modelId: sch.model_id || undefined, effort: sch.effort || undefined });
@@ -1134,7 +1163,9 @@ export class Service extends EventEmitter {
     // A schedule that keeps one board: the version before this run is kept, and the run is told where the board is.
     const project = this.store.getProject(sch.project_id);
     if (sch.keep_board && project) snapshotBoard(project.path, sch.title);
-    this.send(s.id, sch.keep_board && project ? `${sch.prompt}\n\n${BOARD_NOTE(project.path, sch.title)}` : sch.prompt);
+    let prompt = sch.watch ? watchPrompt(sch.prompt, sch.watch.url, o.added ?? '') : sch.prompt;
+    if (sch.keep_board && project) prompt += `\n\n${BOARD_NOTE(project.path, sch.title)}`;
+    this.send(s.id, prompt);
     return this.session(s.id);
   }
 
@@ -1147,7 +1178,7 @@ export class Service extends EventEmitter {
     const file = project ? findBoard(project.path, sch.title) : null;
     return {
       schedule: scheduleView(sch),
-      runs: runs.map((r) => ({ id: r.id, title: r.title, status: r.status, cost: r.cost, capped: !!r.capped, created_at: r.created_at })),
+      runs: runs.map((r) => ({ id: r.id, title: r.title, status: r.status, cost: r.cost, capped: !!r.capped, created_at: r.created_at, archived: !!r.archived_at })),
       board: file && project ? { session_id: runs[0]?.id ?? null, path: file, name: path.basename(file), title: boardTitle(file, sch.title), new: newCount(file), history: boardHistory(project.path, sch.title) } : null,
     };
   }

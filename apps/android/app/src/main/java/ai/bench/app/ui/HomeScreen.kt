@@ -248,7 +248,8 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     val readyCards = (if (reads.isNotEmpty()) 1 else 0) + (if (drafts.isNotEmpty()) 1 else 0)
     val readyCount = readyCards + finished.size
     val needCount = s.approvals.size + failed.size + capped.size
-    val next = schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at }
+    // Timed runs by when they start, then the pages being watched.
+    val next = schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at } + schedules.filter { it.enabled && it.watch != null }
     val shown = (working + failed + finished + capped).map { it.id }.toSet() + waitingOn + carded
     val pinned = live.filter { it.pinned && it.id !in shown }
     val quiet = live.count { it.id !in shown && !it.pinned }
@@ -414,7 +415,10 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                 if (next.isNotEmpty()) {
                     item("next-l") { Label("Coming up") }
                     items(next.take(if (needCount + readyCount + working.size == 0) 2 else 1), key = { "n-${it.id}" }) { n ->
-                        UpcomingRow(n.title, scheduleDays(n.days) + if (spending?.paused == true) " · waits while paused" else "", whenNext(n.next_run_at)) { onSchedule(n.id) }
+                        val waits = if (spending?.paused == true) " · waits while paused" else ""
+                        val w = n.watch
+                        if (w != null) UpcomingRow(n.title, ai.bench.app.data.pageName(w.url) + waits, checkedLabel(n)) { onSchedule(n.id) }
+                        else UpcomingRow(n.title, scheduleDays(n.days) + waits, whenNext(n.next_run_at)) { onSchedule(n.id) }
                     }
                 }
 
@@ -609,7 +613,7 @@ private fun UpcomingRow(title: String, days: String, at: String, onClick: () -> 
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(days, fontSize = 13.5.sp, color = c.muted)
+            Text(days, fontSize = 13.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(at, fontSize = 14.sp, color = c.muted)
     }

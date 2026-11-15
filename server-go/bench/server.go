@@ -443,7 +443,7 @@ func (s *Server) wire() {
 	rt.On("turn-done", func(x any) {
 		td := x.(TurnDone)
 		ss := td.Session
-		if ss == nil {
+		if ss == nil || s.Svc.QuietRun(ss, td.Reply) {
 			return
 		}
 		if td.Limited {

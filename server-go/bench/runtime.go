@@ -1156,7 +1156,11 @@ func (r *Runtime) onResult(l *live, id string, m *Obj, priced *Obj) {
 		r.Emit("limit", LimitEvent{SessionID: id, Message: limit.Message, Until: until})
 	}
 	if turns == 0 {
-		r.Emit("turn-done", TurnDone{Session: r.Store.GetSession(id), OK: !truthy(m.Get("is_error")), Limited: limit != nil})
+		reply := ""
+		if m.Str("subtype") == "success" {
+			reply = m.Str("result")
+		}
+		r.Emit("turn-done", TurnDone{Session: r.Store.GetSession(id), OK: !truthy(m.Get("is_error")), Limited: limit != nil, Reply: reply})
 	}
 }
 
@@ -1170,6 +1174,8 @@ type TurnDone struct {
 	Session *Obj
 	OK      bool
 	Limited bool
+	// Reply is the turn's last text, when it ended well.
+	Reply string
 }
 
 // ask is the CLI's question about one tool call, held until a person answers.

@@ -129,7 +129,7 @@ func (s *Service) ScheduleDetail(id string) (*Obj, error) {
 	runs := s.Store.SessionsOfSchedule(id)
 	list := []any{}
 	for _, r := range runs {
-		list = append(list, O("id", r.Get("id"), "title", r.Get("title"), "status", r.Get("status"), "cost", r.Get("cost"), "capped", truthy(r.Get("capped")), "created_at", r.Get("created_at")))
+		list = append(list, O("id", r.Get("id"), "title", r.Get("title"), "status", r.Get("status"), "cost", r.Get("cost"), "capped", truthy(r.Get("capped")), "created_at", r.Get("created_at"), "archived", r.Get("archived_at") != nil))
 	}
 	var board any
 	if p := s.Store.GetProject(sch.Str("project_id")); p != nil {

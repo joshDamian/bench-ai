@@ -34,7 +34,21 @@ func (s *Store) schedule(r *Obj) *Obj {
 	}
 	r.Set("enabled", truthy(r.Get("enabled")))
 	r.Set("keep_board", truthy(r.Get("keep_board")))
+	r.Delete("watch_hash")
+	if w := r.Str("watch"); w != "" {
+		r.Set("watch", ParseJSON(w))
+	} else {
+		r.Set("watch", nil)
+	}
 	return r
+}
+
+// watchColumn is a watch as its column holds it: JSON, or NULL.
+func watchColumn(v any) any {
+	if w, ok := v.(*Obj); ok && w != nil {
+		return string(ToJSON(w))
+	}
+	return nil
 }
 
 func (s *Store) ListSchedules() []*Obj {
@@ -59,8 +73,8 @@ func (s *Store) AddSchedule(o *Obj) *Obj {
 	if truthy(o.Get("keep_board")) {
 		keep = 1
 	}
-	s.exec("INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at,keep_board) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		id, o.Str("title"), o.Str("project_id"), o.Str("prompt"), o.Str("days"), o.Str("time"), o.Str("tz"), o.Get("mode"), o.Get("model_id"), o.Get("provider_id"), o.Get("effort"), enabled, isoNow(), keep)
+	s.exec("INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at,keep_board,watch) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		id, o.Str("title"), o.Str("project_id"), o.Str("prompt"), o.Str("days"), o.Str("time"), o.Str("tz"), o.Get("mode"), o.Get("model_id"), o.Get("provider_id"), o.Get("effort"), enabled, isoNow(), keep, watchColumn(o.Get("watch")))
 	return s.GetSchedule(id)
 }
 
@@ -69,6 +83,9 @@ func (s *Store) UpdateSchedule(id string, patch *Obj) *Obj {
 		if v, ok := patch.Get(k).(bool); ok {
 			patch = patch.Clone().Set(k, sqlVal(v))
 		}
+	}
+	if patch.Has("watch") {
+		patch = patch.Clone().Set("watch", watchColumn(patch.Get("watch")))
 	}
 	s.patch("schedules", id, patch)
 	return s.GetSchedule(id)
@@ -113,7 +130,7 @@ func hasDay(days []int, d int) bool {
 
 // NextRun is when a schedule next starts a session, or nil when it is off or has no days.
 func NextRun(sch *Obj, from time.Time) *time.Time {
-	if !truthy(sch.Get("enabled")) {
+	if !truthy(sch.Get("enabled")) || sch.ObjAt("watch") != nil {
 		return nil
 	}
 	days := scheduleDays(sch)
@@ -144,7 +161,7 @@ func NextRun(sch *Obj, from time.Time) *time.Time {
 // Due is whether a schedule should start a session now: on one of its days, at or after its
 // time, and not yet that day.
 func Due(sch *Obj, at time.Time) bool {
-	if !truthy(sch.Get("enabled")) {
+	if !truthy(sch.Get("enabled")) || sch.ObjAt("watch") != nil {
 		return false
 	}
 	loc := zone(sch.Str("tz"))
@@ -170,10 +187,13 @@ type Scheduler struct {
 	svc  *Service
 	stop chan struct{}
 	once sync.Once
+	// Watches whose page is being fetched now, so one look is not started twice.
+	mu      sync.Mutex
+	looking map[string]bool
 }
 
 func NewScheduler(svc *Service) *Scheduler {
-	sc := &Scheduler{svc: svc, stop: make(chan struct{})}
+	sc := &Scheduler{svc: svc, stop: make(chan struct{}), looking: map[string]bool{}}
 	go func() {
 		t := time.NewTicker(30 * time.Second)
 		defer t.Stop()
@@ -191,6 +211,9 @@ func NewScheduler(svc *Service) *Scheduler {
 
 func (sc *Scheduler) Tick(at time.Time) {
 	for _, sch := range sc.svc.Store.ListSchedules() {
+		if CheckDue(sch, at) {
+			go sc.Look(sch, at)
+		}
 		if !Due(sch, at) {
 			continue
 		}
@@ -255,7 +278,25 @@ func (s *Service) scheduleFields(o *Obj, partial bool) (*Obj, error) {
 		}
 		row.Set("project_id", p.Str("id"))
 	}
-	if need("days") {
+	if o.Has("watch") && !isUndef(o.Get("watch")) {
+		w, err := watchFields(o.Get("watch"))
+		if err != nil {
+			return nil, err
+		}
+		row.Set("watch", w)
+	}
+	// A watch runs when its page changes, so it needs no days or time.
+	watching := row.ObjAt("watch") != nil
+	absent := func(k string) bool { return !o.Has(k) || isUndef(o.Get(k)) }
+	if watching && !partial {
+		if absent("days") {
+			row.Set("days", "")
+		}
+		if absent("time") {
+			row.Set("time", "00:00")
+		}
+	}
+	if need("days") && !(watching && absent("days")) {
 		var raw []string
 		if a, ok := o.Get("days").([]any); ok {
 			for _, x := range a {
@@ -281,7 +322,7 @@ func (s *Service) scheduleFields(o *Obj, partial bool) (*Obj, error) {
 		sort.Strings(days)
 		row.Set("days", strings.Join(days, ","))
 	}
-	if need("time") {
+	if need("time") && !(watching && absent("time")) {
 		if !hhmm.MatchString(str(o.Get("time"))) {
 			return nil, fail("Time is HH:MM, 24-hour")
 		}
@@ -331,12 +372,18 @@ func (s *Service) AddSchedule(o *Obj) (*Obj, error) {
 }
 
 func (s *Service) UpdateSchedule(id string, o *Obj) (*Obj, error) {
-	if s.Store.GetSchedule(id) == nil {
+	was := s.Store.GetSchedule(id)
+	if was == nil {
 		return nil, fail("No such schedule", 404)
 	}
 	row, err := s.scheduleFields(o, true)
 	if err != nil {
 		return nil, err
+	}
+	// A different page starts again from its first look.
+	if row.Has("watch") && row.ObjAt("watch").Str("url") != was.ObjAt("watch").Str("url") {
+		row.Set("watch_hash", nil).Set("checked_at", nil)
+		os.Remove(watchFile(s.Store.Dir, id))
 	}
 	return scheduleView(s.Store.UpdateSchedule(id, row)), nil
 }
@@ -345,10 +392,13 @@ func (s *Service) DeleteSchedule(id string) (*Obj, error) {
 	if !s.Store.DeleteSchedule(id) {
 		return nil, fail("No such schedule", 404)
 	}
+	os.Remove(watchFile(s.Store.Dir, id))
 	return O("ok", true), nil
 }
 
-func (s *Service) RunSchedule(id string) (*Obj, error) {
+// RunSchedule starts a schedule's session now, as its time would; for a watch, with what
+// changed on its page.
+func (s *Service) RunSchedule(id string, added ...string) (*Obj, error) {
 	sch := s.Store.GetSchedule(id)
 	if sch == nil {
 		return nil, fail("No such schedule", 404)
@@ -367,6 +417,13 @@ func (s *Service) RunSchedule(id string) (*Obj, error) {
 	s.Store.UpdateSchedule(id, O("last_run_at", isoNow()))
 	// A schedule that keeps one board: the version before this run is kept, and the run is told where the board is.
 	prompt := sch.Str("prompt")
+	if w := sch.ObjAt("watch"); w != nil {
+		a := ""
+		if len(added) > 0 {
+			a = added[0]
+		}
+		prompt = WatchPrompt(prompt, w.Str("url"), a)
+	}
 	if p := s.Store.GetProject(sch.Str("project_id")); p != nil && truthy(sch.Get("keep_board")) {
 		SnapshotBoard(p.Str("path"), sch.Str("title"))
 		prompt += "\n\n" + BoardNote(p.Str("path"), sch.Str("title"))

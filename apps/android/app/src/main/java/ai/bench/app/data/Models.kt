@@ -171,13 +171,23 @@ data class Schedule(
     val next_run_at: String? = null,
     /** Keeps one board up to date instead of a report per run. */
     val keep_board: Boolean = false,
+    /** Runs when this page changes instead of at a time. */
+    val watch: Watch? = null,
+    /** When the watched page was last looked at. */
+    val checked_at: String? = null,
 )
+
+@Serializable
+data class Watch(val url: String, val every_hours: Int = 6)
+
+/** "linkedin.com/jobs" from "https://www.linkedin.com/jobs/": a page's address as the rows show it. */
+fun pageName(url: String): String = url.removePrefix("https://").removePrefix("http://").removePrefix("www.").trimEnd('/')
 
 /** A schedule's own page (GET /api/schedules/:id): its runs and the board it keeps. */
 @Serializable
 data class ScheduleDetail(val schedule: Schedule, val runs: List<Run> = emptyList(), val board: Board? = null) {
     @Serializable
-    data class Run(val id: String, val title: String = "", val status: String = "idle", val cost: Double = 0.0, val capped: Boolean = false, val created_at: String = "")
+    data class Run(val id: String, val title: String = "", val status: String = "idle", val cost: Double = 0.0, val capped: Boolean = false, val created_at: String = "", val archived: Boolean = false)
     @Serializable
     data class Board(val session_id: String? = null, val path: String, val name: String, val title: String = "", val new: Int = 0, val history: List<String> = emptyList())
 }

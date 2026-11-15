@@ -117,7 +117,7 @@ func (b *Browser) Ensure() bool {
 	}
 	os.MkdirAll(b.Profile, 0o755)
 	b.mu.Lock()
-	args := []string{"--headless=new", "--remote-debugging-port="+strconv.Itoa(b.Port), "--remote-debugging-address=127.0.0.1", "--user-data-dir="+b.Profile, "--no-first-run", "--no-default-browser-check", "--window-size=1280,900", "about:blank"}
+	args := []string{"--headless=new", "--remote-debugging-port=" + strconv.Itoa(b.Port), "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + b.Profile, "--no-first-run", "--no-default-browser-check", "--window-size=1280,900", "about:blank"}
 	// Chromium will not start its sandbox as root, which a server often is.
 	if os.Getuid() == 0 {
 		args = append([]string{"--no-sandbox"}, args...)

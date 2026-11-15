@@ -844,7 +844,7 @@ export class Runtime extends EventEmitter {
       if (limit) this.emit('limit', { session_id: id, message: limit.message, until: live.limitAt || limit.resetsAt });
       live.limit = null;
       live.limitAt = null;
-      if (live.turns === 0) this.emit('turn-done', { session: this.store.getSession(id), ok: !m.is_error, limited: !!limit });
+      if (live.turns === 0) this.emit('turn-done', { session: this.store.getSession(id), ok: !m.is_error, limited: !!limit, reply: m.subtype === 'success' ? m.result ?? null : null });
       return;
     }
     if (m.type === 'prompt_suggestion') this.emit('suggestion', { session_id: id, text: m.suggestion || m.text || '' });

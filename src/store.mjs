@@ -146,6 +146,11 @@ export class Store {
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'capped')) this.db.exec('ALTER TABLE sessions ADD COLUMN capped INTEGER');
     // keep_board: the schedule keeps one board up to date instead of a report per run.
     if (!this.db.prepare('PRAGMA table_info(schedules)').all().some((c) => c.name === 'keep_board')) this.db.exec('ALTER TABLE schedules ADD COLUMN keep_board INTEGER');
+    // watch: a page the schedule runs on when it changes, as JSON {url, every_hours}, instead of
+    // days and a time; watch_hash: the page's text when last seen; checked_at: when that was.
+    for (const col of ['watch', 'watch_hash', 'checked_at']) {
+      if (!this.db.prepare('PRAGMA table_info(schedules)').all().some((c) => c.name === col)) this.db.exec(`ALTER TABLE schedules ADD COLUMN ${col} TEXT`);
+    }
     // routing: a project's or a task's own subagent models, as JSON, over the person's default.
     if (!this.db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE projects ADD COLUMN routing TEXT');
     if (!this.db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE tasks ADD COLUMN routing TEXT');
@@ -479,7 +484,8 @@ export class Store {
   /** @param {any} r */
   #schedule(r) {
     if (!r) return r;
-    return { ...r, enabled: !!r.enabled, keep_board: !!r.keep_board };
+    const { watch_hash, ...rest } = r;
+    return { ...rest, enabled: !!r.enabled, keep_board: !!r.keep_board, watch: r.watch ? JSON.parse(r.watch) : null };
   }
 
   /** @returns {any[]} */
@@ -495,8 +501,8 @@ export class Store {
   /** @param {Record<string, any>} o */
   addSchedule(o) {
     const id = crypto.randomUUID();
-    this.db.prepare('INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at,keep_board) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-      .run(id, o.title, o.project_id, o.prompt, o.days, o.time, o.tz, o.mode ?? null, o.model_id ?? null, o.provider_id ?? null, o.effort ?? null, o.enabled === false ? 0 : 1, now(), o.keep_board ? 1 : 0);
+    this.db.prepare('INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at,keep_board,watch) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, o.title, o.project_id, o.prompt, o.days, o.time, o.tz, o.mode ?? null, o.model_id ?? null, o.provider_id ?? null, o.effort ?? null, o.enabled === false ? 0 : 1, now(), o.keep_board ? 1 : 0, o.watch ? JSON.stringify(o.watch) : null);
     return this.getSchedule(id);
   }
 
@@ -505,8 +511,14 @@ export class Store {
     const row = { ...patch };
     if (row.enabled !== undefined) row.enabled = row.enabled ? 1 : 0;
     if (row.keep_board !== undefined) row.keep_board = row.keep_board ? 1 : 0;
+    if (row.watch !== undefined) row.watch = row.watch ? JSON.stringify(row.watch) : null;
     this.#patch('schedules', id, row);
     return this.getSchedule(id);
+  }
+
+  /** The page text a watch last saw, by its hash. @param {string} id @returns {string|null} */
+  watchHash(id) {
+    return this.#one('SELECT watch_hash FROM schedules WHERE id=?', id)?.watch_hash ?? null;
   }
 
   /** The runs a schedule started, newest first. @param {string} id */

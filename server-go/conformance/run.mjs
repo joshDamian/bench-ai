@@ -328,6 +328,14 @@ async function scenario(srv, repo, root) {
     await step('board: turn off', () => api('PATCH', `/api/schedules/${board.id}`, { keepBoard: false }));
     await step('board: delete', () => api('DELETE', `/api/schedules/${board.id}`));
   }
+  // A watch: a schedule that runs when a page changes, with no days or time.
+  await step('watch: bad address', () => api('POST', '/api/schedules', { title: 'Roles', projectId: project.id, prompt: 'tell me', watch: { url: 'jobs page' } }));
+  await step('watch: bad hours', () => api('POST', '/api/schedules', { title: 'Roles', projectId: project.id, prompt: 'tell me', watch: { url: 'https://example.com/jobs', everyHours: 0 } }));
+  const watch = (await step('watch add', () => api('POST', '/api/schedules', { title: 'Lagos roles', projectId: project.id, prompt: 'Tell me when a role in Lagos is posted', watch: { url: 'https://example.com/jobs' } }))).body;
+  await step('watch: every 2 hours', () => api('PATCH', `/api/schedules/${watch.id}`, { watch: { url: 'https://example.com/jobs', everyHours: 2 } }));
+  await step('watch: back to a time, missing it', () => api('PATCH', `/api/schedules/${watch.id}`, { watch: null, time: 'soon' }));
+  await step('watch: back to a time', () => api('PATCH', `/api/schedules/${watch.id}`, { watch: null, days: [1], time: '08:00' }));
+  await step('watch: delete', () => api('DELETE', `/api/schedules/${watch.id}`));
   await step('schedule delete', () => api('DELETE', `/api/schedules/${sch.id}`));
   await step('schedule delete: again', () => api('DELETE', `/api/schedules/${sch.id}`));
   await step('research project', () => api('POST', '/api/research', {}));

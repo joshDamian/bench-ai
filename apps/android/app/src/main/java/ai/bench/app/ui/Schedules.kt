@@ -50,6 +50,7 @@ import ai.bench.app.data.BenchError
 import ai.bench.app.data.BenchStore
 import ai.bench.app.data.Effort
 import ai.bench.app.data.ProviderInfo
+import ai.bench.app.data.pageName
 import ai.bench.app.ui.theme.Bench
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
@@ -65,7 +66,7 @@ fun SchedulesScreen(store: BenchStore, onBack: () -> Unit, onEdit: (String?) -> 
     val list by store.schedules.collectAsState()
     val s by store.state.collectAsState()
     LaunchedEffect(Unit) { store.loadExtras() }
-    Page("Schedules", "Sessions that start on their own", onBack, actions = {
+    Page("Schedules", "Sessions that start on their own, at a time or when a page changes", onBack, actions = {
         IconButton(onClick = { onEdit(null) }) { Icon(Icons.Default.Add, "New schedule") }
     }) {
         if (list.isEmpty()) item("empty") {
@@ -79,7 +80,8 @@ fun SchedulesScreen(store: BenchStore, onBack: () -> Unit, onEdit: (String?) -> 
                 Card {
                     list.sortedWith(compareBy({ !it.enabled }, { it.next_run_at ?: "~" })).forEach { sc ->
                         val project = s.projects.firstOrNull { it.id == sc.project_id }?.name
-                        NavRow(sc.title, if (sc.enabled) "${scheduleDays(sc.days)} · ${sc.time}" else "Off", project) { onEdit(sc.id) }
+                        val sub = sc.watch?.let { "Watching " + pageName(it.url) } ?: project
+                        NavRow(sc.title, if (!sc.enabled) "Off" else if (sc.watch != null) "When it changes" else "${scheduleDays(sc.days)} · ${sc.time}", sub) { onEdit(sc.id) }
                     }
                 }
             }
@@ -102,6 +104,9 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
     var time by remember { mutableStateOf(existing?.time ?: "08:00") }
     var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
     var keepBoard by remember { mutableStateOf(existing?.keep_board ?: false) }
+    var watching by remember { mutableStateOf(existing?.watch != null) }
+    var url by remember { mutableStateOf(existing?.watch?.url.orEmpty()) }
+    var everyHours by remember { mutableStateOf(existing?.watch?.every_hours ?: 6) }
     var projectId by remember { mutableStateOf(existing?.project_id) }
     var modelId by remember { mutableStateOf(existing?.model_id) }
     var providerId by remember { mutableStateOf(existing?.provider_id) }
@@ -121,7 +126,7 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
         providers.flatMap { it.models }.firstOrNull { it.id == modelId }?.label ?: "Default model",
         effort?.let { Effort.of(it)?.label },
     ).joinToString(" · ")
-    val ready = !busy && projectId != null && title.isNotBlank() && prompt.isNotBlank() && days.isNotEmpty()
+    val ready = !busy && projectId != null && title.isNotBlank() && prompt.isNotBlank() && (if (watching) url.isNotBlank() else days.isNotEmpty())
 
     fun save() {
         val pid = projectId ?: return
@@ -130,7 +135,12 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
             try {
                 store.api.saveSchedule(existing?.id, buildJsonObject {
                     put("title", title.trim()); put("prompt", prompt.trim()); put("projectId", pid)
-                    put("days", days.sorted().joinToString(",")); put("time", time); put("enabled", enabled); put("keepBoard", keepBoard)
+                    if (watching) {
+                        put("watch", buildJsonObject { put("url", url.trim().let { if (it.contains("://")) it else "https://$it" }); put("everyHours", everyHours) })
+                    } else {
+                        put("watch", JsonNull); put("days", days.sorted().joinToString(",")); put("time", time)
+                    }
+                    put("enabled", enabled); put("keepBoard", keepBoard)
                     if (modelId != null) put("modelId", modelId) else put("modelId", JsonNull)
                     if (providerId != null) put("providerId", providerId) else put("providerId", JsonNull)
                     if (effort != null) put("effort", effort) else put("effort", JsonNull)
@@ -149,17 +159,23 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
     }) {
         item("fields") {
             Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Input(title, { title = it }, "Name, like Hackathon scan", single = true)
-                Input(prompt, { prompt = it }, "What to do each time: find, compare, draft…", single = false)
-                Text("Days", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    // Monday first, as most calendars outside the US show it.
-                    listOf(1, 2, 3, 4, 5, 6, 0).forEach { d ->
-                        val on = d in days
-                        Box(
-                            Modifier.size(40.dp).clip(CircleShape).background(if (on) c.accent else c.surface3).clickable { days = if (on) days - d else days + d },
-                            contentAlignment = Alignment.Center,
-                        ) { Text("SMTWTFS"[d].toString(), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (on) c.onAccent else c.text) }
+                Segmented(listOf("time" to "At a time", "page" to "When a page changes"), if (watching) "page" else "time", { watching = it == "page" })
+                Input(title, { title = it }, if (watching) "Name, like Lagos roles" else "Name, like Hackathon scan", single = true)
+                if (watching) {
+                    Input(url, { url = it }, "Page to watch, like linkedin.com/jobs", single = true)
+                    Input(prompt, { prompt = it }, "Tell me when… a role in Lagos is posted", single = false)
+                } else {
+                    Input(prompt, { prompt = it }, "What to do each time: find, compare, draft…", single = false)
+                    Text("Days", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        // Monday first, as most calendars outside the US show it.
+                        listOf(1, 2, 3, 4, 5, 6, 0).forEach { d ->
+                            val on = d in days
+                            Box(
+                                Modifier.size(40.dp).clip(CircleShape).background(if (on) c.accent else c.surface3).clickable { days = if (on) days - d else days + d },
+                                contentAlignment = Alignment.Center,
+                            ) { Text("SMTWTFS"[d].toString(), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (on) c.onAccent else c.text) }
+                        }
                     }
                 }
             }
@@ -167,11 +183,12 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
         item("rows") {
             Column(Modifier.padding(top = 12.dp)) {
                 Card {
-                    NavRow("Time", time) { picking = "time" }
+                    if (watching) NavRow("Check every", hoursLabel(everyHours), "Bench only tells you when the change matters") { picking = "every" }
+                    else NavRow("Time", time) { picking = "time" }
                     NavRow("Project", projectName) { picking = "project" }
                     NavRow("Model", modelName) { picking = "model" }
                     SwitchRow("Keep one board", "Each run updates it and marks what is new", keepBoard) { keepBoard = it }
-                    if (existing != null) SwitchRow("On", existing.next_run_at?.let { "Next: " + it.take(10) }, enabled) { enabled = it }
+                    if (existing != null) SwitchRow("On", if (watching) null else existing.next_run_at?.let { "Next: " + it.take(10) }, enabled) { enabled = it }
                 }
                 error?.let { Text(it, fontSize = 14.sp, color = c.bad, modifier = Modifier.padding(start = 6.dp, top = 8.dp)) }
             }
@@ -187,6 +204,7 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
     }
 
     when (picking) {
+        "every" -> PickDialog("Check every", listOf(1, 3, 6, 12, 24).map { it.toString() to hoursLabel(it) }, everyHours.toString(), onDismiss = { picking = null }) { everyHours = it.toInt(); picking = null }
         "project" -> PickDialog("Project", st.projects.sortedBy { it.name.lowercase() }.map { it.id to it.name }, projectId.orEmpty(), onDismiss = { picking = null }) { projectId = it; picking = null }
         "model" -> {
             val opts = listOf("" to "Default model") + providers.filter { it.enabled && it.ready }.flatMap { p -> p.models.filter { it.enabled }.map { "${p.id}|${it.id}" to "${it.label} · ${p.name}" } }
@@ -218,6 +236,13 @@ fun ScheduleScreen(store: BenchStore, id: String?, onBack: () -> Unit, onOpen: (
     )
 }
 
+/** "hour", "6 hours", "day". */
+fun hoursLabel(h: Int): String = when (h) { 1 -> "hour"; 24 -> "day"; else -> "$h hours" }
+
+/** When a watch last looked at its page: "Checked 2h ago", or "First look soon". */
+fun checkedLabel(sch: ai.bench.app.data.Schedule): String =
+    sch.checked_at?.let { "Checked ${ai.bench.app.data.Format.ago(it).let { a -> if (a == "now") "just now" else "$a ago" }}" } ?: "First look soon"
+
 @Composable
 private fun Input(value: String, onChange: (String) -> Unit, hint: String, single: Boolean) {
     val c = Bench.colors
@@ -245,7 +270,7 @@ fun NewMenu(onDismiss: () -> Unit, onPick: (String) -> Unit) {
             listOf(
                 Triple("session", Icons.Outlined.ChatBubbleOutline, "New session" to "Ask, or work in a project"),
                 Triple("research", Icons.AutoMirrored.Outlined.ManageSearch, "Research" to "Find and compare; a report to read later"),
-                Triple("schedule", Icons.Outlined.Schedule, "Schedule" to "Runs a prompt on the days you pick"),
+                Triple("schedule", Icons.Outlined.Schedule, "Schedule" to "Runs at a time, or when a page changes"),
                 Triple("project", Icons.Outlined.Folder, "Project" to "Clone a repo, open a folder or start one"),
             ).forEach { (key, icon, text) ->
                 Row(
@@ -277,7 +302,7 @@ fun SchedulePage(store: BenchStore, id: String, onBack: () -> Unit, onEdit: () -
     val d = detail
     val sch = d?.schedule
     val project = st.projects.firstOrNull { it.id == sch?.project_id }?.name
-    Page(sch?.title ?: "Schedule", sch?.let { listOfNotNull("${scheduleDays(it.days)} at ${it.time}", project).joinToString(" · ") }, onBack, bottom = {
+    Page(sch?.title ?: "Schedule", sch?.let { listOfNotNull(it.watch?.let { w -> "Watching " + pageName(w.url) } ?: "${scheduleDays(it.days)} at ${it.time}", project).joinToString(" · ") }, onBack, bottom = {
         if (sch != null) Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             BigButton("Edit", Modifier.weight(1f), onClick = onEdit)
             BigButton("Run now", Modifier.weight(1f), primary = true) {
@@ -291,7 +316,7 @@ fun SchedulePage(store: BenchStore, id: String, onBack: () -> Unit, onEdit: () -
         }
         item("state") {
             Text(
-                if (!sch.enabled) "Off" else sch.next_run_at?.let { "On · next ${java.time.Instant.parse(it).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM, H:mm"))}" } ?: "On",
+                if (!sch.enabled) "Off" else if (sch.watch != null) "On · ${checkedLabel(sch).replaceFirstChar { it.lowercase() }}" else sch.next_run_at?.let { "On · next ${java.time.Instant.parse(it).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM, H:mm"))}" } ?: "On",
                 fontSize = 14.sp, color = if (sch.enabled) c.good else c.muted, modifier = Modifier.padding(start = 6.dp, top = 12.dp),
             )
         }
@@ -310,11 +335,11 @@ fun SchedulePage(store: BenchStore, id: String, onBack: () -> Unit, onEdit: () -
         }
         section("Runs", d.runs.size.takeIf { it > 0 }?.toString())
         item("runs") {
-            if (d.runs.isEmpty()) Text("It has not run yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp))
+            if (d.runs.isEmpty()) Text(if (sch.watch != null) "Nothing has changed yet." else "It has not run yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp))
             else Card {
                 d.runs.forEach { r ->
                     val day = runCatching { java.time.Instant.parse(r.created_at).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM")) }.getOrDefault("")
-                    val state = when { r.capped -> "Stopped at its cap"; r.status == "running" -> "Working"; r.status == "error" -> "Stopped with an error"; else -> "Finished" }
+                    val state = when { r.capped -> "Stopped at its cap"; r.archived && sch.watch != null -> "Nothing new"; r.status == "running" -> "Working"; r.status == "error" -> "Stopped with an error"; else -> "Finished" }
                     NavRow(day, dollars(r.cost), state, valueColor = null, labelColor = null) { onOpen(r.id) }
                 }
             }

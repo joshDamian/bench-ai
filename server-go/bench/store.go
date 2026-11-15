@@ -193,6 +193,11 @@ func NewStore(root string) (*Store, error) {
 	s.addColumn("sessions", "capped", "INTEGER")
 	// keep_board: the schedule keeps one board up to date instead of a report per run.
 	s.addColumn("schedules", "keep_board", "INTEGER")
+	// watch: a page the schedule runs on when it changes, as JSON {url, every_hours}, instead of
+	// days and a time; watch_hash: the page's text when last seen; checked_at: when that was.
+	for _, c := range []string{"watch", "watch_hash", "checked_at"} {
+		s.addColumn("schedules", c, "TEXT")
+	}
 	s.addColumn("projects", "routing", "TEXT")
 	s.addColumn("tasks", "routing", "TEXT")
 	if err := s.projectlessSessions(); err != nil {

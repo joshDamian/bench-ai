@@ -243,7 +243,8 @@ svc.runtime.on('approval', (a) => {
 svc.runtime.on('suggestion', ({ session_id, text }) => text && broadcast({ type: 'suggestion', session_id, text }, session_id));
 svc.runtime.on('commands', ({ session_id, commands }) => broadcast({ type: 'commands', session_id, commands }, session_id));
 svc.runtime.on('approval-done', (a) => broadcast({ type: 'approval-done', ...a }));
-svc.runtime.on('turn-done', ({ session, ok, limited }) => {
+svc.runtime.on('turn-done', ({ session, ok, limited, reply }) => {
+  if (session && svc.quietRun(session, reply)) return;
   if (session && limited) {
     const until = session.pause?.until ? new Date(session.pause.until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }) : null;
     pushAll({ title: 'Paused at the usage limit', body: `${session.title}${until ? ` — until ${until}` : ''}`, url: sessionUrl(session), tag: `turn-${session.id}`, sessionId: session.id }, 'error').catch(() => {});
