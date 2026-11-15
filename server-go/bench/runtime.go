@@ -1444,6 +1444,11 @@ func (r *Runtime) beforeTool(sid string, in *Obj) *Obj {
 	if value == "never" {
 		label := strings.ToLower(rule.Label)
 		r.Notice(sid, "Stopped before it could "+label+": that is on your Never list.")
+		by := "Never rule"
+		if ss := r.Store.GetSession(sid); ss != nil {
+			by = "In " + ss.Str("title")
+		}
+		r.Store.AddActivity("never", "Stopped before it could "+label, by, "On your Never list", sid, nil)
 		return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "deny", "permissionDecisionReason", "Blocked by the person's Never list: "+label+". Do not try another way. Prepare it for the person to finish instead (an email as a drafts file in the reports folder)."))
 	}
 	if r.About().Touches(in.Str("tool_name"), in.ObjAt("tool_input")) {

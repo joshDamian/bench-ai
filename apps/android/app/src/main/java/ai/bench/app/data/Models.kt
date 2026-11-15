@@ -179,6 +179,24 @@ data class Schedule(
     val checked_at: String? = null,
 )
 
+/** What Bench did (GET /api/activity): runs and other doings, newest first. Go server only. */
+@Serializable
+data class ActivityFeed(val items: List<ActivityItem> = emptyList(), val unseen: Int = 0, val seen_at: String? = null)
+
+@Serializable
+data class ActivityItem(
+    val at: String,
+    val kind: String = "run",
+    val title: String = "",
+    val by: String? = null,
+    val detail: String? = null,
+    val session_id: String? = null,
+    val cost: Double = 0.0,
+    val badge: String? = null,
+    val undo: Boolean = false,
+    val id: Long? = null,
+)
+
 /** A saved prompt with blanks, run again from New (GET /api/recipes). */
 @Serializable
 data class Recipe(val id: String, val title: String, val prompt: String, val project_id: String? = null, val blanks: List<String> = emptyList())

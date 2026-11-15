@@ -167,7 +167,7 @@ func NewStore(root string) (*Store, error) {
 	if err := s.migrate(); err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + activitySchema); err != nil {
 		return nil, err
 	}
 	for _, col := range []string{"provider_model_id", "invocation_model_id", "display_name"} {

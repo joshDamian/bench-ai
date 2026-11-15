@@ -78,6 +78,10 @@ class BenchApi(val config: ServerConfig) {
         put("index", kotlinx.serialization.json.JsonPrimitive(index)); put("sent", kotlinx.serialization.json.JsonPrimitive(sent))
     })
     suspend fun schedules(): List<Schedule> = get("/api/schedules").lossy()
+    suspend fun activity(): ActivityFeed = get("/api/activity").decode()
+    suspend fun seenActivity() = post("/api/activity/seen")
+    suspend fun brief(): Boolean = (get("/api/brief").decode<JsonObject>()["morning_brief"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+    suspend fun setBrief(on: Boolean) = put("/api/brief", buildJsonObject { put("morning_brief", on) })
     suspend fun recipes(): List<Recipe> = get("/api/recipes").lossy()
     suspend fun saveRecipe(id: String?, body: JsonObject): Recipe = (if (id == null) post("/api/recipes", body) else patch("/api/recipes/${enc(id)}", body)).decode()
     suspend fun deleteRecipe(id: String) = delete("/api/recipes/${enc(id)}")

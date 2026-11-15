@@ -213,8 +213,9 @@ private fun dayOf(iso: String): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit, selected: String? = null, onSchedules: () -> Unit = {}, onSchedule: (String) -> Unit = {}, onAbout: () -> Unit = {}) {
+fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, onSearch: () -> Unit, selected: String? = null, onSchedules: () -> Unit = {}, onSchedule: (String) -> Unit = {}, onAbout: () -> Unit = {}, onActivity: () -> Unit = {}) {
     val s by store.state.collectAsState()
+    val away by store.activityUnseen.collectAsState()
     val reports by store.reports.collectAsState()
     val schedules by store.schedules.collectAsState()
     val c = Bench.colors
@@ -431,13 +432,18 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
                 if (s.ready && s.sessions.isEmpty()) item("empty") {
                     Text(if (s.projects.isEmpty()) "Add a project to get started." else "No sessions yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(top = 32.dp, start = 6.dp))
                 }
-                // Everything else is in its project; one quiet line says so.
-                if (quiet > 0) item("quiet") {
+                // Everything else is in its project; one quiet line says so. And what ran while
+                // you were away, one line that opens Activity.
+                if (quiet > 0 || away > 0) item("quiet") {
                     Column(Modifier.padding(top = 18.dp)) {
                         HorizontalDivider(color = c.line)
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onSearch).padding(horizontal = 6.dp, vertical = 14.dp)) {
+                        if (quiet > 0) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onSearch).padding(horizontal = 6.dp, vertical = 14.dp)) {
                             Text("$quiet quiet conversation${if (quiet == 1) " is" else "s are"} in ${if (quiet == 1) "its project" else "their projects"}", fontSize = 14.sp, color = c.muted, modifier = Modifier.weight(1f))
                             Text("Show", fontSize = 14.sp, color = c.muted)
+                        }
+                        if (away > 0) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onActivity).padding(horizontal = 6.dp, vertical = 14.dp)) {
+                            Text("Activity: $away run${if (away == 1) "" else "s"} while you were away", fontSize = 14.sp, color = c.muted, modifier = Modifier.weight(1f))
+                            Text("See", fontSize = 14.sp, color = c.muted)
                         }
                     }
                 }

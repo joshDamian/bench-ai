@@ -210,6 +210,7 @@ func NewScheduler(svc *Service) *Scheduler {
 }
 
 func (sc *Scheduler) Tick(at time.Time) {
+	sc.svc.MorningBrief(at)
 	for _, sch := range sc.svc.Store.ListSchedules() {
 		if CheckDue(sch, at) {
 			go sc.Look(sch, at)

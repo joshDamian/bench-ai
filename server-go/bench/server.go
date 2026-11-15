@@ -1325,6 +1325,13 @@ func (s *Server) routesInit() {
 	s.route("POST", "/api/about/draft", func(c *ctxt) (any, error) { return svc.AboutDraft(c.body.Get("action")) })
 	s.route("POST", "/api/about/undo", func(c *ctxt) (any, error) { return svc.AboutUndo() })
 	s.route("POST", "/api/about/from-cv", func(c *ctxt) (any, error) { return svc.AboutFromCV() })
+	s.route("GET", "/api/activity", func(c *ctxt) (any, error) {
+		days, _ := strconv.Atoi(q(c, "days"))
+		return svc.Activity(days), nil
+	})
+	s.route("POST", "/api/activity/seen", func(c *ctxt) (any, error) { return svc.SeenActivity(), nil })
+	s.route("GET", "/api/brief", func(c *ctxt) (any, error) { return svc.BriefSettings(), nil })
+	s.route("PUT", "/api/brief", func(c *ctxt) (any, error) { return svc.SetBrief(c.body), nil })
 	s.route("GET", "/api/recipes", func(c *ctxt) (any, error) { return svc.Recipes(), nil })
 	s.route("POST", "/api/recipes", func(c *ctxt) (any, error) { return svc.AddRecipe(c.body) })
 	s.route("PATCH", "/api/recipes/:id", func(c *ctxt) (any, error) { return svc.UpdateRecipe(c.params[0], c.body) })

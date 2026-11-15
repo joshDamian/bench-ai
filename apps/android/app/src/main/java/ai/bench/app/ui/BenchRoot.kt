@@ -118,7 +118,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
     if (wide) {
         Box(Modifier.width(380.dp).fillMaxHeight()) {
-            HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
+            HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") }, onActivity = { nav.navigate("activity") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
         }
         androidx.compose.material3.VerticalDivider(color = Bench.colors.line)
     }
@@ -134,7 +134,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         ) {
             composable("home") {
                 if (wide) EmptyDetail() else androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
-                    HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") })
+                    HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") }, onActivity = { nav.navigate("activity") })
                 }
             }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
@@ -145,6 +145,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("rules") { RulesScreen(store, onBack = { nav.popBackStack() }) }
             composable("reach") { CanReachScreen(store, onBack = { nav.popBackStack() }, onBrowser = { nav.navigate("browser") }) }
             composable("browser") { BrowserScreen(store, onBack = { nav.popBackStack() }) }
+            composable("activity") { ActivityScreen(store, onBack = { nav.popBackStack() }, onOpen = open) }
             composable("spending") { SpendingScreen(store, onBack = { nav.popBackStack() }) }
             composable("schedules") { SchedulesScreen(store, onBack = { nav.popBackStack() }, onEdit = { nav.navigate("schedule/${it ?: "new"}") }) }
             composable("schedule/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { e ->

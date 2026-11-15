@@ -53,6 +53,10 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     private val _spending = MutableStateFlow<Spending?>(null)
     val spending: StateFlow<Spending?> = _spending.asStateFlow()
     fun setSpending(s: Spending) { _spending.value = s }
+    /** Runs that happened on their own since the person last looked at Activity, for Home's line. */
+    private val _activityUnseen = MutableStateFlow(0)
+    val activityUnseen: StateFlow<Int> = _activityUnseen.asStateFlow()
+    fun clearActivityUnseen() { _activityUnseen.value = 0 }
     /** Saved prompts with blanks, for New. */
     private val _recipes = MutableStateFlow<List<Recipe>>(emptyList())
     val recipes: StateFlow<List<Recipe>> = _recipes.asStateFlow()
@@ -70,6 +74,7 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
             runCatching { api.schedules() }.onSuccess { _schedules.value = it }
             runCatching { api.spending() }.onSuccess { _spending.value = it }
             runCatching { api.recipes() }.onSuccess { _recipes.value = it }
+            runCatching { api.activity() }.onSuccess { _activityUnseen.value = it.unseen }
         }
     }
 
