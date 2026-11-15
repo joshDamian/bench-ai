@@ -89,7 +89,7 @@ private fun fieldColors() = OutlinedTextFieldDefaults.colors(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String) -> Unit, research: Boolean = false, onSchedule: (ai.bench.app.data.SchedulePrefill) -> Unit = {}) {
+fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String) -> Unit, research: Boolean = false, onSchedule: (ai.bench.app.data.SchedulePrefill) -> Unit = {}, initial: String = "") {
     val s by store.state.collectAsState()
     val c = Bench.colors
     val scope = rememberCoroutineScope()
@@ -98,7 +98,7 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
     // Research works in the Research project's own folder: no branch, a report at the end.
     var where by remember { mutableStateOf(if (research) "checkout" else "task") }
     LaunchedEffect(research) { if (research) runCatching { store.api.research() }.onSuccess { projectId = it.id; store.refresh() } }
-    var prompt by remember { mutableStateOf("") }
+    var prompt by remember { mutableStateOf(initial) }
     var mode by remember { mutableStateOf(Mode.of(s.defaults.mode)) }
     var modelId by remember { mutableStateOf(s.defaults.modelId) }
     var providerId by remember { mutableStateOf<String?>(null) }

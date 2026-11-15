@@ -511,35 +511,46 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
         }
     }
 
-    opened?.let { r ->
-        // Opening what a session made counts as looking at that session.
-        LaunchedEffect(r.path) { store.markSeen(r.session_id) }
-        if (r.kind == "drafts") ai.bench.app.ui.session.DraftsScreen(store, r, onAbout = { opened = null; onAbout() }) { opened = null }
-        else {
-            val files = remember(r.session_id) { ai.bench.app.ui.session.SessionFiles(store.api, r.session_id) }
-            // A schedule's second report offers to keep one board instead.
-            val sch = schedules.firstOrNull { it.id == r.schedule_id }
-            var offered by remember(r.path) { mutableStateOf(sch != null && !sch.keep_board && r.kind != "board" && reports.count { it.schedule_id == sch.id && it.kind != "drafts" } >= 2 && !BoardOffers.dismissed(sch.id)) }
-            ai.bench.app.ui.session.FileViewer(
-                files, ai.bench.app.ui.session.FileInfo(r.path, r.path, r.name, if (r.name.endsWith(".html")) "text/html" else "text/markdown", r.size, true, "text", true),
-                top = if (!offered || sch == null) null else ({
-                    BoardOffer(sch.title, onKeep = {
-                        offered = false
-                        scope.launch { runCatching { store.api.saveSchedule(sch.id, kotlinx.serialization.json.buildJsonObject { put("keepBoard", true) }) }; store.loadExtras() }
-                    }) { offered = false; BoardOffers.dismiss(sch.id) }
-                }),
-                bottom = s.sessions.firstOrNull { it.id == r.session_id }?.next_steps?.takeIf { it.isNotEmpty() }?.let { steps -> @Composable {
-                    ThenSteps(steps) { step ->
-                        opened = null
-                        scope.launch { runCatching { store.api.send(r.session_id, step) } }
-                        onOpen(r.session_id)
-                    }
-                } },
-            ) { opened = null }
-        }
-    }
+    opened?.let { r -> ReportViewer(store, r, onOpen = onOpen, onAbout = onAbout) { opened = null } }
     if (takingOver) BrowserView(store.api) { takingOver = false }
     listing?.let { list -> ReportList(list, s.sessions, onDismiss = { listing = null }) { listing = null; opened = it } }
+}
+
+/**
+ * What a session made, open to read: drafts in their own screen, anything else in the file
+ * viewer, with the run's "Then" steps under it. Home and Research both open reports here.
+ */
+@Composable
+fun ReportViewer(store: BenchStore, r: Report, onOpen: (String) -> Unit, onAbout: () -> Unit, onClose: () -> Unit) {
+    val s by store.state.collectAsState()
+    val reports by store.reports.collectAsState()
+    val schedules by store.schedules.collectAsState()
+    val scope = rememberCoroutineScope()
+    // Opening what a session made counts as looking at that session.
+    LaunchedEffect(r.path) { store.markSeen(r.session_id) }
+    if (r.kind == "drafts") ai.bench.app.ui.session.DraftsScreen(store, r, onAbout = { onClose(); onAbout() }) { onClose() }
+    else {
+        val files = remember(r.session_id) { ai.bench.app.ui.session.SessionFiles(store.api, r.session_id) }
+        // A schedule's second report offers to keep one board instead.
+        val sch = schedules.firstOrNull { it.id == r.schedule_id }
+        var offered by remember(r.path) { mutableStateOf(sch != null && !sch.keep_board && r.kind != "board" && reports.count { it.schedule_id == sch.id && it.kind != "drafts" } >= 2 && !BoardOffers.dismissed(sch.id)) }
+        ai.bench.app.ui.session.FileViewer(
+            files, ai.bench.app.ui.session.FileInfo(r.path, r.path, r.name, if (r.name.endsWith(".html")) "text/html" else "text/markdown", r.size, true, "text", true),
+            top = if (!offered || sch == null) null else ({
+                BoardOffer(sch.title, onKeep = {
+                    offered = false
+                    scope.launch { runCatching { store.api.saveSchedule(sch.id, kotlinx.serialization.json.buildJsonObject { put("keepBoard", true) }) }; store.loadExtras() }
+                }) { offered = false; BoardOffers.dismiss(sch.id) }
+            }),
+            bottom = s.sessions.firstOrNull { it.id == r.session_id }?.next_steps?.takeIf { it.isNotEmpty() }?.let { steps -> @Composable {
+                ThenSteps(steps) { step ->
+                    onClose()
+                    scope.launch { runCatching { store.api.send(r.session_id, step) } }
+                    onOpen(r.session_id)
+                }
+            } },
+        ) { onClose() }
+    }
 }
 
 /** "Then": what the run offered to do next, under a result (the chains board). A tap does it. */
@@ -577,7 +588,7 @@ fun LabelFab(label: String, expanded: Boolean, onClick: () -> Unit) {
 }
 
 /** What a ready card calls one thing to read. */
-private fun readLabel(r: Report) = when (r.kind) {
+internal fun readLabel(r: Report) = when (r.kind) {
     "board" -> if ((r.new ?: 0) > 0) "Board · ${r.new} new" else "Board"
     "page" -> "Page"
     else -> "Report"
@@ -746,7 +757,7 @@ private fun FilterChip(text: String, on: Boolean, onClick: () -> Unit) {
 
 /** A section label: more space above than below, so it belongs to what follows. */
 @Composable
-private fun Label(text: String, color: Color = Bench.colors.muted, trailing: String? = null, onTrailing: (() -> Unit)? = null) {
+internal fun Label(text: String, color: Color = Bench.colors.muted, trailing: String? = null, onTrailing: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = color, modifier = Modifier.weight(1f))
         trailing?.let { Text(it, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = color, modifier = if (onTrailing != null) Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onTrailing).padding(4.dp) else Modifier) }
@@ -755,7 +766,7 @@ private fun Label(text: String, color: Color = Bench.colors.muted, trailing: Str
 
 /** A list with nothing in it: one muted line. */
 @Composable
-private fun Quiet(text: String) {
+internal fun Quiet(text: String) {
     Text(text, fontSize = 15.sp, color = Bench.colors.muted, modifier = Modifier.padding(start = 6.dp, top = 6.dp))
 }
 
@@ -804,7 +815,7 @@ private fun HomeTile(icon: androidx.compose.ui.graphics.vector.ImageVector, valu
 
 /** A report, page or board as Home shows it: what it says before you open it. */
 @Composable
-private fun ReportCard(r: Report, from: String?, modifier: Modifier, onOpen: () -> Unit) {
+internal fun ReportCard(r: Report, from: String?, modifier: Modifier, onOpen: () -> Unit) {
     val c = Bench.colors
     Column(
         modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(c.surface1).clickable(onClick = onOpen).padding(18.dp),
@@ -832,7 +843,7 @@ private fun ReportCard(r: Report, from: String?, modifier: Modifier, onOpen: () 
 
 /** Email drafts as Home shows them: the first ones, who to and the subject. */
 @Composable
-private fun DraftsCard(r: Report, from: String?, modifier: Modifier, onOpen: () -> Unit) {
+internal fun DraftsCard(r: Report, from: String?, modifier: Modifier, onOpen: () -> Unit) {
     val c = Bench.colors
     val n = r.unsent ?: r.drafts ?: 0
     val lines = r.preview.orEmpty()
@@ -857,7 +868,7 @@ private fun DraftsCard(r: Report, from: String?, modifier: Modifier, onOpen: () 
 
 /** A working session: what it is doing now, in the accent. */
 @Composable
-private fun WorkCard(title: String, step: String, where: String, ago: String, id: String, modifier: Modifier, onClick: () -> Unit) {
+internal fun WorkCard(title: String, step: String, where: String, ago: String, id: String, modifier: Modifier, onClick: () -> Unit) {
     val c = Bench.colors
     Column(
         modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surface1).clickable(onClick = onClick).padding(16.dp),

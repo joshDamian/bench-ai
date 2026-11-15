@@ -27,6 +27,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
@@ -97,11 +98,12 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
 
     val back by nav.currentBackStackEntryAsState()
     val route = back?.destination?.route
-    val tabs = listOf("home", "projects", "settings")
+    val tabs = listOf("home", "research", "projects", "settings")
     var newSession by remember { mutableStateOf(false) }
     var addProject by remember { mutableStateOf(false) }
     var newMenu by remember { mutableStateOf(false) }
     var research by remember { mutableStateOf(false) }
+    var researchAsk by remember { mutableStateOf("") }
     val askedNew by BenchApp.instance.requestNew.collectAsState()
     LaunchedEffect(askedNew) { if (askedNew) { newSession = true; BenchApp.instance.requestNew.value = false } }
     // Tablets and unfolded foldables: Home stays docked on the left, what you open shows beside it.
@@ -136,6 +138,9 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
                 if (wide) EmptyDetail() else androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
                     HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") }, onActivity = { nav.navigate("activity") })
                 }
+            }
+            composable("research") {
+                ResearchScreen(store, onOpen = open, onResearch = { researchAsk = it; research = true }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") })
             }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }, onAsk = { nav.navigate("ask") }) }
@@ -224,14 +229,14 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         newMenu = false
         when (pick) {
             "session" -> newSession = true
-            "research" -> research = true
+            "research" -> { researchAsk = ""; research = true }
             "schedule" -> nav.navigate("schedule/new")
             "project" -> addProject = true
         }
     }
     recipe?.let { r -> RunRecipeSheet(store, r, onDismiss = { recipe = null }) { recipe = null; open(it) } }
     if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) }, onSchedule = { newSession = false; store.schedulePrefill = it; nav.navigate("schedule/new") })
-    if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true)
+    if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true, initial = researchAsk)
     if (addProject) AddProjectSheet(store, onDismiss = { addProject = false }, onAdded = { addProject = false; nav.navigate("project/$it") })
 }
 
@@ -265,6 +270,7 @@ fun BenchNav(active: String, onPick: (String) -> Unit) {
     NavigationBar(containerColor = c.bg, tonalElevation = 0.dp) {
         listOf(
             Triple("home", "Home", Icons.Outlined.Home),
+            Triple("research", "Research", Icons.AutoMirrored.Outlined.ManageSearch),
             Triple("projects", "Projects", Icons.Outlined.Folder),
             Triple("settings", "Settings", Icons.Outlined.Settings),
         ).forEach { (id, label, icon) ->
