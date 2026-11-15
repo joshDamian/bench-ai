@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -107,13 +108,18 @@ func (b *Browser) Running() bool {
 	return b.getJSON("/json/version", &v) == nil
 }
 
-func (b *Browser) Ensure() bool {
+func (b *Browser) Ensure() bool { return b.Start() == nil }
+
+// Start starts Chromium if it is installed and not already up, and says why when it cannot:
+// not installed, or started and exited (most often missing system libraries on a fresh
+// server), with the end of what Chromium printed.
+func (b *Browser) Start() error {
 	if b.Running() {
-		return true
+		return nil
 	}
 	bin := ChromiumPath()
 	if bin == "" {
-		return false
+		return fmt.Errorf("Chromium isn't installed on the server. Install it there with: npx playwright install --with-deps chromium")
 	}
 	os.MkdirAll(b.Profile, 0o755)
 	b.mu.Lock()
@@ -123,18 +129,71 @@ func (b *Browser) Ensure() bool {
 		args = append([]string{"--no-sandbox"}, args...)
 	}
 	cmd := exec.Command(bin, args...)
-	if cmd.Start() == nil {
-		b.cmd = cmd
-		go cmd.Wait()
+	out := &tailBuffer{}
+	cmd.Stdout = out
+	cmd.Stderr = out
+	exited := make(chan struct{})
+	if err := cmd.Start(); err != nil {
+		b.mu.Unlock()
+		return fmt.Errorf("Chromium couldn't start: %v", err)
 	}
+	b.cmd = cmd
+	go func() { cmd.Wait(); close(exited) }()
 	b.mu.Unlock()
-	for i := 0; i < 50; i++ {
+	// A first start on a small server, making the profile, can take a while.
+	deadline := time.Now().Add(25 * time.Second)
+	for time.Now().Before(deadline) {
 		if b.Running() {
-			return true
+			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-exited:
+			msg := out.String()
+			if m := missingLib.FindStringSubmatch(msg); m != nil {
+				return fmt.Errorf("Chromium couldn't start: the server is missing %s. Install what it needs with: sudo npx playwright install-deps chromium", m[1])
+			}
+			return fmt.Errorf("Chromium couldn't start: %s", lastLine(msg))
+		case <-time.After(150 * time.Millisecond):
+		}
 	}
-	return false
+	return fmt.Errorf("Chromium took too long to start; try again")
+}
+
+var missingLib = regexp.MustCompile(`error while loading shared libraries: ([^:\s]+)`)
+
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if l := strings.TrimSpace(lines[i]); l != "" {
+			if len(l) > 300 {
+				l = l[:300]
+			}
+			return l
+		}
+	}
+	return "it exited without saying why"
+}
+
+// tailBuffer keeps the last few KB a process printed.
+type tailBuffer struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > 8192 {
+		t.buf = t.buf[len(t.buf)-4096:]
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.buf)
 }
 
 func (b *Browser) Stop() {
@@ -271,8 +330,12 @@ var browserKeys = map[string]map[string]any{
 func (b *Browser) View(client *websocket.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if !b.Ensure() {
-		client.Close(websocket.StatusInternalError, "The browser is not installed on this server")
+	if err := b.Start(); err != nil {
+		// The reason in full as a message: a close reason is cut at 123 bytes.
+		wctx, wcancel := context.WithTimeout(ctx, 5*time.Second)
+		client.Write(wctx, websocket.MessageText, ToJSON(O("type", "error", "message", err.Error())))
+		wcancel()
+		client.Close(websocket.StatusInternalError, "The browser couldn't start")
 		return
 	}
 	wsURL := b.pageSocket()

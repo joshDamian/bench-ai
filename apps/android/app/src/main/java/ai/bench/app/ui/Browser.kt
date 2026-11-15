@@ -92,10 +92,19 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
                         BitmapFactory.decodeByteArray(b, 0, b.size)?.let { frame = it.asImageBitmap() }
                     }
                     "url" -> url = (m["url"] as? JsonPrimitive)?.content.orEmpty()
+                    // Why the browser couldn't start, in full, before the server closes.
+                    "error" -> closed = (m["message"] as? JsonPrimitive)?.content
                 }
             }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { closed = reason.ifBlank { "The browser closed." } }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { closed = "The browser couldn't be reached." }
+            // The server closing says why; answer it, or the socket only fails later without the reason.
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                if (closed == null) closed = reason.ifBlank { "The browser closed." }
+                webSocket.close(1000, null)
+            }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { if (closed == null) closed = reason.ifBlank { "The browser closed." } }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (closed == null) closed = if (response?.code == 404) "This server has no browser. Update it to the Go server." else "The browser couldn't be reached."
+            }
         })
         socket.value = ws
         onDispose { ws.close(1000, null) }
@@ -134,8 +143,11 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
             ) {
                 val f = frame
                 when {
-                    closed != null -> Text(closed!!, fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(32.dp))
-                    f == null -> CircularProgressIndicator(Modifier.padding(top = 80.dp))
+                    closed != null -> Text(closed!!, fontSize = 15.sp, lineHeight = 21.sp, color = c.muted, modifier = Modifier.padding(32.dp))
+                    f == null -> Column(Modifier.padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        CircularProgressIndicator()
+                        Text("Starting the browser…", fontSize = 14.sp, color = c.muted)
+                    }
                     else -> Image(f, null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
                 }
             }
