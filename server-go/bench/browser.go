@@ -84,6 +84,9 @@ type Browser struct {
 	cmd     *exec.Cmd
 	// noSandbox: the sandbox failed here once, so Chromium starts without it from then on.
 	noSandbox bool
+	// xvfb and display: the invisible screen a windowed Chromium draws on.
+	xvfb    *exec.Cmd
+	display string
 }
 
 func NewBrowser(dataDir string) *Browser {
@@ -144,13 +147,29 @@ func (b *Browser) Start() error {
 var sandboxFailed = regexp.MustCompile(`(?i)sandbox`)
 
 func (b *Browser) launch(bin string, noSandbox bool) error {
-	args := []string{"--headless=new", "--remote-debugging-port=" + strconv.Itoa(b.Port), "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + b.Profile,
-		"--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--window-size=1280,900", "about:blank"}
+	// Sites behind bot checks (Cloudflare, LinkedIn) turn away a browser that looks automated:
+	// so no automation flag, and, with Xvfb installed, a normal windowed Chromium on an
+	// invisible screen rather than a headless one. Without Xvfb it runs headless with an
+	// ordinary user agent.
+	args := []string{"--remote-debugging-port=" + strconv.Itoa(b.Port), "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + b.Profile,
+		"--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled",
+		"--window-size=1280,900", "--lang=en-US"}
+	display := b.screen()
+	if display == "" {
+		args = append(args, "--headless=new")
+		if ua := plainUserAgent(bin); ua != "" {
+			args = append(args, "--user-agent="+ua)
+		}
+	}
+	args = append(args, "about:blank")
 	if noSandbox {
 		args = append([]string{"--no-sandbox"}, args...)
 	}
 	b.mu.Lock()
 	cmd := exec.Command(bin, args...)
+	if display != "" {
+		cmd.Env = append(os.Environ(), "DISPLAY="+display)
+	}
 	out := &tailBuffer{}
 	cmd.Stdout = out
 	cmd.Stderr = out
@@ -247,6 +266,58 @@ func (b *Browser) Stop() {
 		b.cmd.Process.Kill()
 	}
 	b.cmd = nil
+	if b.xvfb != nil && b.xvfb.Process != nil {
+		b.xvfb.Process.Kill()
+	}
+	b.xvfb = nil
+}
+
+// screen is an invisible X screen for a windowed Chromium: one Xvfb of Bench's own, started
+// on first use, or "" when Xvfb is not installed (then Chromium runs headless).
+func (b *Browser) screen() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.xvfb != nil && b.xvfb.ProcessState == nil {
+		return b.display
+	}
+	bin, err := exec.LookPath("Xvfb")
+	if err != nil {
+		return ""
+	}
+	n := 90 + b.Port%9
+	display := fmt.Sprintf(":%d", n)
+	// An X server another Bench left running on this display is used as it is.
+	if _, err := os.Stat(fmt.Sprintf("/tmp/.X11-unix/X%d", n)); err == nil {
+		b.display = display
+		return display
+	}
+	cmd := exec.Command(bin, display, "-screen", "0", "1280x900x24", "-nolisten", "tcp")
+	if cmd.Start() != nil {
+		return ""
+	}
+	go cmd.Wait()
+	b.xvfb, b.display = cmd, display
+	for i := 0; i < 30; i++ {
+		if _, err := os.Stat(fmt.Sprintf("/tmp/.X11-unix/X%d", n)); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return display
+}
+
+// plainUserAgent is a desktop Chrome user agent for this Chromium's version, without the
+// "HeadlessChrome" that headless mode puts in its own.
+func plainUserAgent(bin string) string {
+	out, err := exec.Command(bin, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	v := regexp.MustCompile(`(\d+)\.\d+\.\d+\.\d+`).FindStringSubmatch(string(out))
+	if v == nil {
+		return ""
+	}
+	return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + v[1] + ".0.0.0 Safari/537.36"
 }
 
 // MCP is the server sessions use to drive the browser, when it is installed.
@@ -417,7 +488,7 @@ func (b *Browser) View(client *websocket.Conn) {
 	var mmu sync.Mutex
 	width, height := 1280.0, 900.0
 	send("Page.enable", nil)
-	send("Page.startScreencast", map[string]any{"format": "jpeg", "quality": 60, "maxWidth": 1600, "maxHeight": 2400, "everyNthFrame": 1})
+	send("Page.startScreencast", map[string]any{"format": "jpeg", "quality": 85, "maxWidth": 1600, "maxHeight": 2400, "everyNthFrame": 1})
 	// While the person is in control, the page is laid out at their phone's size; after,
 	// it goes back to the size sessions use.
 	defer func() {
@@ -505,11 +576,12 @@ func (b *Browser) View(client *websocket.Conn) {
 		case "back":
 			send("Runtime.evaluate", map[string]any{"expression": "history.back()"})
 		case "size":
-			// The phone's view, in its CSS pixels: pages lay out for it as on a phone.
+			// The phone's view, in its CSS pixels: pages lay out at its width. Not as a phone
+			// (mobile: false): a desktop browser claiming to be a phone looks like a bot.
 			vw, _ := m["width"].(float64)
 			vh, _ := m["height"].(float64)
 			if vw >= 200 && vw <= 2000 && vh >= 200 && vh <= 3000 {
-				send("Emulation.setDeviceMetricsOverride", map[string]any{"width": int(vw), "height": int(vh), "deviceScaleFactor": 2, "mobile": true})
+				send("Emulation.setDeviceMetricsOverride", map[string]any{"width": int(vw), "height": int(vh), "deviceScaleFactor": 2, "mobile": false})
 			}
 		case "go":
 			if u := webAddress(fmt.Sprint(m["url"])); u != "" {
