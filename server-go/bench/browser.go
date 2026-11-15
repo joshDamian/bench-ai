@@ -81,6 +81,8 @@ type Browser struct {
 	Port    int
 	mu      sync.Mutex
 	cmd     *exec.Cmd
+	// noSandbox: the sandbox failed here once, so Chromium starts without it from then on.
+	noSandbox bool
 }
 
 func NewBrowser(dataDir string) *Browser {
@@ -122,12 +124,31 @@ func (b *Browser) Start() error {
 		return fmt.Errorf("Chromium isn't installed on the server. Install it there with: npx playwright install --with-deps chromium")
 	}
 	os.MkdirAll(b.Profile, 0o755)
+	// Chromium will not start its sandbox as root, and newer Ubuntu (23.10 on) blocks the
+	// user namespaces it needs as a normal user. A browser that only Bench drives runs
+	// without it then, the usual way on a server.
 	b.mu.Lock()
-	args := []string{"--headless=new", "--remote-debugging-port=" + strconv.Itoa(b.Port), "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + b.Profile, "--no-first-run", "--no-default-browser-check", "--window-size=1280,900", "about:blank"}
-	// Chromium will not start its sandbox as root, which a server often is.
-	if os.Getuid() == 0 {
+	noSandbox := b.noSandbox || os.Getuid() == 0
+	b.mu.Unlock()
+	err := b.launch(bin, noSandbox)
+	if err != nil && !noSandbox && sandboxFailed.MatchString(err.Error()) {
+		b.mu.Lock()
+		b.noSandbox = true
+		b.mu.Unlock()
+		err = b.launch(bin, true)
+	}
+	return err
+}
+
+var sandboxFailed = regexp.MustCompile(`(?i)sandbox`)
+
+func (b *Browser) launch(bin string, noSandbox bool) error {
+	args := []string{"--headless=new", "--remote-debugging-port=" + strconv.Itoa(b.Port), "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + b.Profile,
+		"--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--window-size=1280,900", "about:blank"}
+	if noSandbox {
 		args = append([]string{"--no-sandbox"}, args...)
 	}
+	b.mu.Lock()
 	cmd := exec.Command(bin, args...)
 	out := &tailBuffer{}
 	cmd.Stdout = out
@@ -152,7 +173,7 @@ func (b *Browser) Start() error {
 			if m := missingLib.FindStringSubmatch(msg); m != nil {
 				return fmt.Errorf("Chromium couldn't start: the server is missing %s. Install what it needs with: sudo npx playwright install-deps chromium", m[1])
 			}
-			return fmt.Errorf("Chromium couldn't start: %s", lastLine(msg))
+			return fmt.Errorf("Chromium couldn't start: %s", crashLine(msg))
 		case <-time.After(150 * time.Millisecond):
 		}
 	}
@@ -161,17 +182,39 @@ func (b *Browser) Start() error {
 
 var missingLib = regexp.MustCompile(`error while loading shared libraries: ([^:\s]+)`)
 
-func lastLine(s string) string {
+// crashLine is the line of a crash that says why: Chromium's FATAL or ERROR line, else the
+// last line that is not the stack trace.
+func crashLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
+	for _, l := range lines {
+		if strings.Contains(l, ":FATAL:") || strings.Contains(l, "FATAL:") {
+			return trimLine(l)
+		}
+	}
+	for _, l := range lines {
+		if strings.Contains(l, ":ERROR:") {
+			return trimLine(l)
+		}
+	}
 	for i := len(lines) - 1; i >= 0; i-- {
-		if l := strings.TrimSpace(lines[i]); l != "" {
-			if len(l) > 300 {
-				l = l[:300]
-			}
-			return l
+		l := strings.TrimSpace(lines[i])
+		if l != "" && !strings.Contains(l, "stack trace") && !strings.HasPrefix(l, "#") {
+			return trimLine(l)
 		}
 	}
 	return "it exited without saying why"
+}
+
+// trimLine drops Chromium's "[pid:tid:time:FATAL:file.cc(12)] " prefix and long tails.
+func trimLine(l string) string {
+	l = strings.TrimSpace(l)
+	if i := strings.Index(l, "] "); strings.HasPrefix(l, "[") && i > 0 {
+		l = l[i+2:]
+	}
+	if len(l) > 300 {
+		l = l[:300]
+	}
+	return l
 }
 
 // tailBuffer keeps the last few KB a process printed.
