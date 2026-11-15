@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.HorizontalDivider
@@ -69,6 +71,7 @@ fun ResearchScreen(
     onSchedules: () -> Unit,
     onSchedule: (String) -> Unit,
     onAbout: () -> Unit,
+    onKeep: (ai.bench.app.data.SchedulePrefill) -> Unit = {},
 ) {
     val s by store.state.collectAsState()
     val reports by store.reports.collectAsState()
@@ -78,6 +81,7 @@ fun ResearchScreen(
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf<Report?>(null) }
+    var detail by rememberSaveable { mutableStateOf<String?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(Unit) { store.loadExtras() }
@@ -103,7 +107,7 @@ fun ResearchScreen(
     val talks = live.filter { it.project_id == researchId && it.status != "running" && it.id !in made && hit(it.title) }
     // Everything already read, under the session that made it (named once, not on every row),
     // and research conversations that made no file. Newest first.
-    val earlier = (readable.filter { it !in fresh }.groupBy { it.session_id }.map { (sid, list) -> EarlierGroup(sid, sessionTitle(sid) ?: "Session", list.maxOf { it.modified }, list) } +
+    val earlier = (readable.groupBy { it.session_id }.filter { (_, list) -> list.any { it !in fresh } }.map { (sid, list) -> EarlierGroup(sid, sessionTitle(sid) ?: "Session", list.maxOf { it.modified }, list) } +
         talks.map { EarlierGroup(it.id, it.title, it.updated_at, emptyList()) }).sortedByDescending { it.at }
     val nothing = running.isEmpty() && fresh.isEmpty() && kept.isEmpty() && earlier.isEmpty()
 
@@ -177,16 +181,17 @@ fun ResearchScreen(
                     }
                 }
 
+                // One row per research: the question asked, and what it made.
                 if (earlier.isNotEmpty()) {
                     item("old-l") { Label("Earlier") }
-                    earlier.forEach { g ->
-                        if (g.reports.isEmpty()) item("s-${g.sessionId}") { LibraryRow(g.title, "Conversation", dayLabel(g.at)) { onOpen(g.sessionId) } }
-                        else {
-                            item("h-${g.sessionId}") { FromSession(g.title) { onOpen(g.sessionId) } }
-                            items(g.reports, key = { "r-${it.path}" }) { x ->
-                                LibraryRow(x.title, listOfNotNull(if (x.kind == "drafts") "${x.drafts ?: 0} drafts" else readLabel(x), x.gist).joinToString(" · "), dayLabel(x.modified)) { opened = x }
-                            }
+                    items(earlier, key = { "q-${it.sessionId}" }) { g ->
+                        val made = g.reports.sortedByDescending { it.modified }
+                        val sub = when (made.size) {
+                            0 -> "Answered in the conversation"
+                            1 -> made[0].title
+                            else -> "${made[0].title}, and ${made.size - 1} more"
                         }
+                        QuestionRow(question(g.title), sub, dayLabel(g.at)) { if (made.isEmpty()) onOpen(g.sessionId) else detail = g.sessionId }
                     }
                 }
 
@@ -197,19 +202,70 @@ fun ResearchScreen(
     }
 
     }
+    detail?.let { sid ->
+        androidx.activity.compose.BackHandler { detail = null }
+        val ses = s.sessions.firstOrNull { it.id == sid }
+        ResearchDetail(
+            question(ses?.title ?: "Research"), ses?.created_at.orEmpty(),
+            reports.filter { it.session_id == sid && it.kind != "file" && !it.title.startsWith("Bench presents") }.sortedByDescending { it.modified },
+            canKeep = ses != null && ses.schedule_id == null && ses.project_id != null,
+            onBack = { detail = null }, onRead = { opened = it }, onConversation = { detail = null; onOpen(sid) },
+            onKeep = { ses?.let { onKeep(ai.bench.app.data.SchedulePrefill(it.title, it.title, it.project_id)) } },
+        )
+    }
     opened?.let { r -> ReportViewer(store, r, onOpen = onOpen, onAbout = onAbout) { opened = null } }
 }
 
-private class EarlierGroup(val sessionId: String, val title: String, val at: String, val reports: List<Report>)
+/** A research's title is the question as it was asked; only its first letter is raised. */
+private fun question(t: String) = t.trim().replaceFirstChar { it.uppercaseChar() }
 
-/** The session some reports came from: named once above them; opens the conversation. */
 @Composable
-private fun FromSession(title: String, onClick: () -> Unit) {
-    Text(
-        title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Bench.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 6.dp),
-    )
+private fun QuestionRow(title: String, sub: String, right: String, onClick: () -> Unit) {
+    val c = Bench.colors
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(sub, fontSize = 13.5.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(right, fontSize = 13.5.sp, color = c.muted, maxLines = 1)
+    }
 }
+
+/** One research: the question, everything it made, and the way back to its conversation. */
+@Composable
+private fun ResearchDetail(title: String, at: String, made: List<Report>, canKeep: Boolean, onBack: () -> Unit, onRead: (Report) -> Unit, onConversation: () -> Unit, onKeep: () -> Unit) {
+    val c = Bench.colors
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides c.text) {
+    Column(Modifier.fillMaxSize().background(c.bg).statusBarsPadding()) {
+        IconButton(onClick = onBack, modifier = Modifier.padding(start = 4.dp, top = 4.dp).size(48.dp)) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = c.text)
+        }
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+            item("head") {
+                Column(Modifier.padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Research · ${dayLabel(at)}", fontSize = 13.sp, color = c.muted)
+                    Text(title, fontSize = 25.sp, lineHeight = 31.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp)
+                }
+            }
+            item("made-l") { Label("What it made", trailing = "${made.size}") }
+            items(made, key = { it.path }) { r ->
+                if (r.kind == "drafts") DraftsCard(r, null, Modifier.padding(top = 10.dp)) { onRead(r) }
+                else ReportCard(r, null, Modifier.padding(top = 10.dp)) { onRead(r) }
+            }
+        }
+        HorizontalDivider(color = c.line)
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BigButton("Open conversation", height = 50.dp, modifier = Modifier.weight(1f)) { onConversation() }
+            if (canKeep) BigButton("Keep it updated", height = 50.dp, fill = false) { onKeep() }
+        }
+    }
+    }
+}
+
+private class EarlierGroup(val sessionId: String, val title: String, val at: String, val reports: List<Report>)
 
 /** A research schedule: how fresh it is, and how often it runs. */
 @Composable

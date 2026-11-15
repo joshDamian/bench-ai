@@ -140,7 +140,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
                 }
             }
             composable("research") {
-                ResearchScreen(store, onOpen = open, onResearch = { researchAsk = it; research = true }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") })
+                ResearchScreen(store, onOpen = open, onResearch = { researchAsk = it; research = true }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") }, onKeep = { store.schedulePrefill = it; nav.navigate("schedule/new") })
             }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }, onAsk = { nav.navigate("ask") }) }
