@@ -97,14 +97,31 @@ func macTools(svc *Service, sessionID string) map[string]func(context.Context, *
 	}
 }
 
-// withDevices adds the mac_* tools to a session's bench server once a device has linked.
+// withDevices adds the mac_* tools to a session's bench server once a device has linked, and
+// the meeting_* tools when the server can take part in calls.
 func withDevices(svc *Service, sessionID string, m *MCPServer) *MCPServer {
-	if len(svc.Devices().List()) == 0 {
+	devices := len(svc.Devices().List()) > 0
+	calls := truthy(svc.Meeting().Ready().Get("audio"))
+	if !devices && !calls {
 		return m
+	}
+	extraList := []any{}
+	extra := map[string]func(context.Context, *Obj) *Obj{}
+	if devices {
+		extraList = append(extraList, macToolList()...)
+		for k, v := range macTools(svc, sessionID) {
+			extra[k] = v
+		}
+	}
+	if calls {
+		extraList = append(extraList, meetingToolList()...)
+		for k, v := range meetingTools(svc, sessionID) {
+			extra[k] = v
+		}
 	}
 	man := m.Manifest.Clone()
 	list := man.ObjAt("toolsListResult").Clone()
-	list.Set("tools", append(append([]any{}, arr(list.Get("tools"))...), macToolList()...))
+	list.Set("tools", append(append([]any{}, arr(list.Get("tools"))...), extraList...))
 	man.Set("toolsListResult", list)
 	cfg := m.Config.Clone()
 	names := append([]any{}, arr(cfg.Get("tools"))...)
@@ -112,7 +129,7 @@ func withDevices(svc *Service, sessionID string, m *MCPServer) *MCPServer {
 	for k, v := range m.Tools {
 		tools[k] = v
 	}
-	for k, v := range macTools(svc, sessionID) {
+	for k, v := range extra {
 		tools[k] = v
 		names = append(names, O("name", k))
 	}

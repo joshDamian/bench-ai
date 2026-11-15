@@ -160,6 +160,21 @@ data class LinkedDevice(
     data class Share(val id: String, val kind: String, val name: String = "", val path: String? = null, val access: String = "", val rule: String = "ask")
 }
 
+/** The call a session is in, in the server's browser (GET /api/meeting). Go server only.
+ * speech: ask (each line waits for you), some (small talk on its own), allow (speaks freely). */
+@Serializable
+data class MeetingState(
+    val session_id: String? = null,
+    val since: String? = null,
+    val speech: String = "ask",
+    val heard: Int = 0,
+    val error: String? = null,
+    val ready: Ready = Ready(),
+) {
+    @Serializable
+    data class Ready(val audio: Boolean = false, val voice: Boolean = false, val listen: Boolean = false)
+}
+
 /** Something Bench asked a device to share, waiting there for the person to decide. */
 @Serializable
 data class DeviceAsk(val id: String, val device_id: String, val kind: String, val path: String = "", val access: String = "", val why: String = "", val session_id: String? = null, val created_at: String = "")
@@ -414,4 +429,6 @@ sealed interface ServerMessage {
     data object Pong : ServerMessage
     /** A device linked, went offline, or changed what it shares or what waits on it. */
     data object DevicesChanged : ServerMessage
+    /** A call started or stopped, or how freely it speaks changed. */
+    data object MeetingChanged : ServerMessage
 }

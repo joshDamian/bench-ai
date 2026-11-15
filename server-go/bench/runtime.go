@@ -235,6 +235,8 @@ type Runtime struct {
 	// DevicesNote and ShareRule come from the service: what linked devices share (devices.go).
 	DevicesNote func() string
 	ShareRule   func(tool string, in *Obj) string
+	// Answered is told each approval's answer (a meeting line said no to speaks another).
+	Answered func(approval *Obj, allowed bool)
 	mu           sync.Mutex
 	startMu      sync.Mutex
 	live         map[string]*live
@@ -1320,6 +1322,9 @@ func (r *Runtime) Answer(approvalID string, a *Obj) (bool, error) {
 	if h == nil {
 		return false, fail("That request is no longer waiting", 404)
 	}
+	if r.Answered != nil {
+		r.Answered(h.approval, truthy(a.Get("allow")))
+	}
 	if !truthy(a.Get("allow")) {
 		msg := strings.TrimSpace(a.Str("message"))
 		if msg == "" {
@@ -1335,6 +1340,12 @@ func (r *Runtime) Answer(approvalID string, a *Obj) (bool, error) {
 			ans = O()
 		}
 		input = input.Clone().Set("answers", ans)
+	}
+	// A line for the meeting may be changed before it is said.
+	if h.approval.Str("tool") == toolPrefix+"meeting_say" {
+		if t := strings.TrimSpace(a.Str("text")); t != "" {
+			input = input.Clone().Set("text", t)
+		}
 	}
 	if h.approval.Str("tool") == "ExitPlanMode" {
 		mode := a.Str("mode")

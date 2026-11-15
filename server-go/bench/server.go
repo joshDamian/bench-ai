@@ -424,7 +424,12 @@ func (s *Server) wire() {
 			if a.Str("title") != "" {
 				body += " — " + a.Str("title")
 			}
-			go s.pushAll(O("title", "Approval needed: "+tool, "body", body, "url", SessionPath(ss), "tag", "approval-"+a.Str("id"), "approvalId", a.Str("id"), "sessionId", ss.Str("id")), "approval")
+			title := "Approval needed: " + tool
+			// A line for a call: the line itself, so it can be read from the lock screen.
+			if a.Str("tool") == toolPrefix+"meeting_say" {
+				title, body = "Say this in the call?", a.ObjAt("input").Str("text")
+			}
+			go s.pushAll(O("title", title, "body", body, "url", SessionPath(ss), "tag", "approval-"+a.Str("id"), "approvalId", a.Str("id"), "sessionId", ss.Str("id")), "approval")
 		}
 	})
 	rt.On("suggestion", func(x any) {
@@ -465,6 +470,7 @@ func (s *Server) wire() {
 	s.Svc.On("task", func(t any) { s.broadcast(O("type", "task", "task", t), "") })
 	s.Svc.On("git", func(p any) { s.broadcast(O("type", "git", "project_id", p), "") })
 	s.Svc.On("devices", func(any) { s.broadcast(O("type", "devices"), "") })
+	s.Svc.On("meeting", func(any) { s.broadcast(O("type", "meeting"), "") })
 }
 
 // --- helpers -------------------------------------------------------------------------------
@@ -1339,6 +1345,9 @@ func (s *Server) routesInit() {
 	s.route("GET", "/api/archive", func(c *ctxt) (any, error) { return svc.Archive(), nil })
 	s.route("POST", "/api/archive/restore", func(c *ctxt) (any, error) { return svc.Restore(c.body.Str("kind"), c.body.Str("id")) })
 	s.route("DELETE", "/api/archive", func(c *ctxt) (any, error) { return svc.EmptyArchive(), nil })
+	s.route("GET", "/api/meeting", func(c *ctxt) (any, error) { return svc.Meeting().View(), nil })
+	s.route("PUT", "/api/meeting", func(c *ctxt) (any, error) { return svc.Meeting().SetSpeech(c.body.Str("speech")) })
+	s.route("POST", "/api/meeting/stop", func(c *ctxt) (any, error) { return svc.Meeting().Stop(), nil })
 	s.route("GET", "/api/linked-devices", func(c *ctxt) (any, error) { return svc.Devices().List(), nil })
 	s.route("GET", "/api/linked-devices/:id", func(c *ctxt) (any, error) { return svc.Devices().Device(c.params[0]) })
 	s.route("DELETE", "/api/linked-devices/:id", func(c *ctxt) (any, error) { return svc.Devices().Forget(c.params[0]) })

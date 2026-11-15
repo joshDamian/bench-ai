@@ -355,6 +355,39 @@ func (a *About) After(sessionID string) {
 	a.setChangedBy(sessionID)
 }
 
+// FirstName is the person's first name, from the first line of "Who you are" in About me
+// ("Joshua Avoaja, CTO…" or "Name: Joshua"), or "" when it is not there.
+func (a *About) FirstName() string {
+	b, err := os.ReadFile(a.File())
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(b), "\n")
+	for i, l := range lines {
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(l)), "## who you are") {
+			continue
+		}
+		for _, n := range lines[i+1:] {
+			n = strings.TrimSpace(strings.TrimLeft(n, "-* "))
+			if n == "" {
+				continue
+			}
+			if strings.HasPrefix(n, "#") {
+				return ""
+			}
+			if j := strings.Index(strings.ToLower(n), "name:"); j >= 0 {
+				n = strings.TrimSpace(n[j+5:])
+			}
+			n = strings.Trim(strings.Fields(n + " x")[0], "*,.;:")
+			if len(n) >= 2 && len(n) <= 30 && strings.ToUpper(n[:1]) == n[:1] {
+				return n
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
 func (a *About) Note() string {
 	return "# About me\n\nThe person keeps a note about themselves in " + a.File() + ": who they are, their work, their links and how they write. Use it whenever you write for them or as them, and fill in their own details rather than leaving blanks. When they ask you to remember something about themselves or how they like things done, add one short line under the right heading there and say \"Added to About me\" in your reply. Do not add anything they did not ask for."
 }

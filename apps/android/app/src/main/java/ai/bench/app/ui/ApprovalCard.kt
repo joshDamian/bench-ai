@@ -98,7 +98,35 @@ fun askLine(a: Approval) = when (a.tool) {
     "WebSearch" -> "Search the web"
     "ExitPlanMode" -> "Claude has a plan"
     "AskUserQuestion" -> "Claude is asking"
+    SAY -> "Say in the meeting"
     else -> a.title ?: toolName(a.tool)
+}
+
+/** A line a session wants to say in a call. */
+const val SAY = "mcp__bench__meeting_say"
+
+/**
+ * A line for the call, waiting for you: change it if you like, then say it, or don't. The call
+ * has already heard "let me confirm that"; a no says a neutral line instead.
+ */
+@Composable
+private fun SayLine(approval: Approval, busy: Boolean, big: Boolean, onAnswer: (JsonObject) -> Unit) {
+    val c = Bench.colors
+    var text by remember(approval.id) { mutableStateOf(approval.input["text"].str().orEmpty()) }
+    androidx.compose.foundation.text.BasicTextField(
+        text, { text = it },
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = if (big) 17.sp else 16.sp, lineHeight = 23.sp, color = c.text),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 200.dp).background(c.surface1, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        BigButton("Say it", Modifier.weight(1f), primary = true, height = 48.dp, size = 15.sp, enabled = !busy && text.isNotBlank()) {
+            onAnswer(answer(true) { put("text", text.trim()) })
+        }
+        BigButton("Don't say", height = 48.dp, size = 15.sp, enabled = !busy, fill = false) {
+            onAnswer(answer(false) { put("message", "The person said no to that line; a neutral line was said instead. Don't say it another way.") })
+        }
+    }
 }
 
 private fun answer(allow: Boolean, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}) =
@@ -143,6 +171,7 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
                 if (onTakeOver != null && takeOverQuestion(approval) != null) BigButton("Take over the browser", primary = true, height = 48.dp, enabled = !busy, onClick = onTakeOver)
                 Questions(approval, busy, onAnswer)
             }
+            SAY -> SayLine(approval, busy, big = true, onAnswer = onAnswer)
             else -> {
                 // While writing why, the request folds to its first lines so the note has room.
                 Box(Modifier.fillMaxWidth().heightIn(max = if (denying) 96.dp else 280.dp).verticalScroll(rememberScrollState())) {
@@ -210,6 +239,7 @@ fun ApprovalCard(
             }
         } else when (approval.tool) {
             "ExitPlanMode", "AskUserQuestion" -> BigButton("Open", primary = true, height = 48.dp, size = 15.sp, onClick = onOpen)
+            SAY -> SayLine(approval, busy, big = false, onAnswer = onAnswer)
             else -> {
                 Preview(approval, cwd, big = false)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {

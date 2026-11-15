@@ -48,6 +48,7 @@ fun parseServerMessage(text: String): ServerMessage? {
             "git" -> ServerMessage.Git(o["project_id"].str() ?: "")
             "pong" -> ServerMessage.Pong
             "devices" -> ServerMessage.DevicesChanged
+            "meeting" -> ServerMessage.MeetingChanged
             else -> null
         }
     }.getOrNull()

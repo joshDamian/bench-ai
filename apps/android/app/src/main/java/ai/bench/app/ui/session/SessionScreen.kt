@@ -269,6 +269,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
         retry = { t -> scope.launch { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); stick = true; list.scrollToItem(0); vm.send(t) } },
     )) { WithFiles(files) {
         Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
+            // In a call: listening, how freely it speaks, and Stop.
+            val meeting by vm.store.meeting.collectAsState()
+            LaunchedEffect(vm.sessionId) { vm.store.loadMeeting() }
+            meeting?.takeIf { it.session_id == vm.sessionId }?.let { m -> CallBar(m, vm.store) }
             var since by remember(vm.sessionId) { mutableStateOf<String?>(null) }
             LaunchedEffect(loading, lookedAt) { if (!loading && lookedAt != null && since == null) since = vm.sinceYouLooked(lookedAt) }
             since?.let { line ->
@@ -675,5 +679,30 @@ private fun RecentSheet(store: ai.bench.app.data.BenchStore, current: String, on
                 }
             }
         }
+    }
+}
+
+/** The call bar: the session is in a call, listening, and speaks as its rule says. */
+@Composable
+private fun CallBar(m: ai.bench.app.data.MeetingState, store: ai.bench.app.data.BenchStore) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    var picking by remember { mutableStateOf(false) }
+    val words = mapOf("ask" to "Asks before each line", "some" to "Small talk on its own", "allow" to "Speaks freely")
+    Row(
+        Modifier.padding(horizontal = Space.lg, vertical = Space.xs).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surface1).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(8.dp).background(c.bad, androidx.compose.foundation.shape.CircleShape))
+        Column(Modifier.weight(1f)) {
+            Text(if (m.ready.listen) "In a call · listening" else "In a call · can't hear it", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(m.error ?: (words[m.speech] ?: m.speech), fontSize = 12.5.sp, color = if (m.error != null) c.bad else c.accent, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable { picking = true })
+        }
+        androidx.compose.material3.TextButton(onClick = { scope.launch { runCatching { store.api.stopMeeting() }.onSuccess { store.setMeeting(it) } } }) { Text("Stop", color = c.muted) }
+    }
+    if (picking) ai.bench.app.ui.PickDialog("In the call", words.entries.map { it.key to it.value }, m.speech, onDismiss = { picking = false }) { v ->
+        picking = false
+        scope.launch { runCatching { store.api.setMeetingSpeech(v) }.onSuccess { store.setMeeting(it) } }
     }
 }

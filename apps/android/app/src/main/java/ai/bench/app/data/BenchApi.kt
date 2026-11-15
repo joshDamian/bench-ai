@@ -107,6 +107,9 @@ class BenchApi(val config: ServerConfig) {
     suspend fun aboutFromCv(): Pair<Session, String> = post("/api/about/from-cv").let { r -> r["session"].decode<Session>() to (r["prompt"].str() ?: "") }
     suspend fun rules(): List<Rule> = get("/api/rules").lossy()
     suspend fun reach(): Reach = get("/api/reach").decode()
+    suspend fun meeting(): MeetingState = get("/api/meeting").decode()
+    suspend fun setMeetingSpeech(v: String): MeetingState = put("/api/meeting", buildJsonObject { put("speech", v) }).decode()
+    suspend fun stopMeeting(): MeetingState = post("/api/meeting/stop").decode()
     suspend fun linkedDevices(): List<LinkedDevice> = get("/api/linked-devices").lossy()
     suspend fun askDevice(id: String, kind: String, path: String, access: String): DeviceAsk =
         post("/api/linked-devices/${enc(id)}/ask", buildJsonObject { put("kind", kind); put("path", path); put("access", access) }).decode()

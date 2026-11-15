@@ -155,6 +155,12 @@ func (b *Browser) launch(bin string, noSandbox bool) error {
 		"--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled",
 		"--window-size=1280,900", "--lang=en-US"}
 	display := b.screen()
+	// Calls: Chromium plays into Bench's speaker and hears Bench's microphone, and does not
+	// ask before using them. Without PulseAudio it has no sound, as before.
+	audio := AudioSetup() == nil
+	if audio {
+		args = append(args, "--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required")
+	}
 	if display == "" {
 		args = append(args, "--headless=new")
 		if ua := plainUserAgent(bin); ua != "" {

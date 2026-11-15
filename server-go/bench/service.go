@@ -106,6 +106,7 @@ type Service struct {
 	mu       sync.Mutex
 	spending *Spending
 	devices  *Devices
+	meeting  *Meeting
 }
 
 func NewService(root string) (*Service, error) {
@@ -124,8 +125,24 @@ func NewService(root string) (*Service, error) {
 	s.Resumer = NewResumer(s)
 	s.Scheduler = NewScheduler(s)
 	// What the person's other devices share: told to sessions, and the rule each call follows.
-	s.Runtime.DevicesNote = func() string { return s.Devices().Note() }
-	s.Runtime.ShareRule = func(tool string, in *Obj) string { return s.Devices().Rule(tool, in) }
+	s.Runtime.DevicesNote = func() string {
+		n := s.Devices().Note()
+		// Calls: told when the server can take part in one.
+		if truthy(s.Meeting().Ready().Get("audio")) {
+			if n != "" {
+				n += "\n\n"
+			}
+			n += s.Meeting().Note()
+		}
+		return n
+	}
+	s.Runtime.ShareRule = func(tool string, in *Obj) string {
+		if r := s.Meeting().Rule(tool, in); r != "" {
+			return r
+		}
+		return s.Devices().Rule(tool, in)
+	}
+	s.Runtime.Answered = func(a *Obj, allowed bool) { s.Meeting().Answered(a, allowed) }
 	s.Runtime.On("turn-done", func(x any) {
 		td := x.(TurnDone)
 		if td.Session != nil && td.Session.Str("project_id") != "" {

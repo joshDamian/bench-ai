@@ -61,6 +61,11 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     private val _recipes = MutableStateFlow<List<Recipe>>(emptyList())
     val recipes: StateFlow<List<Recipe>> = _recipes.asStateFlow()
     fun setRecipes(list: List<Recipe>) { _recipes.value = list }
+    /** The call a session is in, if any. */
+    private val _meeting = MutableStateFlow<MeetingState?>(null)
+    val meeting: StateFlow<MeetingState?> = _meeting.asStateFlow()
+    fun loadMeeting() { scope.launch { runCatching { api.meeting() }.onSuccess { _meeting.value = it } } }
+    fun setMeeting(m: MeetingState) { _meeting.value = m }
     /** Devices that share part of themselves (the Mac), with what waits on them. */
     private val _devices = MutableStateFlow<List<LinkedDevice>>(emptyList())
     val devices: StateFlow<List<LinkedDevice>> = _devices.asStateFlow()
@@ -79,6 +84,7 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
             runCatching { api.spending() }.onSuccess { _spending.value = it }
             runCatching { api.recipes() }.onSuccess { _recipes.value = it }
             runCatching { api.linkedDevices() }.onSuccess { _devices.value = it }
+            runCatching { api.meeting() }.onSuccess { _meeting.value = it }
             runCatching { api.activity() }.onSuccess { _activityUnseen.value = it.unseen }
         }
     }
@@ -274,6 +280,7 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
             is ServerMessage.Delta, is ServerMessage.Suggestion, is ServerMessage.Commands -> _session.tryEmit(m)
             is ServerMessage.Git, ServerMessage.Pong -> Unit
             ServerMessage.DevicesChanged -> loadDevices()
+            ServerMessage.MeetingChanged -> loadMeeting()
         }
     }
 

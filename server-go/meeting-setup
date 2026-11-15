@@ -1,0 +1,67 @@
+#!/bin/sh
+# Sets up calls for bench-go: a speaker and microphone Bench can use (PulseAudio), a voice
+# (Piper) and listening (whisper.cpp). Run it once as the account Bench runs as:
+#
+#   sh server-go/meeting-setup
+#
+# It asks for sudo once, for the system packages. The rest goes in ~/.local/share/bench-go:
+#   piper/piper, piper/voice.onnx      the voice (en_US lessac, medium)
+#   whisper/whisper-cli, whisper/ggml-base.en.bin   listening
+# Then it restarts bench-go, whose browser starts again with the speaker and microphone.
+#
+# Overrides: BENCH_GO_HOME, PIPER_VOICE (a voice name from huggingface.co/rhasspy/piper-voices,
+# e.g. en_GB-alan-medium), WHISPER_MODEL (tiny.en, base.en, small.en; bigger is slower).
+set -eu
+
+HOME_DIR="${BENCH_GO_HOME:-$HOME/.local/share/bench-go}"
+VOICE="${PIPER_VOICE:-en_US-lessac-medium}"
+MODEL="${WHISPER_MODEL:-base.en}"
+say() { for l in "$@"; do printf '%s\n' "$l"; done; }
+
+case "$(uname -m)" in
+  x86_64|amd64) ARCH=x86_64 ;;
+  aarch64|arm64) ARCH=aarch64 ;;
+  *) say "meeting-setup: no Piper build for $(uname -m)" >&2; exit 1 ;;
+esac
+
+say "System packages (PulseAudio, and what building whisper.cpp needs)…"
+sudo apt-get update -qq
+sudo apt-get install -y -qq pulseaudio pulseaudio-utils cmake g++ git curl >/dev/null
+
+# PulseAudio for this account, kept running: Bench's speaker and microphone live in it.
+systemctl --user enable --now pulseaudio.socket pulseaudio.service >/dev/null 2>&1 || pulseaudio --start --exit-idle-time=-1 || true
+
+say "The voice (Piper, $VOICE)…"
+mkdir -p "$HOME_DIR"
+if [ ! -x "$HOME_DIR/piper/piper" ]; then
+  curl -fsSL "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_$ARCH.tar.gz" | tar -xz -C "$HOME_DIR"
+fi
+LANG_DIR="$(printf '%s' "$VOICE" | cut -d_ -f1)"
+REGION="$(printf '%s' "$VOICE" | cut -d- -f1)"
+NAME="$(printf '%s' "$VOICE" | cut -d- -f2)"
+QUALITY="$(printf '%s' "$VOICE" | cut -d- -f3)"
+BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main/$LANG_DIR/$REGION/$NAME/$QUALITY/$VOICE"
+curl -fsSL "$BASE.onnx" -o "$HOME_DIR/piper/voice.onnx"
+curl -fsSL "$BASE.onnx.json" -o "$HOME_DIR/piper/voice.onnx.json"
+
+say "Listening (whisper.cpp, $MODEL)…"
+mkdir -p "$HOME_DIR/whisper"
+if [ ! -x "$HOME_DIR/whisper/whisper-cli" ]; then
+  SRC="$HOME_DIR/whisper/src"
+  [ -d "$SRC" ] || git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp "$SRC"
+  cmake -S "$SRC" -B "$SRC/build" -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release >/dev/null
+  cmake --build "$SRC/build" -j"$(nproc)" --target whisper-cli >/dev/null
+  cp "$SRC/build/bin/whisper-cli" "$HOME_DIR/whisper/whisper-cli"
+fi
+curl -fsSL "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin" -o "$HOME_DIR/whisper/ggml-base.en.bin"
+
+# A quick check: say something into a file.
+printf 'Bench can speak.' | "$HOME_DIR/piper/piper" --model "$HOME_DIR/piper/voice.onnx" --output_file /tmp/bench-voice-check.wav >/dev/null 2>&1 \
+  && say "Voice: works" || say "Voice: Piper did not run; check $HOME_DIR/piper"
+rm -f /tmp/bench-voice-check.wav
+
+if systemctl --user is-active --quiet bench-go.service 2>/dev/null; then
+  systemctl --user restart bench-go.service
+  say "Restarted bench-go: its browser now has a speaker and microphone."
+fi
+say "" "Done. In a session: join a call in the browser, and Bench listens and speaks there."
