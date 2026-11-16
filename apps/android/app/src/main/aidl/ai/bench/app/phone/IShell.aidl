@@ -16,4 +16,7 @@ interface IShell {
 
     // Removes the hidden screen and what is on it.
     void close() = 4;
+
+    // 1: the hidden screen keeps its own focus; 2: touching it leaves the person's focus alone.
+    int focus() = 5;
 }
