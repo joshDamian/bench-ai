@@ -50,8 +50,13 @@ struct SharedPage: View {
                 Group2 {
                     ForEach(Array(list.enumerated()), id: \.element.id) { i, s in
                         HStack(spacing: 12) {
-                            Image(systemName: s.icon).font(.system(size: 13)).frame(width: 30, height: 30)
-                                .background(theme.colors.fill(0.08), in: RoundedRectangle(cornerRadius: 7))
+                            // An app shows its own icon, as Finder does; the rest a symbol.
+                            if s.kind == "app", let path = s.path, FileManager.default.fileExists(atPath: path) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: path)).resizable().interpolation(.high).frame(width: 30, height: 30)
+                            } else {
+                                Image(systemName: s.icon).font(.system(size: 13)).frame(width: 30, height: 30)
+                                    .background(theme.colors.fill(0.08), in: RoundedRectangle(cornerRadius: 7))
+                            }
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(s.kind == "folder" ? (s.shownPath ?? s.name) : s.name).font(.system(size: 13))
                                 Text(s.accessLabel).font(.system(size: 11.5)).foregroundStyle(theme.colors.muted)
