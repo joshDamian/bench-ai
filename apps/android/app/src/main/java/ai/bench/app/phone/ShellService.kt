@@ -80,7 +80,23 @@ class ShellService(private val context: Context?) : IShell.Stub() {
         if (made == null) { r.close(); throw IllegalStateException("The phone would not make a hidden screen: ${why?.message}") }
         display = made
         reader = r
+        noKeyboard(made.display.displayId)
         return made.display.displayId
+    }
+
+    /**
+     * No keyboard for the hidden screen. Left alone, Android shows the keyboard for a field there
+     * on the person's own screen, over what they are doing. Bench types with key events, which
+     * need no keyboard. Android 12+: the display's keyboard policy, hide (what scrcpy's
+     * --display-ime-policy=hide sets); Android 10 and 11: "don't show the keyboard" for it.
+     */
+    private fun noKeyboard(id: Int) {
+        runCatching {
+            val binder = Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java).invoke(null, "window")
+            val wm = Class.forName("android.view.IWindowManager\$Stub").getMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
+            if (Build.VERSION.SDK_INT >= 31) wm.javaClass.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType).invoke(wm, id, IME_HIDE)
+            else wm.javaClass.getMethod("setShouldShowIme", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType).invoke(wm, id, false)
+        }
     }
 
     override fun frame(quality: Int): ByteArray {
@@ -117,5 +133,7 @@ class ShellService(private val context: Context?) : IShell.Stub() {
         const val ALWAYS_UNLOCKED = 1 shl 12
         const val TOUCH_FEEDBACK_DISABLED = 1 shl 13
         const val OWN_FOCUS = 1 shl 14
+        // WindowManager.DISPLAY_IME_POLICY_HIDE
+        const val IME_HIDE = 2
     }
 }
