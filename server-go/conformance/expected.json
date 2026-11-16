@@ -1,0 +1,6932 @@
+[
+ {
+  "name": "ping",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true,
+    "paired": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "unauthorized from elsewhere",
+  "value": {
+   "status": 200,
+   "body": {
+    "version": "2.0.0",
+    "projects": [],
+    "tasks": [],
+    "sessions": [],
+    "approvals": [],
+    "providers": [
+     {
+      "id": "anthropic-claude-code",
+      "name": "Anthropic (Claude login)",
+      "kind": "claude-code",
+      "enabled": true,
+      "config": {
+       "billingMode": "subscription"
+      },
+      "ready": true,
+      "reason": null,
+      "models": [
+       {
+        "id": "anthropic:claude-fable-5-1",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-fable-5-1",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 10,
+        "output_cost_per_mtok": 50,
+        "cache_read_cost_per_mtok": 0.25,
+        "cache_write_cost_per_mtok": 20,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-09-27",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-fable-5-1",
+        "invocation_model_id": "claude-fable-5-1",
+        "display_name": "Claude Fable 5.1"
+       },
+       {
+        "id": "anthropic:claude-haiku-4-5-20251001",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-haiku-4-5-20251001",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 200000,
+        "input_cost_per_mtok": 1,
+        "output_cost_per_mtok": 5,
+        "cache_read_cost_per_mtok": 0.1,
+        "cache_write_cost_per_mtok": 2,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-haiku-4-5-20251001",
+        "invocation_model_id": "claude-haiku-4-5-20251001",
+        "display_name": "Claude Haiku 4.5"
+       },
+       {
+        "id": "anthropic:claude-opus-4-8",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-opus-4-8",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 5,
+        "output_cost_per_mtok": 25,
+        "cache_read_cost_per_mtok": 0.5,
+        "cache_write_cost_per_mtok": 10,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-08-24",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-opus-4-8",
+        "invocation_model_id": "claude-opus-4-8",
+        "display_name": "Claude Opus 4.8"
+       },
+       {
+        "id": "anthropic:claude-opus-5",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-opus-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 5,
+        "output_cost_per_mtok": 25,
+        "cache_read_cost_per_mtok": 0.5,
+        "cache_write_cost_per_mtok": 10,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-08-24",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-opus-5",
+        "invocation_model_id": "claude-opus-5",
+        "display_name": "Claude Opus 5"
+       },
+       {
+        "id": "anthropic:claude-opus-5-5",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-opus-5-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 4,
+        "output_cost_per_mtok": 20,
+        "cache_read_cost_per_mtok": 0.2,
+        "cache_write_cost_per_mtok": 8,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-09-27",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-opus-5-5",
+        "invocation_model_id": "claude-opus-5-5",
+        "display_name": "Claude Opus 5.5"
+       },
+       {
+        "id": "anthropic:claude-sonnet-4-6",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-sonnet-4-6",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 3,
+        "output_cost_per_mtok": 15,
+        "cache_read_cost_per_mtok": 0.3,
+        "cache_write_cost_per_mtok": 6,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-05-12",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-sonnet-4-6",
+        "invocation_model_id": "claude-sonnet-4-6",
+        "display_name": "Claude Sonnet 4.6"
+       },
+       {
+        "id": "anthropic:claude-sonnet-5",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-sonnet-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 2,
+        "output_cost_per_mtok": 10,
+        "cache_read_cost_per_mtok": 0.2,
+        "cache_write_cost_per_mtok": 4,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-08-10",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-sonnet-5",
+        "invocation_model_id": "claude-sonnet-5",
+        "display_name": "Claude Sonnet 5"
+       },
+       {
+        "id": "anthropic:claude-sonnet-5-5",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-sonnet-5-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 2,
+        "output_cost_per_mtok": 10,
+        "cache_read_cost_per_mtok": 0.2,
+        "cache_write_cost_per_mtok": 4,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-10-03",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-sonnet-5-5",
+        "invocation_model_id": "claude-sonnet-5-5",
+        "display_name": "Claude Sonnet 5.5"
+       }
+      ]
+     },
+     {
+      "id": "deepseek-claude-code",
+      "name": "DeepSeek",
+      "kind": "deepseek",
+      "enabled": false,
+      "config": {
+       "apiKeyEnv": "DEEPSEEK_API_KEY",
+       "billingMode": "api"
+      },
+      "ready": false,
+      "reason": "Disabled",
+      "models": [
+       {
+        "id": "deepseek:deepseek-flash",
+        "provider_id": "deepseek-claude-code",
+        "name": "deepseek-flash",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 0.15,
+        "output_cost_per_mtok": 0.6,
+        "cache_read_cost_per_mtok": 0.003,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "DeepSeek official pricing",
+        "pricing_updated_at": "2026-09-21",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "deepseek-flash",
+        "invocation_model_id": "deepseek-flash",
+        "display_name": "DeepSeek V4.1 Flash"
+       },
+       {
+        "id": "deepseek:deepseek-v4-pro",
+        "provider_id": "deepseek-claude-code",
+        "name": "deepseek-v4-pro",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 0.66,
+        "output_cost_per_mtok": 1.98,
+        "cache_read_cost_per_mtok": 0.022,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "DeepSeek official pricing",
+        "pricing_updated_at": "2026-09-21",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "deepseek-v4-pro",
+        "invocation_model_id": "deepseek-v4-pro",
+        "display_name": "DeepSeek V4 Pro"
+       }
+      ]
+     },
+     {
+      "id": "fireworks",
+      "name": "Fireworks",
+      "kind": "fireworks",
+      "enabled": false,
+      "config": {
+       "apiKeyEnv": "FIREWORKS_API_KEY",
+       "billingMode": "api"
+      },
+      "ready": false,
+      "reason": "Disabled",
+      "models": [
+       {
+        "id": "fireworks:accounts/fireworks/routers/firerouter",
+        "provider_id": "fireworks",
+        "name": "firerouter",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1048576,
+        "input_cost_per_mtok": 0.8,
+        "output_cost_per_mtok": 4,
+        "cache_read_cost_per_mtok": 0.15,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "FireRouter - varies by routed model (pooled estimate)",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/routers/firerouter",
+        "invocation_model_id": "accounts/fireworks/routers/firerouter",
+        "display_name": "FireRouter"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/glm-5p3",
+        "provider_id": "fireworks",
+        "name": "glm-5p3",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1048576,
+        "input_cost_per_mtok": 1.4,
+        "output_cost_per_mtok": 4.4,
+        "cache_read_cost_per_mtok": 0.26,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/glm-5p3",
+        "invocation_model_id": "accounts/fireworks/models/glm-5p3",
+        "display_name": "GLM 5.3"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/glm-5p3-flash",
+        "provider_id": "fireworks",
+        "name": "glm-5p3-flash",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1048576,
+        "input_cost_per_mtok": 0.15,
+        "output_cost_per_mtok": 0.5,
+        "cache_read_cost_per_mtok": 0.03,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/glm-5p3-flash",
+        "invocation_model_id": "accounts/fireworks/models/glm-5p3-flash",
+        "display_name": "GLM 5.3 Flash"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/gpt-oss-120b",
+        "provider_id": "fireworks",
+        "name": "gpt-oss-120b",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 131072,
+        "input_cost_per_mtok": 0.15,
+        "output_cost_per_mtok": 0.6,
+        "cache_read_cost_per_mtok": 0.015,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/gpt-oss-120b",
+        "invocation_model_id": "accounts/fireworks/models/gpt-oss-120b",
+        "display_name": "GPT OSS 120B"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/kimi-k3",
+        "provider_id": "fireworks",
+        "name": "kimi-k3",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1048576,
+        "input_cost_per_mtok": 3,
+        "output_cost_per_mtok": 15,
+        "cache_read_cost_per_mtok": 0.3,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/kimi-k3",
+        "invocation_model_id": "accounts/fireworks/models/kimi-k3",
+        "display_name": "Kimi K3"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/minimax-m3",
+        "provider_id": "fireworks",
+        "name": "minimax-m3",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 512000,
+        "input_cost_per_mtok": 0.3,
+        "output_cost_per_mtok": 1.2,
+        "cache_read_cost_per_mtok": 0.06,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/minimax-m3",
+        "invocation_model_id": "accounts/fireworks/models/minimax-m3",
+        "display_name": "MiniMax M3"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/qwen3p8-max",
+        "provider_id": "fireworks",
+        "name": "qwen3p8-max",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 262144,
+        "input_cost_per_mtok": 2,
+        "output_cost_per_mtok": 6,
+        "cache_read_cost_per_mtok": 0.25,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/qwen3p8-max",
+        "invocation_model_id": "accounts/fireworks/models/qwen3p8-max",
+        "display_name": "Qwen 3.8 Max"
+       }
+      ]
+     },
+     {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "kind": "openrouter",
+      "enabled": false,
+      "config": {
+       "apiKeyEnv": "OPENROUTER_API_KEY",
+       "billingMode": "api"
+      },
+      "ready": false,
+      "reason": "Disabled",
+      "models": [
+       {
+        "id": "openrouter:anthropic/claude-haiku-4.5",
+        "provider_id": "openrouter",
+        "name": "claude-haiku-4.5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 200000,
+        "input_cost_per_mtok": 1,
+        "output_cost_per_mtok": 5,
+        "cache_read_cost_per_mtok": 0.1,
+        "cache_write_cost_per_mtok": 2,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-haiku-4.5",
+        "invocation_model_id": "anthropic/claude-haiku-4.5",
+        "display_name": "Claude Haiku 4.5"
+       },
+       {
+        "id": "openrouter:anthropic/claude-opus-4.8",
+        "provider_id": "openrouter",
+        "name": "claude-opus-4.8",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 5,
+        "output_cost_per_mtok": 25,
+        "cache_read_cost_per_mtok": 0.5,
+        "cache_write_cost_per_mtok": 10,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-opus-4.8",
+        "invocation_model_id": "anthropic/claude-opus-4.8",
+        "display_name": "Claude Opus 4.8"
+       },
+       {
+        "id": "openrouter:anthropic/claude-opus-5",
+        "provider_id": "openrouter",
+        "name": "claude-opus-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 5,
+        "output_cost_per_mtok": 25,
+        "cache_read_cost_per_mtok": 0.5,
+        "cache_write_cost_per_mtok": 10,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-opus-5",
+        "invocation_model_id": "anthropic/claude-opus-5",
+        "display_name": "Claude Opus 5"
+       },
+       {
+        "id": "openrouter:anthropic/claude-sonnet-4.6",
+        "provider_id": "openrouter",
+        "name": "claude-sonnet-4.6",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 3,
+        "output_cost_per_mtok": 15,
+        "cache_read_cost_per_mtok": 0.3,
+        "cache_write_cost_per_mtok": 6,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-sonnet-4.6",
+        "invocation_model_id": "anthropic/claude-sonnet-4.6",
+        "display_name": "Claude Sonnet 4.6"
+       },
+       {
+        "id": "openrouter:anthropic/claude-sonnet-5",
+        "provider_id": "openrouter",
+        "name": "claude-sonnet-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 2,
+        "output_cost_per_mtok": 10,
+        "cache_read_cost_per_mtok": 0.2,
+        "cache_write_cost_per_mtok": 4,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-sonnet-5",
+        "invocation_model_id": "anthropic/claude-sonnet-5",
+        "display_name": "Claude Sonnet 5"
+       },
+       {
+        "id": "openrouter:google/gemini-2.5-flash",
+        "provider_id": "openrouter",
+        "name": "gemini-2.5-flash",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 0.15,
+        "output_cost_per_mtok": 0.6,
+        "cache_read_cost_per_mtok": null,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "google/gemini-2.5-flash",
+        "invocation_model_id": "google/gemini-2.5-flash",
+        "display_name": "Gemini 2.5 Flash"
+       },
+       {
+        "id": "openrouter:google/gemini-2.5-pro",
+        "provider_id": "openrouter",
+        "name": "gemini-2.5-pro",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 1.25,
+        "output_cost_per_mtok": 10,
+        "cache_read_cost_per_mtok": null,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "google/gemini-2.5-pro",
+        "invocation_model_id": "google/gemini-2.5-pro",
+        "display_name": "Gemini 2.5 Pro"
+       },
+       {
+        "id": "openrouter:meta-llama/llama-4-maverick",
+        "provider_id": "openrouter",
+        "name": "llama-4-maverick",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 0.2,
+        "output_cost_per_mtok": 0.6,
+        "cache_read_cost_per_mtok": null,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "meta-llama/llama-4-maverick",
+        "invocation_model_id": "meta-llama/llama-4-maverick",
+        "display_name": "Llama 4 Maverick"
+       },
+       {
+        "id": "openrouter:qwen/qwen3-235b-a22b",
+        "provider_id": "openrouter",
+        "name": "qwen3-235b",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 131072,
+        "input_cost_per_mtok": 0.7,
+        "output_cost_per_mtok": 2.8,
+        "cache_read_cost_per_mtok": null,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "qwen/qwen3-235b-a22b",
+        "invocation_model_id": "qwen/qwen3-235b-a22b",
+        "display_name": "Qwen 3 235B"
+       }
+      ]
+     }
+    ],
+    "defaults": {
+     "projectsDir": "<root>/projects",
+     "providerId": "anthropic-claude-code",
+     "modelId": null,
+     "mode": "default",
+     "effort": null,
+     "routing": {
+      "enabled": true,
+      "explorer": "haiku",
+      "implementer": "sonnet",
+      "architect": "inherit",
+      "all": null
+     },
+     "limits": {
+      "autoResume": true,
+      "fallback": null
+     }
+    },
+    "me": {
+     "local": true,
+     "device": null
+    },
+    "push": "<push>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "state, empty",
+  "value": {
+   "status": 200,
+   "body": {
+    "version": "2.0.0",
+    "projects": [],
+    "tasks": [],
+    "sessions": [],
+    "approvals": [],
+    "providers": [
+     {
+      "id": "anthropic-claude-code",
+      "name": "Anthropic (Claude login)",
+      "kind": "claude-code",
+      "enabled": true,
+      "config": {
+       "billingMode": "subscription"
+      },
+      "ready": true,
+      "reason": null,
+      "models": [
+       {
+        "id": "anthropic:claude-fable-5-1",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-fable-5-1",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 10,
+        "output_cost_per_mtok": 50,
+        "cache_read_cost_per_mtok": 0.25,
+        "cache_write_cost_per_mtok": 20,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-09-27",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-fable-5-1",
+        "invocation_model_id": "claude-fable-5-1",
+        "display_name": "Claude Fable 5.1"
+       },
+       {
+        "id": "anthropic:claude-haiku-4-5-20251001",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-haiku-4-5-20251001",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 200000,
+        "input_cost_per_mtok": 1,
+        "output_cost_per_mtok": 5,
+        "cache_read_cost_per_mtok": 0.1,
+        "cache_write_cost_per_mtok": 2,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-haiku-4-5-20251001",
+        "invocation_model_id": "claude-haiku-4-5-20251001",
+        "display_name": "Claude Haiku 4.5"
+       },
+       {
+        "id": "anthropic:claude-opus-4-8",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-opus-4-8",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 5,
+        "output_cost_per_mtok": 25,
+        "cache_read_cost_per_mtok": 0.5,
+        "cache_write_cost_per_mtok": 10,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-08-24",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-opus-4-8",
+        "invocation_model_id": "claude-opus-4-8",
+        "display_name": "Claude Opus 4.8"
+       },
+       {
+        "id": "anthropic:claude-opus-5",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-opus-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 5,
+        "output_cost_per_mtok": 25,
+        "cache_read_cost_per_mtok": 0.5,
+        "cache_write_cost_per_mtok": 10,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-08-24",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-opus-5",
+        "invocation_model_id": "claude-opus-5",
+        "display_name": "Claude Opus 5"
+       },
+       {
+        "id": "anthropic:claude-opus-5-5",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-opus-5-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 4,
+        "output_cost_per_mtok": 20,
+        "cache_read_cost_per_mtok": 0.2,
+        "cache_write_cost_per_mtok": 8,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-09-27",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-opus-5-5",
+        "invocation_model_id": "claude-opus-5-5",
+        "display_name": "Claude Opus 5.5"
+       },
+       {
+        "id": "anthropic:claude-sonnet-4-6",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-sonnet-4-6",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 3,
+        "output_cost_per_mtok": 15,
+        "cache_read_cost_per_mtok": 0.3,
+        "cache_write_cost_per_mtok": 6,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-05-12",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-sonnet-4-6",
+        "invocation_model_id": "claude-sonnet-4-6",
+        "display_name": "Claude Sonnet 4.6"
+       },
+       {
+        "id": "anthropic:claude-sonnet-5",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-sonnet-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 2,
+        "output_cost_per_mtok": 10,
+        "cache_read_cost_per_mtok": 0.2,
+        "cache_write_cost_per_mtok": 4,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-08-10",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-sonnet-5",
+        "invocation_model_id": "claude-sonnet-5",
+        "display_name": "Claude Sonnet 5"
+       },
+       {
+        "id": "anthropic:claude-sonnet-5-5",
+        "provider_id": "anthropic-claude-code",
+        "name": "claude-sonnet-5-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 2,
+        "output_cost_per_mtok": 10,
+        "cache_read_cost_per_mtok": 0.2,
+        "cache_write_cost_per_mtok": 4,
+        "pricing_source": "Anthropic official pricing",
+        "pricing_updated_at": "2026-10-03",
+        "billing_mode": "subscription",
+        "enabled": true,
+        "provider_model_id": "claude-sonnet-5-5",
+        "invocation_model_id": "claude-sonnet-5-5",
+        "display_name": "Claude Sonnet 5.5"
+       }
+      ]
+     },
+     {
+      "id": "deepseek-claude-code",
+      "name": "DeepSeek",
+      "kind": "deepseek",
+      "enabled": false,
+      "config": {
+       "apiKeyEnv": "DEEPSEEK_API_KEY",
+       "billingMode": "api"
+      },
+      "ready": false,
+      "reason": "Disabled",
+      "models": [
+       {
+        "id": "deepseek:deepseek-flash",
+        "provider_id": "deepseek-claude-code",
+        "name": "deepseek-flash",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 0.15,
+        "output_cost_per_mtok": 0.6,
+        "cache_read_cost_per_mtok": 0.003,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "DeepSeek official pricing",
+        "pricing_updated_at": "2026-09-21",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "deepseek-flash",
+        "invocation_model_id": "deepseek-flash",
+        "display_name": "DeepSeek V4.1 Flash"
+       },
+       {
+        "id": "deepseek:deepseek-v4-pro",
+        "provider_id": "deepseek-claude-code",
+        "name": "deepseek-v4-pro",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 0.66,
+        "output_cost_per_mtok": 1.98,
+        "cache_read_cost_per_mtok": 0.022,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "DeepSeek official pricing",
+        "pricing_updated_at": "2026-09-21",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "deepseek-v4-pro",
+        "invocation_model_id": "deepseek-v4-pro",
+        "display_name": "DeepSeek V4 Pro"
+       }
+      ]
+     },
+     {
+      "id": "fireworks",
+      "name": "Fireworks",
+      "kind": "fireworks",
+      "enabled": false,
+      "config": {
+       "apiKeyEnv": "FIREWORKS_API_KEY",
+       "billingMode": "api"
+      },
+      "ready": false,
+      "reason": "Disabled",
+      "models": [
+       {
+        "id": "fireworks:accounts/fireworks/routers/firerouter",
+        "provider_id": "fireworks",
+        "name": "firerouter",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1048576,
+        "input_cost_per_mtok": 0.8,
+        "output_cost_per_mtok": 4,
+        "cache_read_cost_per_mtok": 0.15,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "FireRouter - varies by routed model (pooled estimate)",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/routers/firerouter",
+        "invocation_model_id": "accounts/fireworks/routers/firerouter",
+        "display_name": "FireRouter"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/glm-5p3",
+        "provider_id": "fireworks",
+        "name": "glm-5p3",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1048576,
+        "input_cost_per_mtok": 1.4,
+        "output_cost_per_mtok": 4.4,
+        "cache_read_cost_per_mtok": 0.26,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/glm-5p3",
+        "invocation_model_id": "accounts/fireworks/models/glm-5p3",
+        "display_name": "GLM 5.3"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/glm-5p3-flash",
+        "provider_id": "fireworks",
+        "name": "glm-5p3-flash",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1048576,
+        "input_cost_per_mtok": 0.15,
+        "output_cost_per_mtok": 0.5,
+        "cache_read_cost_per_mtok": 0.03,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/glm-5p3-flash",
+        "invocation_model_id": "accounts/fireworks/models/glm-5p3-flash",
+        "display_name": "GLM 5.3 Flash"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/gpt-oss-120b",
+        "provider_id": "fireworks",
+        "name": "gpt-oss-120b",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 131072,
+        "input_cost_per_mtok": 0.15,
+        "output_cost_per_mtok": 0.6,
+        "cache_read_cost_per_mtok": 0.015,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/gpt-oss-120b",
+        "invocation_model_id": "accounts/fireworks/models/gpt-oss-120b",
+        "display_name": "GPT OSS 120B"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/kimi-k3",
+        "provider_id": "fireworks",
+        "name": "kimi-k3",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1048576,
+        "input_cost_per_mtok": 3,
+        "output_cost_per_mtok": 15,
+        "cache_read_cost_per_mtok": 0.3,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/kimi-k3",
+        "invocation_model_id": "accounts/fireworks/models/kimi-k3",
+        "display_name": "Kimi K3"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/minimax-m3",
+        "provider_id": "fireworks",
+        "name": "minimax-m3",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 512000,
+        "input_cost_per_mtok": 0.3,
+        "output_cost_per_mtok": 1.2,
+        "cache_read_cost_per_mtok": 0.06,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/minimax-m3",
+        "invocation_model_id": "accounts/fireworks/models/minimax-m3",
+        "display_name": "MiniMax M3"
+       },
+       {
+        "id": "fireworks:accounts/fireworks/models/qwen3p8-max",
+        "provider_id": "fireworks",
+        "name": "qwen3p8-max",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 262144,
+        "input_cost_per_mtok": 2,
+        "output_cost_per_mtok": 6,
+        "cache_read_cost_per_mtok": 0.25,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "Fireworks serverless pricing",
+        "pricing_updated_at": "2026-10-05",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "accounts/fireworks/models/qwen3p8-max",
+        "invocation_model_id": "accounts/fireworks/models/qwen3p8-max",
+        "display_name": "Qwen 3.8 Max"
+       }
+      ]
+     },
+     {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "kind": "openrouter",
+      "enabled": false,
+      "config": {
+       "apiKeyEnv": "OPENROUTER_API_KEY",
+       "billingMode": "api"
+      },
+      "ready": false,
+      "reason": "Disabled",
+      "models": [
+       {
+        "id": "openrouter:anthropic/claude-haiku-4.5",
+        "provider_id": "openrouter",
+        "name": "claude-haiku-4.5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 200000,
+        "input_cost_per_mtok": 1,
+        "output_cost_per_mtok": 5,
+        "cache_read_cost_per_mtok": 0.1,
+        "cache_write_cost_per_mtok": 2,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-haiku-4.5",
+        "invocation_model_id": "anthropic/claude-haiku-4.5",
+        "display_name": "Claude Haiku 4.5"
+       },
+       {
+        "id": "openrouter:anthropic/claude-opus-4.8",
+        "provider_id": "openrouter",
+        "name": "claude-opus-4.8",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 5,
+        "output_cost_per_mtok": 25,
+        "cache_read_cost_per_mtok": 0.5,
+        "cache_write_cost_per_mtok": 10,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-opus-4.8",
+        "invocation_model_id": "anthropic/claude-opus-4.8",
+        "display_name": "Claude Opus 4.8"
+       },
+       {
+        "id": "openrouter:anthropic/claude-opus-5",
+        "provider_id": "openrouter",
+        "name": "claude-opus-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 5,
+        "output_cost_per_mtok": 25,
+        "cache_read_cost_per_mtok": 0.5,
+        "cache_write_cost_per_mtok": 10,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-opus-5",
+        "invocation_model_id": "anthropic/claude-opus-5",
+        "display_name": "Claude Opus 5"
+       },
+       {
+        "id": "openrouter:anthropic/claude-sonnet-4.6",
+        "provider_id": "openrouter",
+        "name": "claude-sonnet-4.6",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 3,
+        "output_cost_per_mtok": 15,
+        "cache_read_cost_per_mtok": 0.3,
+        "cache_write_cost_per_mtok": 6,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-sonnet-4.6",
+        "invocation_model_id": "anthropic/claude-sonnet-4.6",
+        "display_name": "Claude Sonnet 4.6"
+       },
+       {
+        "id": "openrouter:anthropic/claude-sonnet-5",
+        "provider_id": "openrouter",
+        "name": "claude-sonnet-5",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 2,
+        "output_cost_per_mtok": 10,
+        "cache_read_cost_per_mtok": 0.2,
+        "cache_write_cost_per_mtok": 4,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "anthropic/claude-sonnet-5",
+        "invocation_model_id": "anthropic/claude-sonnet-5",
+        "display_name": "Claude Sonnet 5"
+       },
+       {
+        "id": "openrouter:google/gemini-2.5-flash",
+        "provider_id": "openrouter",
+        "name": "gemini-2.5-flash",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 0.15,
+        "output_cost_per_mtok": 0.6,
+        "cache_read_cost_per_mtok": null,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "google/gemini-2.5-flash",
+        "invocation_model_id": "google/gemini-2.5-flash",
+        "display_name": "Gemini 2.5 Flash"
+       },
+       {
+        "id": "openrouter:google/gemini-2.5-pro",
+        "provider_id": "openrouter",
+        "name": "gemini-2.5-pro",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 1.25,
+        "output_cost_per_mtok": 10,
+        "cache_read_cost_per_mtok": null,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "google/gemini-2.5-pro",
+        "invocation_model_id": "google/gemini-2.5-pro",
+        "display_name": "Gemini 2.5 Pro"
+       },
+       {
+        "id": "openrouter:meta-llama/llama-4-maverick",
+        "provider_id": "openrouter",
+        "name": "llama-4-maverick",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 1000000,
+        "input_cost_per_mtok": 0.2,
+        "output_cost_per_mtok": 0.6,
+        "cache_read_cost_per_mtok": null,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "meta-llama/llama-4-maverick",
+        "invocation_model_id": "meta-llama/llama-4-maverick",
+        "display_name": "Llama 4 Maverick"
+       },
+       {
+        "id": "openrouter:qwen/qwen3-235b-a22b",
+        "provider_id": "openrouter",
+        "name": "qwen3-235b",
+        "capabilities": "[]",
+        "speed": null,
+        "cost": null,
+        "quality": null,
+        "context_length": 131072,
+        "input_cost_per_mtok": 0.7,
+        "output_cost_per_mtok": 2.8,
+        "cache_read_cost_per_mtok": null,
+        "cache_write_cost_per_mtok": null,
+        "pricing_source": "OpenRouter pricing",
+        "pricing_updated_at": "2026-09-24",
+        "billing_mode": "api",
+        "enabled": true,
+        "provider_model_id": "qwen/qwen3-235b-a22b",
+        "invocation_model_id": "qwen/qwen3-235b-a22b",
+        "display_name": "Qwen 3 235B"
+       }
+      ]
+     }
+    ],
+    "defaults": {
+     "projectsDir": "<root>/projects",
+     "providerId": "anthropic-claude-code",
+     "modelId": null,
+     "mode": "default",
+     "effort": null,
+     "routing": {
+      "enabled": true,
+      "explorer": "haiku",
+      "implementer": "sonnet",
+      "architect": "inherit",
+      "all": null
+     },
+     "limits": {
+      "autoResume": true,
+      "fallback": null
+     }
+    },
+    "me": {
+     "local": true,
+     "device": null
+    },
+    "push": "<push>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "providers",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": "anthropic-claude-code",
+     "name": "Anthropic (Claude login)",
+     "kind": "claude-code",
+     "enabled": true,
+     "config": {
+      "billingMode": "subscription"
+     },
+     "ready": true,
+     "reason": null,
+     "models": [
+      {
+       "id": "anthropic:claude-fable-5-1",
+       "provider_id": "anthropic-claude-code",
+       "name": "claude-fable-5-1",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 10,
+       "output_cost_per_mtok": 50,
+       "cache_read_cost_per_mtok": 0.25,
+       "cache_write_cost_per_mtok": 20,
+       "pricing_source": "Anthropic official pricing",
+       "pricing_updated_at": "2026-09-27",
+       "billing_mode": "subscription",
+       "enabled": true,
+       "provider_model_id": "claude-fable-5-1",
+       "invocation_model_id": "claude-fable-5-1",
+       "display_name": "Claude Fable 5.1"
+      },
+      {
+       "id": "anthropic:claude-haiku-4-5-20251001",
+       "provider_id": "anthropic-claude-code",
+       "name": "claude-haiku-4-5-20251001",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 200000,
+       "input_cost_per_mtok": 1,
+       "output_cost_per_mtok": 5,
+       "cache_read_cost_per_mtok": 0.1,
+       "cache_write_cost_per_mtok": 2,
+       "pricing_source": "Anthropic official pricing",
+       "pricing_updated_at": "2026-10-05",
+       "billing_mode": "subscription",
+       "enabled": true,
+       "provider_model_id": "claude-haiku-4-5-20251001",
+       "invocation_model_id": "claude-haiku-4-5-20251001",
+       "display_name": "Claude Haiku 4.5"
+      },
+      {
+       "id": "anthropic:claude-opus-4-8",
+       "provider_id": "anthropic-claude-code",
+       "name": "claude-opus-4-8",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 5,
+       "output_cost_per_mtok": 25,
+       "cache_read_cost_per_mtok": 0.5,
+       "cache_write_cost_per_mtok": 10,
+       "pricing_source": "Anthropic official pricing",
+       "pricing_updated_at": "2026-08-24",
+       "billing_mode": "subscription",
+       "enabled": true,
+       "provider_model_id": "claude-opus-4-8",
+       "invocation_model_id": "claude-opus-4-8",
+       "display_name": "Claude Opus 4.8"
+      },
+      {
+       "id": "anthropic:claude-opus-5",
+       "provider_id": "anthropic-claude-code",
+       "name": "claude-opus-5",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 5,
+       "output_cost_per_mtok": 25,
+       "cache_read_cost_per_mtok": 0.5,
+       "cache_write_cost_per_mtok": 10,
+       "pricing_source": "Anthropic official pricing",
+       "pricing_updated_at": "2026-08-24",
+       "billing_mode": "subscription",
+       "enabled": true,
+       "provider_model_id": "claude-opus-5",
+       "invocation_model_id": "claude-opus-5",
+       "display_name": "Claude Opus 5"
+      },
+      {
+       "id": "anthropic:claude-opus-5-5",
+       "provider_id": "anthropic-claude-code",
+       "name": "claude-opus-5-5",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 4,
+       "output_cost_per_mtok": 20,
+       "cache_read_cost_per_mtok": 0.2,
+       "cache_write_cost_per_mtok": 8,
+       "pricing_source": "Anthropic official pricing",
+       "pricing_updated_at": "2026-09-27",
+       "billing_mode": "subscription",
+       "enabled": true,
+       "provider_model_id": "claude-opus-5-5",
+       "invocation_model_id": "claude-opus-5-5",
+       "display_name": "Claude Opus 5.5"
+      },
+      {
+       "id": "anthropic:claude-sonnet-4-6",
+       "provider_id": "anthropic-claude-code",
+       "name": "claude-sonnet-4-6",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 3,
+       "output_cost_per_mtok": 15,
+       "cache_read_cost_per_mtok": 0.3,
+       "cache_write_cost_per_mtok": 6,
+       "pricing_source": "Anthropic official pricing",
+       "pricing_updated_at": "2026-05-12",
+       "billing_mode": "subscription",
+       "enabled": true,
+       "provider_model_id": "claude-sonnet-4-6",
+       "invocation_model_id": "claude-sonnet-4-6",
+       "display_name": "Claude Sonnet 4.6"
+      },
+      {
+       "id": "anthropic:claude-sonnet-5",
+       "provider_id": "anthropic-claude-code",
+       "name": "claude-sonnet-5",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 2,
+       "output_cost_per_mtok": 10,
+       "cache_read_cost_per_mtok": 0.2,
+       "cache_write_cost_per_mtok": 4,
+       "pricing_source": "Anthropic official pricing",
+       "pricing_updated_at": "2026-08-10",
+       "billing_mode": "subscription",
+       "enabled": true,
+       "provider_model_id": "claude-sonnet-5",
+       "invocation_model_id": "claude-sonnet-5",
+       "display_name": "Claude Sonnet 5"
+      },
+      {
+       "id": "anthropic:claude-sonnet-5-5",
+       "provider_id": "anthropic-claude-code",
+       "name": "claude-sonnet-5-5",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 2,
+       "output_cost_per_mtok": 10,
+       "cache_read_cost_per_mtok": 0.2,
+       "cache_write_cost_per_mtok": 4,
+       "pricing_source": "Anthropic official pricing",
+       "pricing_updated_at": "2026-10-03",
+       "billing_mode": "subscription",
+       "enabled": true,
+       "provider_model_id": "claude-sonnet-5-5",
+       "invocation_model_id": "claude-sonnet-5-5",
+       "display_name": "Claude Sonnet 5.5"
+      }
+     ]
+    },
+    {
+     "id": "deepseek-claude-code",
+     "name": "DeepSeek",
+     "kind": "deepseek",
+     "enabled": false,
+     "config": {
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "billingMode": "api"
+     },
+     "ready": false,
+     "reason": "Disabled",
+     "models": [
+      {
+       "id": "deepseek:deepseek-flash",
+       "provider_id": "deepseek-claude-code",
+       "name": "deepseek-flash",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 0.15,
+       "output_cost_per_mtok": 0.6,
+       "cache_read_cost_per_mtok": 0.003,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "DeepSeek official pricing",
+       "pricing_updated_at": "2026-09-21",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "deepseek-flash",
+       "invocation_model_id": "deepseek-flash",
+       "display_name": "DeepSeek V4.1 Flash"
+      },
+      {
+       "id": "deepseek:deepseek-v4-pro",
+       "provider_id": "deepseek-claude-code",
+       "name": "deepseek-v4-pro",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 0.66,
+       "output_cost_per_mtok": 1.98,
+       "cache_read_cost_per_mtok": 0.022,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "DeepSeek official pricing",
+       "pricing_updated_at": "2026-09-21",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "deepseek-v4-pro",
+       "invocation_model_id": "deepseek-v4-pro",
+       "display_name": "DeepSeek V4 Pro"
+      }
+     ]
+    },
+    {
+     "id": "fireworks",
+     "name": "Fireworks",
+     "kind": "fireworks",
+     "enabled": false,
+     "config": {
+      "apiKeyEnv": "FIREWORKS_API_KEY",
+      "billingMode": "api"
+     },
+     "ready": false,
+     "reason": "Disabled",
+     "models": [
+      {
+       "id": "fireworks:accounts/fireworks/routers/firerouter",
+       "provider_id": "fireworks",
+       "name": "firerouter",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1048576,
+       "input_cost_per_mtok": 0.8,
+       "output_cost_per_mtok": 4,
+       "cache_read_cost_per_mtok": 0.15,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "FireRouter - varies by routed model (pooled estimate)",
+       "pricing_updated_at": "2026-10-05",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "accounts/fireworks/routers/firerouter",
+       "invocation_model_id": "accounts/fireworks/routers/firerouter",
+       "display_name": "FireRouter"
+      },
+      {
+       "id": "fireworks:accounts/fireworks/models/glm-5p3",
+       "provider_id": "fireworks",
+       "name": "glm-5p3",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1048576,
+       "input_cost_per_mtok": 1.4,
+       "output_cost_per_mtok": 4.4,
+       "cache_read_cost_per_mtok": 0.26,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "Fireworks serverless pricing",
+       "pricing_updated_at": "2026-10-05",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "accounts/fireworks/models/glm-5p3",
+       "invocation_model_id": "accounts/fireworks/models/glm-5p3",
+       "display_name": "GLM 5.3"
+      },
+      {
+       "id": "fireworks:accounts/fireworks/models/glm-5p3-flash",
+       "provider_id": "fireworks",
+       "name": "glm-5p3-flash",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1048576,
+       "input_cost_per_mtok": 0.15,
+       "output_cost_per_mtok": 0.5,
+       "cache_read_cost_per_mtok": 0.03,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "Fireworks serverless pricing",
+       "pricing_updated_at": "2026-10-05",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "accounts/fireworks/models/glm-5p3-flash",
+       "invocation_model_id": "accounts/fireworks/models/glm-5p3-flash",
+       "display_name": "GLM 5.3 Flash"
+      },
+      {
+       "id": "fireworks:accounts/fireworks/models/gpt-oss-120b",
+       "provider_id": "fireworks",
+       "name": "gpt-oss-120b",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 131072,
+       "input_cost_per_mtok": 0.15,
+       "output_cost_per_mtok": 0.6,
+       "cache_read_cost_per_mtok": 0.015,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "Fireworks serverless pricing",
+       "pricing_updated_at": "2026-10-05",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "accounts/fireworks/models/gpt-oss-120b",
+       "invocation_model_id": "accounts/fireworks/models/gpt-oss-120b",
+       "display_name": "GPT OSS 120B"
+      },
+      {
+       "id": "fireworks:accounts/fireworks/models/kimi-k3",
+       "provider_id": "fireworks",
+       "name": "kimi-k3",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1048576,
+       "input_cost_per_mtok": 3,
+       "output_cost_per_mtok": 15,
+       "cache_read_cost_per_mtok": 0.3,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "Fireworks serverless pricing",
+       "pricing_updated_at": "2026-10-05",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "accounts/fireworks/models/kimi-k3",
+       "invocation_model_id": "accounts/fireworks/models/kimi-k3",
+       "display_name": "Kimi K3"
+      },
+      {
+       "id": "fireworks:accounts/fireworks/models/minimax-m3",
+       "provider_id": "fireworks",
+       "name": "minimax-m3",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 512000,
+       "input_cost_per_mtok": 0.3,
+       "output_cost_per_mtok": 1.2,
+       "cache_read_cost_per_mtok": 0.06,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "Fireworks serverless pricing",
+       "pricing_updated_at": "2026-10-05",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "accounts/fireworks/models/minimax-m3",
+       "invocation_model_id": "accounts/fireworks/models/minimax-m3",
+       "display_name": "MiniMax M3"
+      },
+      {
+       "id": "fireworks:accounts/fireworks/models/qwen3p8-max",
+       "provider_id": "fireworks",
+       "name": "qwen3p8-max",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 262144,
+       "input_cost_per_mtok": 2,
+       "output_cost_per_mtok": 6,
+       "cache_read_cost_per_mtok": 0.25,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "Fireworks serverless pricing",
+       "pricing_updated_at": "2026-10-05",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "accounts/fireworks/models/qwen3p8-max",
+       "invocation_model_id": "accounts/fireworks/models/qwen3p8-max",
+       "display_name": "Qwen 3.8 Max"
+      }
+     ]
+    },
+    {
+     "id": "openrouter",
+     "name": "OpenRouter",
+     "kind": "openrouter",
+     "enabled": false,
+     "config": {
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "billingMode": "api"
+     },
+     "ready": false,
+     "reason": "Disabled",
+     "models": [
+      {
+       "id": "openrouter:anthropic/claude-haiku-4.5",
+       "provider_id": "openrouter",
+       "name": "claude-haiku-4.5",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 200000,
+       "input_cost_per_mtok": 1,
+       "output_cost_per_mtok": 5,
+       "cache_read_cost_per_mtok": 0.1,
+       "cache_write_cost_per_mtok": 2,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "anthropic/claude-haiku-4.5",
+       "invocation_model_id": "anthropic/claude-haiku-4.5",
+       "display_name": "Claude Haiku 4.5"
+      },
+      {
+       "id": "openrouter:anthropic/claude-opus-4.8",
+       "provider_id": "openrouter",
+       "name": "claude-opus-4.8",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 5,
+       "output_cost_per_mtok": 25,
+       "cache_read_cost_per_mtok": 0.5,
+       "cache_write_cost_per_mtok": 10,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "anthropic/claude-opus-4.8",
+       "invocation_model_id": "anthropic/claude-opus-4.8",
+       "display_name": "Claude Opus 4.8"
+      },
+      {
+       "id": "openrouter:anthropic/claude-opus-5",
+       "provider_id": "openrouter",
+       "name": "claude-opus-5",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 5,
+       "output_cost_per_mtok": 25,
+       "cache_read_cost_per_mtok": 0.5,
+       "cache_write_cost_per_mtok": 10,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "anthropic/claude-opus-5",
+       "invocation_model_id": "anthropic/claude-opus-5",
+       "display_name": "Claude Opus 5"
+      },
+      {
+       "id": "openrouter:anthropic/claude-sonnet-4.6",
+       "provider_id": "openrouter",
+       "name": "claude-sonnet-4.6",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 3,
+       "output_cost_per_mtok": 15,
+       "cache_read_cost_per_mtok": 0.3,
+       "cache_write_cost_per_mtok": 6,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "anthropic/claude-sonnet-4.6",
+       "invocation_model_id": "anthropic/claude-sonnet-4.6",
+       "display_name": "Claude Sonnet 4.6"
+      },
+      {
+       "id": "openrouter:anthropic/claude-sonnet-5",
+       "provider_id": "openrouter",
+       "name": "claude-sonnet-5",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 2,
+       "output_cost_per_mtok": 10,
+       "cache_read_cost_per_mtok": 0.2,
+       "cache_write_cost_per_mtok": 4,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "anthropic/claude-sonnet-5",
+       "invocation_model_id": "anthropic/claude-sonnet-5",
+       "display_name": "Claude Sonnet 5"
+      },
+      {
+       "id": "openrouter:google/gemini-2.5-flash",
+       "provider_id": "openrouter",
+       "name": "gemini-2.5-flash",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 0.15,
+       "output_cost_per_mtok": 0.6,
+       "cache_read_cost_per_mtok": null,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "google/gemini-2.5-flash",
+       "invocation_model_id": "google/gemini-2.5-flash",
+       "display_name": "Gemini 2.5 Flash"
+      },
+      {
+       "id": "openrouter:google/gemini-2.5-pro",
+       "provider_id": "openrouter",
+       "name": "gemini-2.5-pro",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 1.25,
+       "output_cost_per_mtok": 10,
+       "cache_read_cost_per_mtok": null,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "google/gemini-2.5-pro",
+       "invocation_model_id": "google/gemini-2.5-pro",
+       "display_name": "Gemini 2.5 Pro"
+      },
+      {
+       "id": "openrouter:meta-llama/llama-4-maverick",
+       "provider_id": "openrouter",
+       "name": "llama-4-maverick",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 1000000,
+       "input_cost_per_mtok": 0.2,
+       "output_cost_per_mtok": 0.6,
+       "cache_read_cost_per_mtok": null,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "meta-llama/llama-4-maverick",
+       "invocation_model_id": "meta-llama/llama-4-maverick",
+       "display_name": "Llama 4 Maverick"
+      },
+      {
+       "id": "openrouter:qwen/qwen3-235b-a22b",
+       "provider_id": "openrouter",
+       "name": "qwen3-235b",
+       "capabilities": "[]",
+       "speed": null,
+       "cost": null,
+       "quality": null,
+       "context_length": 131072,
+       "input_cost_per_mtok": 0.7,
+       "output_cost_per_mtok": 2.8,
+       "cache_read_cost_per_mtok": null,
+       "cache_write_cost_per_mtok": null,
+       "pricing_source": "OpenRouter pricing",
+       "pricing_updated_at": "2026-09-24",
+       "billing_mode": "api",
+       "enabled": true,
+       "provider_model_id": "qwen/qwen3-235b-a22b",
+       "invocation_model_id": "qwen/qwen3-235b-a22b",
+       "display_name": "Qwen 3 235B"
+      }
+     ]
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "defaults",
+  "value": {
+   "status": 200,
+   "body": {
+    "projectsDir": "<root>/projects",
+    "providerId": "anthropic-claude-code",
+    "modelId": null,
+    "mode": "default",
+    "effort": null,
+    "routing": {
+     "enabled": true,
+     "explorer": "haiku",
+     "implementer": "sonnet",
+     "architect": "inherit",
+     "all": null
+    },
+    "limits": {
+     "autoResume": true,
+     "fallback": null
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "set defaults",
+  "value": {
+   "status": 200,
+   "body": {
+    "projectsDir": "<root>/projects",
+    "providerId": "anthropic-claude-code",
+    "modelId": null,
+    "mode": "acceptEdits",
+    "effort": "high",
+    "routing": {
+     "enabled": true,
+     "explorer": "haiku",
+     "implementer": "sonnet",
+     "architect": "inherit",
+     "all": null
+    },
+    "limits": {
+     "autoResume": true,
+     "fallback": null
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "set defaults: bad effort",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Unknown effort huge; use one of low, medium, high, xhigh, max"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "set defaults back",
+  "value": {
+   "status": 200,
+   "body": {
+    "projectsDir": "<root>/projects",
+    "providerId": "anthropic-claude-code",
+    "modelId": null,
+    "mode": "default",
+    "effort": null,
+    "routing": {
+     "enabled": true,
+     "explorer": "haiku",
+     "implementer": "sonnet",
+     "architect": "inherit",
+     "all": null
+    },
+    "limits": {
+     "autoResume": true,
+     "fallback": null
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "routing default patch",
+  "value": {
+   "status": 200,
+   "body": {
+    "projectsDir": "<root>/projects",
+    "providerId": "anthropic-claude-code",
+    "modelId": null,
+    "mode": "default",
+    "effort": null,
+    "routing": {
+     "enabled": true,
+     "explorer": "sonnet",
+     "implementer": "sonnet",
+     "architect": "inherit",
+     "all": null
+    },
+    "limits": {
+     "autoResume": true,
+     "fallback": null
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "write must be JSON",
+  "value": {
+   "status": 415,
+   "body": {
+    "error": "Send JSON"
+   }
+  }
+ },
+ {
+  "name": "not found",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "Not found"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "add project: not a dir",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "No such directory: <root>/nope"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "add project",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id1>",
+    "name": "repo",
+    "path": "<repo>",
+    "created_at": "<created_at>",
+    "check_command": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "add project again",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id1>",
+    "name": "repo",
+    "path": "<repo>",
+    "created_at": "<created_at>",
+    "check_command": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "projects",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": "<id1>",
+     "name": "repo",
+     "path": "<repo>",
+     "created_at": "<created_at>",
+     "check_command": null,
+     "routing": null
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project git",
+  "value": {
+   "status": 200,
+   "body": {
+    "branch": "main",
+    "head": "<sha1>",
+    "upstream": null,
+    "ahead": 0,
+    "behind": 0,
+    "dirty": [],
+    "conflicted": [],
+    "branches": [
+     {
+      "name": "main",
+      "remoteOnly": false,
+      "current": true
+     }
+    ],
+    "hasRemote": false
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project diff",
+  "value": {
+   "status": 200,
+   "body": {
+    "diff": ""
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project tree",
+  "value": {
+   "status": 200,
+   "body": {
+    "paths": [
+     "README.md",
+     "package.json",
+     "src/index.js"
+    ]
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project text",
+  "value": {
+   "status": 200,
+   "body": {
+    "path": "README.md",
+    "text": "# Demo\n\nA project for conformance.\n",
+    "mtime": "<mtime>",
+    "size": "<size>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project text: outside",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such file"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project text: missing",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such file"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project set check",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id1>",
+    "name": "repo",
+    "path": "<repo>",
+    "created_at": "<created_at>",
+    "check_command": "npm test",
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project routing",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id1>",
+    "name": "repo",
+    "path": "<repo>",
+    "created_at": "<created_at>",
+    "check_command": "npm test",
+    "routing": {
+     "implementer": "opus"
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "project routing: bad",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "implementer: name a model - haiku, sonnet, opus, inherit, or a model id"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "fs",
+  "value": {
+   "status": 200,
+   "body": {
+    "path": "<home>",
+    "parent": "<tmp>",
+    "repo": false,
+    "entries": [
+     {
+      "name": "data",
+      "repo": false
+     },
+     {
+      "name": "repo",
+      "repo": true
+     }
+    ]
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "fs mkdir",
+  "value": {
+   "status": 200,
+   "body": {
+    "path": "<root>/made"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "fs mkdir: bad",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Choose a folder name"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "create project",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id2>",
+    "name": "Fresh One",
+    "path": "<root>/projects/Fresh One",
+    "created_at": "<created_at>",
+    "check_command": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "create project: exists",
+  "value": {
+   "status": 409,
+   "body": {
+    "error": "<root>/projects/Fresh One already exists and is not empty",
+    "code": "<code>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "notes, none",
+  "value": {
+   "status": 200,
+   "body": {
+    "notes": [],
+    "instructions": false,
+    "elsewhere": 0
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "note create",
+  "value": {
+   "status": 200,
+   "body": {
+    "name": "kyc-flow-cutting-spend.md",
+    "title": "KYC flow: cutting spend",
+    "text": "# KYC flow: cutting spend\n\n",
+    "mtime": "<mtime>",
+    "size": "<size>",
+    "path": "<root>/.bench/notes/kyc-flow-cutting-spend.md",
+    "include": false
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "note create, project",
+  "value": {
+   "status": 200,
+   "body": {
+    "name": "plan.md",
+    "title": "The plan",
+    "text": "# The plan\n\nShip it.\n",
+    "mtime": "<mtime>",
+    "size": "<size>",
+    "path": "<repo>/notes/plan.md",
+    "include": false
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "notes, project",
+  "value": {
+   "status": 200,
+   "body": {
+    "notes": [
+     {
+      "name": "plan.md",
+      "title": "The plan",
+      "mtime": "<mtime>",
+      "size": "<size>",
+      "include": false
+     }
+    ],
+    "instructions": false,
+    "elsewhere": 0
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "note read",
+  "value": {
+   "status": 200,
+   "body": {
+    "name": "kyc-flow-cutting-spend.md",
+    "title": "KYC flow: cutting spend",
+    "text": "# KYC flow: cutting spend\n\n",
+    "mtime": "<mtime>",
+    "size": "<size>",
+    "path": "<root>/.bench/notes/kyc-flow-cutting-spend.md",
+    "include": false
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "note write",
+  "value": {
+   "status": 200,
+   "body": {
+    "name": "kyc-flow-cutting-spend.md",
+    "title": "KYC",
+    "text": "# KYC\n\nNew text.\n",
+    "mtime": "<mtime>",
+    "size": "<size>",
+    "path": "<root>/.bench/notes/kyc-flow-cutting-spend.md",
+    "include": false
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "note write: conflict",
+  "value": {
+   "status": 409,
+   "body": {
+    "error": "The note changed since you opened it"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "note include",
+  "value": {
+   "status": 200,
+   "body": {
+    "name": "kyc-flow-cutting-spend.md",
+    "title": "KYC",
+    "text": "# KYC\n\nNew text.\n",
+    "mtime": "<mtime>",
+    "size": "<size>",
+    "path": "<root>/.bench/notes/kyc-flow-cutting-spend.md",
+    "include": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "note bad name",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Not a note name"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "notes, global",
+  "value": {
+   "status": 200,
+   "body": {
+    "notes": [
+     {
+      "name": "kyc-flow-cutting-spend.md",
+      "title": "KYC",
+      "mtime": "<mtime>",
+      "size": "<size>",
+      "include": true
+     }
+    ],
+    "instructions": false,
+    "elsewhere": 1
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session create",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "hello there",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": null,
+    "status": "running",
+    "error": null,
+    "cost": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": null,
+    "auto_resume": null,
+    "seen_at": null,
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session after a turn",
+  "value": {
+   "status": 200,
+   "body": {
+    "session": {
+     "id": "<id3>",
+     "project_id": "<id1>",
+     "task_id": null,
+     "title": "hello there",
+     "cwd": "<repo>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "default",
+     "effort": null,
+     "claude_session_id": "<id4>",
+     "status": "idle",
+     "error": null,
+     "cost": 0.001,
+     "input_tokens": 10,
+     "output_tokens": 5,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": null,
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": {
+      "claude-fake-1": {
+       "cost": 0.001,
+       "input_tokens": 10,
+       "output_tokens": 5
+      }
+     },
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    },
+    "events": [
+     {
+      "id": 1,
+      "session_id": "<id3>",
+      "kind": "user",
+      "data": {
+       "text": "hello there",
+       "images": 0,
+       "files": []
+      },
+      "created_at": "<created_at>"
+     },
+     {
+      "id": 2,
+      "session_id": "<id3>",
+      "kind": "init",
+      "data": {
+       "model": "claude-fake-1",
+       "permissionMode": "default",
+       "cwd": "<repo>",
+       "version": "0.0.0-fake"
+      },
+      "created_at": "<created_at>"
+     },
+     {
+      "id": 3,
+      "session_id": "<id3>",
+      "kind": "assistant",
+      "data": {
+       "id": "<msg>",
+       "content": [
+        {
+         "type": "text",
+         "text": "Echo: hello there"
+        }
+       ],
+       "parent": null,
+       "error": null,
+       "model": "claude-fake-1"
+      },
+      "created_at": "<created_at>"
+     },
+     {
+      "id": 4,
+      "session_id": "<id3>",
+      "kind": "result",
+      "data": {
+       "subtype": "success",
+       "is_error": false,
+       "duration_ms": "<duration_ms>",
+       "turns": 1,
+       "cost": 0.001
+      },
+      "created_at": "<created_at>"
+     }
+    ],
+    "approvals": [],
+    "live": true,
+    "commands": [
+     {
+      "name": "review",
+      "description": "Review the change",
+      "argumentHint": ""
+     },
+     {
+      "name": "fake:hello",
+      "description": "(fake) Say hello",
+      "argumentHint": "<name>"
+     }
+    ]
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "session events",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": 1,
+     "session_id": "<id3>",
+     "kind": "user",
+     "data": {
+      "text": "hello there",
+      "images": 0,
+      "files": []
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 2,
+     "session_id": "<id3>",
+     "kind": "init",
+     "data": {
+      "model": "claude-fake-1",
+      "permissionMode": "default",
+      "cwd": "<repo>",
+      "version": "0.0.0-fake"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 3,
+     "session_id": "<id3>",
+     "kind": "assistant",
+     "data": {
+      "id": "<msg>",
+      "content": [
+       {
+        "type": "text",
+        "text": "Echo: hello there"
+       }
+      ],
+      "parent": null,
+      "error": null,
+      "model": "claude-fake-1"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 4,
+     "session_id": "<id3>",
+     "kind": "result",
+     "data": {
+      "subtype": "success",
+      "is_error": false,
+      "duration_ms": "<duration_ms>",
+      "turns": 1,
+      "cost": 0.001
+     },
+     "created_at": "<created_at>"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session seen",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "hello there",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.001,
+    "input_tokens": 10,
+    "output_tokens": 5,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.001,
+      "input_tokens": 10,
+      "output_tokens": 5
+     }
+    },
+    "auto_resume": null,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session pin",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "hello there",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.001,
+    "input_tokens": 10,
+    "output_tokens": 5,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.001,
+      "input_tokens": 10,
+      "output_tokens": 5
+     }
+    },
+    "auto_resume": null,
+    "seen_at": "<seen_at>",
+    "pinned": true,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session unpin",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "hello there",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.001,
+    "input_tokens": 10,
+    "output_tokens": 5,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.001,
+      "input_tokens": 10,
+      "output_tokens": 5
+     }
+    },
+    "auto_resume": null,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session seen: unknown",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such session"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "reports: none",
+  "value": {
+   "status": 200,
+   "body": [],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "reports",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "session_id": "<id3>",
+     "path": "<root>/.bench/attachments/<id3>/reports/jobs.drafts.json",
+     "name": "jobs.drafts.json",
+     "kind": "drafts",
+     "title": "Cold emails",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": null,
+     "drafts": 2,
+     "unsent": 2,
+     "preview": [
+      {
+       "title": "Hi",
+       "sub": "To a@b.co"
+      },
+      {
+       "title": "Hey",
+       "sub": "To c@d.co"
+      }
+     ]
+    },
+    {
+     "session_id": "<id3>",
+     "path": "<root>/.bench/attachments/<id3>/reports/board.html",
+     "name": "board.html",
+     "kind": "page",
+     "title": "Job board",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": null
+    },
+    {
+     "session_id": "<id3>",
+     "path": "<root>/.bench/attachments/<id3>/reports/hackathons.md",
+     "name": "hackathons.md",
+     "kind": "report",
+     "title": "7 hackathons for Nov-Dec",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": null,
+     "gist": "Stellar first."
+    },
+    {
+     "session_id": "<id3>",
+     "path": "<root>/.bench/attachments/<id3>/reports/notes",
+     "name": "notes",
+     "kind": "file",
+     "title": "notes",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": null
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "draft sent",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true,
+    "sent_at": "<sent_at>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "reports after a draft is sent",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "session_id": "<id3>",
+     "path": "<root>/.bench/attachments/<id3>/reports/jobs.drafts.json",
+     "name": "jobs.drafts.json",
+     "kind": "drafts",
+     "title": "Cold emails",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": null,
+     "drafts": 2,
+     "unsent": 1,
+     "preview": [
+      {
+       "title": "Hi",
+       "sub": "To a@b.co"
+      }
+     ]
+    },
+    {
+     "session_id": "<id3>",
+     "path": "<root>/.bench/attachments/<id3>/reports/board.html",
+     "name": "board.html",
+     "kind": "page",
+     "title": "Job board",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": null
+    },
+    {
+     "session_id": "<id3>",
+     "path": "<root>/.bench/attachments/<id3>/reports/hackathons.md",
+     "name": "hackathons.md",
+     "kind": "report",
+     "title": "7 hackathons for Nov-Dec",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": null,
+     "gist": "Stellar first."
+    },
+    {
+     "session_id": "<id3>",
+     "path": "<root>/.bench/attachments/<id3>/reports/notes",
+     "name": "notes",
+     "kind": "file",
+     "title": "notes",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": null
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "draft unsent",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true,
+    "sent_at": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "draft: no such index",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such draft"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "draft: not a drafts file",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such drafts file"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session events after",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": 2,
+     "session_id": "<id3>",
+     "kind": "init",
+     "data": {
+      "model": "claude-fake-1",
+      "permissionMode": "default",
+      "cwd": "<repo>",
+      "version": "0.0.0-fake"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 3,
+     "session_id": "<id3>",
+     "kind": "assistant",
+     "data": {
+      "id": "<msg>",
+      "content": [
+       {
+        "type": "text",
+        "text": "Echo: hello there"
+       }
+      ],
+      "parent": null,
+      "error": null,
+      "model": "claude-fake-1"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 4,
+     "session_id": "<id3>",
+     "kind": "result",
+     "data": {
+      "subtype": "success",
+      "is_error": false,
+      "duration_ms": "<duration_ms>",
+      "turns": 1,
+      "cost": 0.001
+     },
+     "created_at": "<created_at>"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session commands",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "name": "review",
+     "description": "Review the change",
+     "argumentHint": ""
+    },
+    {
+     "name": "fake:hello",
+     "description": "(fake) Say hello",
+     "argumentHint": "<name>"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session paths",
+  "value": {
+   "status": 200,
+   "body": {
+    "paths": [
+     "README.md"
+    ],
+    "notes": []
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session routing",
+  "value": {
+   "status": 200,
+   "body": {
+    "enabled": true,
+    "explorer": "sonnet",
+    "implementer": "opus",
+    "architect": "inherit",
+    "all": null,
+    "from": {
+     "enabled": "default",
+     "explorer": "default",
+     "implementer": "project",
+     "architect": "default",
+     "all": "default"
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session files stat",
+  "value": {
+   "status": 200,
+   "body": {
+    "README.md": {
+     "path": "<repo>/README.md",
+     "name": "README.md",
+     "mime": "text/plain; charset=utf-8",
+     "size": "<size>",
+     "open": true,
+     "kind": "text",
+     "artifact": false
+    },
+    "src/index.js": {
+     "path": "<repo>/src/index.js",
+     "name": "index.js",
+     "mime": "application/octet-stream",
+     "size": "<size>",
+     "open": false,
+     "kind": "other",
+     "artifact": false
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session file",
+  "value": {
+   "status": 200,
+   "body": "# Demo\n\nA project for conformance.\n",
+   "headers": {
+    "accept-ranges": "bytes",
+    "cache-control": "private, no-cache",
+    "content-security-policy": "sandbox",
+    "content-type": "text/plain; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session file: range",
+  "value": {
+   "status": 206,
+   "range": "bytes 0-5/35",
+   "body": "# Demo"
+  }
+ },
+ {
+  "name": "session file: download",
+  "value": {
+   "status": 200,
+   "body": "# Demo\n\nA project for conformance.\n",
+   "headers": {
+    "accept-ranges": "bytes",
+    "cache-control": "private, no-cache",
+    "content-disposition": "attachment; filename=\"README.md\"; filename*=UTF-8''README.md",
+    "content-type": "text/plain; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session file: missing",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "Not found"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session second message",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "hello there",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "running",
+    "error": null,
+    "cost": 0.001,
+    "input_tokens": 10,
+    "output_tokens": 5,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.001,
+      "input_tokens": 10,
+      "output_tokens": 5
+     }
+    },
+    "auto_resume": null,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session events big (gzip)",
+  "value": {
+   "status": 200,
+   "encoding": "gzip",
+   "vary": "accept-encoding"
+  }
+ },
+ {
+  "name": "session rename",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "Renamed",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.002,
+    "input_tokens": 20,
+    "output_tokens": 10,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.002,
+      "input_tokens": 20,
+      "output_tokens": 10
+     }
+    },
+    "auto_resume": null,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session mode",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "Renamed",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "plan",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.002,
+    "input_tokens": 20,
+    "output_tokens": 10,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.002,
+      "input_tokens": 20,
+      "output_tokens": 10
+     }
+    },
+    "auto_resume": null,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session mode: bad",
+  "value": {
+   "status": 409,
+   "body": {
+    "error": "Unknown mode wild"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session model",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "Renamed",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": "anthropic:claude-sonnet-5",
+    "permission_mode": "plan",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.002,
+    "input_tokens": 20,
+    "output_tokens": 10,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.002,
+      "input_tokens": 20,
+      "output_tokens": 10
+     }
+    },
+    "auto_resume": null,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session model: wrong provider",
+  "value": {
+   "status": 409,
+   "body": {
+    "error": "That model is not on that provider"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session limit",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "Renamed",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": "anthropic:claude-sonnet-5",
+    "permission_mode": "plan",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.002,
+    "input_tokens": 20,
+    "output_tokens": 10,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.002,
+      "input_tokens": 20,
+      "output_tokens": 10
+     }
+    },
+    "auto_resume": false,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "then: a reply offers next steps",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "Renamed",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": "anthropic:claude-sonnet-5",
+    "permission_mode": "plan",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "running",
+    "error": null,
+    "cost": 0.002,
+    "input_tokens": 20,
+    "output_tokens": 10,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.002,
+      "input_tokens": 20,
+      "output_tokens": 10
+     }
+    },
+    "auto_resume": false,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "then: the session holds them",
+  "value": null
+ },
+ {
+  "name": "send nothing",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Nothing to send"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "upload",
+  "value": {
+   "status": 200,
+   "body": {
+    "file": "<upload>-report.txt",
+    "name": "report.txt",
+    "size": "<size>",
+    "type": "text/plain"
+   }
+  }
+ },
+ {
+  "name": "upload: wrong type",
+  "value": {
+   "status": 415,
+   "body": {
+    "error": "Send the file as application/octet-stream"
+   }
+  }
+ },
+ {
+  "name": "session asking",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id5>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "ASK Bash",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": null,
+    "status": "running",
+    "error": null,
+    "cost": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": null,
+    "auto_resume": null,
+    "seen_at": null,
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "approval waiting",
+  "value": {
+   "status": 200,
+   "body": {
+    "session": {
+     "id": "<id5>",
+     "project_id": "<id1>",
+     "task_id": null,
+     "title": "ASK Bash",
+     "cwd": "<repo>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "default",
+     "effort": null,
+     "claude_session_id": "<id6>",
+     "status": "waiting",
+     "error": null,
+     "cost": 0,
+     "input_tokens": 0,
+     "output_tokens": 0,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": null,
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": null,
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    },
+    "events": [
+     {
+      "id": 11,
+      "session_id": "<id5>",
+      "kind": "user",
+      "data": {
+       "text": "ASK Bash",
+       "images": 0,
+       "files": []
+      },
+      "created_at": "<created_at>"
+     },
+     {
+      "id": 12,
+      "session_id": "<id5>",
+      "kind": "init",
+      "data": {
+       "model": "claude-fake-1",
+       "permissionMode": "default",
+       "cwd": "<repo>",
+       "version": "0.0.0-fake"
+      },
+      "created_at": "<created_at>"
+     },
+     {
+      "id": 13,
+      "session_id": "<id5>",
+      "kind": "assistant",
+      "data": {
+       "id": "<msg>",
+       "content": [
+        {
+         "type": "tool_use",
+         "id": "<toolu>",
+         "name": "Bash",
+         "input": {
+          "command": "echo hi"
+         }
+        }
+       ],
+       "parent": null,
+       "error": null,
+       "model": "claude-fake-1"
+      },
+      "created_at": "<created_at>"
+     }
+    ],
+    "approvals": [
+     {
+      "id": "<id7>",
+      "session_id": "<id5>",
+      "tool": "Bash",
+      "input": {
+       "command": "echo hi"
+      },
+      "title": null,
+      "reason": null,
+      "created_at": "<created_at>"
+     }
+    ],
+    "live": true,
+    "commands": [
+     {
+      "name": "review",
+      "description": "Review the change",
+      "argumentHint": ""
+     },
+     {
+      "name": "fake:hello",
+      "description": "(fake) Say hello",
+      "argumentHint": "<name>"
+     }
+    ]
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "approval answer",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "approval answer again",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "That request is no longer waiting"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "after approval",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": 11,
+     "session_id": "<id5>",
+     "kind": "user",
+     "data": {
+      "text": "ASK Bash",
+      "images": 0,
+      "files": []
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 12,
+     "session_id": "<id5>",
+     "kind": "init",
+     "data": {
+      "model": "claude-fake-1",
+      "permissionMode": "default",
+      "cwd": "<repo>",
+      "version": "0.0.0-fake"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 13,
+     "session_id": "<id5>",
+     "kind": "assistant",
+     "data": {
+      "id": "<msg>",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "<toolu>",
+        "name": "Bash",
+        "input": {
+         "command": "echo hi"
+        }
+       }
+      ],
+      "parent": null,
+      "error": null,
+      "model": "claude-fake-1"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 14,
+     "session_id": "<id5>",
+     "kind": "tool_result",
+     "data": {
+      "parent": null,
+      "results": [
+       {
+        "tool_use_id": "<toolu>",
+        "is_error": false,
+        "content": "hi"
+       }
+      ]
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 15,
+     "session_id": "<id5>",
+     "kind": "assistant",
+     "data": {
+      "id": "<msg>",
+      "content": [
+       {
+        "type": "text",
+        "text": "The tool ran."
+       }
+      ],
+      "parent": null,
+      "error": null,
+      "model": "claude-fake-1"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 16,
+     "session_id": "<id5>",
+     "kind": "result",
+     "data": {
+      "subtype": "success",
+      "is_error": false,
+      "duration_ms": "<duration_ms>",
+      "turns": 1,
+      "cost": 0.001
+     },
+     "created_at": "<created_at>"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "task create",
+  "value": {
+   "status": 200,
+   "body": {
+    "task": {
+     "id": "<id8>",
+     "project_id": "<id1>",
+     "title": "Add a feature",
+     "description": "MCP task_status",
+     "base_branch": "main",
+     "base_commit": "<sha1>",
+     "branch": "bench/add-a-feature-<id8>:6",
+     "worktree": "<home>/.bench-worktrees-repo/<id8>",
+     "state": "active",
+     "merge_commit": null,
+     "merged_at": null,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "done": "It works",
+     "check_command": "npm test",
+     "check_status": null,
+     "check_tree": null,
+     "check_output": null,
+     "check_at": null,
+     "created_by_session": null,
+     "loop": null,
+     "routing": null
+    },
+    "session": {
+     "id": "<id9>",
+     "project_id": "<id1>",
+     "task_id": "<id8>",
+     "title": "Add a feature",
+     "cwd": "<home>/.bench-worktrees-repo/<id8>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "default",
+     "effort": null,
+     "claude_session_id": null,
+     "status": "running",
+     "error": null,
+     "cost": 0,
+     "input_tokens": 0,
+     "output_tokens": 0,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": null,
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": null,
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "task tool reply",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": 17,
+     "session_id": "<id9>",
+     "kind": "user",
+     "data": {
+      "text": "MCP task_status",
+      "images": 0,
+      "files": []
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 18,
+     "session_id": "<id9>",
+     "kind": "init",
+     "data": {
+      "model": "claude-fake-1",
+      "permissionMode": "default",
+      "cwd": "<home>/.bench-worktrees-repo/<id8>",
+      "version": "0.0.0-fake"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 19,
+     "session_id": "<id9>",
+     "kind": "assistant",
+     "data": {
+      "id": "<msg>",
+      "content": [
+       {
+        "type": "text",
+        "text": "Project: repo\nTask: Add a feature\nId: <id8> · active\nBranch: bench/add-a-feature-<id8>:6 → main\nDone means: It works\nCheck: `npm test` — last run: not run yet\nChanges: 0 files changed, +0 −0; 0 commits ahead of main, 0 behind\n\nSessions in this task:\n- <id9>:8 \"Add a feature\" — running, Anthropic (Claude login), default model (this session)\n\nDecision log: empty."
+       }
+      ],
+      "parent": null,
+      "error": null,
+      "model": "claude-fake-1"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 20,
+     "session_id": "<id9>",
+     "kind": "check",
+     "data": {
+      "command": "npm test",
+      "ok": true,
+      "code": "<code>",
+      "output": "\n> test\n> node -e \"process.exit(0)\"",
+      "ms": "<ms>",
+      "timedOut": false
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 21,
+     "session_id": "<id9>",
+     "kind": "result",
+     "data": {
+      "subtype": "success",
+      "is_error": false,
+      "duration_ms": "<duration_ms>",
+      "turns": 1,
+      "cost": 0.001
+     },
+     "created_at": "<created_at>"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "task",
+  "value": {
+   "status": 200,
+   "body": {
+    "task": {
+     "id": "<id8>",
+     "project_id": "<id1>",
+     "title": "Add a feature",
+     "description": "MCP task_status",
+     "base_branch": "main",
+     "base_commit": "<sha1>",
+     "branch": "bench/add-a-feature-<id8>:6",
+     "worktree": "<home>/.bench-worktrees-repo/<id8>",
+     "state": "active",
+     "merge_commit": null,
+     "merged_at": null,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "done": "It works",
+     "check_command": "npm test",
+     "check_status": "passed",
+     "check_tree": "<sha2>",
+     "check_output": "\n> test\n> node -e \"process.exit(0)\"",
+     "check_at": "<check_at>",
+     "created_by_session": null,
+     "loop": null,
+     "routing": null
+    },
+    "git": {
+     "ahead": 0,
+     "behind": 0,
+     "dirty": [],
+     "conflicted": [],
+     "files": 0,
+     "added": 0,
+     "removed": 0,
+     "merged": false,
+     "canMerge": {
+      "ok": false,
+      "reason": "Nothing to merge yet",
+      "conflicts": []
+     }
+    },
+    "sessions": [
+     {
+      "id": "<id9>",
+      "project_id": "<id1>",
+      "task_id": "<id8>",
+      "title": "Add a feature",
+      "cwd": "<home>/.bench-worktrees-repo/<id8>",
+      "provider_id": "anthropic-claude-code",
+      "model_id": null,
+      "permission_mode": "default",
+      "effort": null,
+      "claude_session_id": "<id10>",
+      "status": "idle",
+      "error": null,
+      "cost": 0.001,
+      "input_tokens": 10,
+      "output_tokens": 5,
+      "created_at": "<created_at>",
+      "updated_at": "<updated_at>",
+      "archived_at": null,
+      "started_by_session": null,
+      "purpose": null,
+      "pause": null,
+      "model_usage": {
+       "claude-fake-1": {
+        "cost": 0.001,
+        "input_tokens": 10,
+        "output_tokens": 5
+       }
+      },
+      "auto_resume": null,
+      "seen_at": null,
+      "pinned": false,
+      "schedule_id": null,
+      "budget": null,
+      "capped": false,
+      "next_steps": null
+     }
+    ]
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "tasks",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": "<id8>",
+     "project_id": "<id1>",
+     "title": "Add a feature",
+     "description": "MCP task_status",
+     "base_branch": "main",
+     "base_commit": "<sha1>",
+     "branch": "bench/add-a-feature-<id8>:6",
+     "worktree": "<home>/.bench-worktrees-repo/<id8>",
+     "state": "active",
+     "merge_commit": null,
+     "merged_at": null,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "done": "It works",
+     "check_command": "npm test",
+     "check_status": "passed",
+     "check_tree": "<sha2>",
+     "check_output": "\n> test\n> node -e \"process.exit(0)\"",
+     "check_at": "<check_at>",
+     "created_by_session": null,
+     "loop": null,
+     "routing": null
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task diff, empty",
+  "value": {
+   "status": 200,
+   "body": {
+    "diff": ""
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task git, dirty",
+  "value": {
+   "status": 200,
+   "body": {
+    "ahead": 0,
+    "behind": 0,
+    "dirty": [
+     "feature.js"
+    ],
+    "conflicted": [],
+    "files": 1,
+    "added": 1,
+    "removed": 0,
+    "merged": false,
+    "canMerge": {
+     "ok": true,
+     "reason": null,
+     "conflicts": []
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task diff",
+  "value": {
+   "status": 200,
+   "body": {
+    "diff": "diff --git a/feature.js b/feature.js\nnew file mode 100644\nindex 0000000..576782a\n--- /dev/null\n+++ b/feature.js\n@@ -0,0 +1 @@\n+export const f = 1;"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task check suggestions",
+  "value": {
+   "status": 200,
+   "body": {
+    "suggestions": [
+     {
+      "command": "npm test",
+      "from": "package.json · test"
+     },
+     {
+      "command": "npm run lint",
+      "from": "package.json · lint"
+     }
+    ]
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task check",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id8>",
+    "project_id": "<id1>",
+    "title": "Add a feature",
+    "description": "MCP task_status",
+    "base_branch": "main",
+    "base_commit": "<sha1>",
+    "branch": "bench/add-a-feature-<id8>:6",
+    "worktree": "<home>/.bench-worktrees-repo/<id8>",
+    "state": "active",
+    "merge_commit": null,
+    "merged_at": null,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "done": "It works",
+    "check_command": "npm test",
+    "check_status": "passed",
+    "check_tree": "<sha3>",
+    "check_output": "\n> test\n> node -e \"process.exit(0)\"",
+    "check_at": "<check_at>",
+    "created_by_session": null,
+    "loop": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task edit",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id8>",
+    "project_id": "<id1>",
+    "title": "Add the feature",
+    "description": "MCP task_status",
+    "base_branch": "main",
+    "base_commit": "<sha1>",
+    "branch": "bench/add-a-feature-<id8>:6",
+    "worktree": "<home>/.bench-worktrees-repo/<id8>",
+    "state": "active",
+    "merge_commit": null,
+    "merged_at": null,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "done": "It works",
+    "check_command": "node -e \"process.exit(3)\"",
+    "check_status": null,
+    "check_tree": null,
+    "check_output": null,
+    "check_at": null,
+    "created_by_session": null,
+    "loop": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task check fails",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id8>",
+    "project_id": "<id1>",
+    "title": "Add the feature",
+    "description": "MCP task_status",
+    "base_branch": "main",
+    "base_commit": "<sha1>",
+    "branch": "bench/add-a-feature-<id8>:6",
+    "worktree": "<home>/.bench-worktrees-repo/<id8>",
+    "state": "active",
+    "merge_commit": null,
+    "merged_at": null,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "done": "It works",
+    "check_command": "node -e \"process.exit(3)\"",
+    "check_status": "failed",
+    "check_tree": "<sha3>",
+    "check_output": "",
+    "check_at": "<check_at>",
+    "created_by_session": null,
+    "loop": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task loop",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id8>",
+    "project_id": "<id1>",
+    "title": "Add the feature",
+    "description": "MCP task_status",
+    "base_branch": "main",
+    "base_commit": "<sha1>",
+    "branch": "bench/add-a-feature-<id8>:6",
+    "worktree": "<home>/.bench-worktrees-repo/<id8>",
+    "state": "active",
+    "merge_commit": null,
+    "merged_at": null,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "done": "It works",
+    "check_command": "node -e \"process.exit(3)\"",
+    "check_status": "failed",
+    "check_tree": "<sha3>",
+    "check_output": "",
+    "check_at": "<check_at>",
+    "created_by_session": null,
+    "loop": {
+     "max_attempts": 2,
+     "max_minutes": 120,
+     "attempts": 0,
+     "state": "looping",
+     "reason": null,
+     "started_at": "<started_at>",
+     "ended_at": null,
+     "session_id": "<id9>"
+    },
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task loop off",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id8>",
+    "project_id": "<id1>",
+    "title": "Add the feature",
+    "description": "MCP task_status",
+    "base_branch": "main",
+    "base_commit": "<sha1>",
+    "branch": "bench/add-a-feature-<id8>:6",
+    "worktree": "<home>/.bench-worktrees-repo/<id8>",
+    "state": "active",
+    "merge_commit": null,
+    "merged_at": null,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "done": "It works",
+    "check_command": "node -e \"process.exit(3)\"",
+    "check_status": "failed",
+    "check_tree": "<sha3>",
+    "check_output": "",
+    "check_at": "<check_at>",
+    "created_by_session": null,
+    "loop": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task log",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": 2,
+     "task_id": "<id8>",
+     "session_id": "<id9>",
+     "decision": "Loop stopped: the person turned it off",
+     "evidence": "1 attempt sent; the check last failed",
+     "created_at": "<created_at>",
+     "kind": "loop"
+    },
+    {
+     "id": 1,
+     "task_id": "<id8>",
+     "session_id": "<id9>",
+     "decision": "Loop attempt 1 of 2: the check failed (exit ?). Sent back to work.",
+     "evidence": "`node -e \"process.exit(3)\"` failed (exit ?):\n\n(no output)",
+     "created_at": "<created_at>",
+     "kind": "loop"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task commit",
+  "value": {
+   "status": 200,
+   "body": {
+    "commit": "<sha4>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task commit: nothing",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Nothing to commit"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task update from base",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true,
+    "conflicts": []
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task merge",
+  "value": {
+   "status": 200,
+   "body": {
+    "task": {
+     "id": "<id8>",
+     "project_id": "<id1>",
+     "title": "Add the feature",
+     "description": "MCP task_status",
+     "base_branch": "main",
+     "base_commit": "<sha1>",
+     "branch": "bench/add-a-feature-<id8>:6",
+     "worktree": "<home>/.bench-worktrees-repo/<id8>",
+     "state": "merged",
+     "merge_commit": "<sha4>",
+     "merged_at": "<merged_at>",
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "done": "It works",
+     "check_command": "node -e \"process.exit(3)\"",
+     "check_status": "failed",
+     "check_tree": "<sha3>",
+     "check_output": "",
+     "check_at": "<check_at>",
+     "created_by_session": null,
+     "loop": null,
+     "routing": null
+    },
+    "commit": "<sha4>",
+    "fastForward": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task after merge",
+  "value": {
+   "status": 200,
+   "body": {
+    "task": {
+     "id": "<id8>",
+     "project_id": "<id1>",
+     "title": "Add the feature",
+     "description": "MCP task_status",
+     "base_branch": "main",
+     "base_commit": "<sha1>",
+     "branch": "bench/add-a-feature-<id8>:6",
+     "worktree": "<home>/.bench-worktrees-repo/<id8>",
+     "state": "merged",
+     "merge_commit": "<sha4>",
+     "merged_at": "<merged_at>",
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "done": "It works",
+     "check_command": "node -e \"process.exit(3)\"",
+     "check_status": "failed",
+     "check_tree": "<sha3>",
+     "check_output": "",
+     "check_at": "<check_at>",
+     "created_by_session": null,
+     "loop": null,
+     "routing": null
+    },
+    "git": {
+     "ahead": 0,
+     "behind": 0,
+     "dirty": [],
+     "conflicted": [],
+     "files": 1,
+     "added": 1,
+     "removed": 0,
+     "merged": true,
+     "canMerge": {
+      "ok": false,
+      "reason": "The task is merged",
+      "conflicts": []
+     }
+    },
+    "sessions": [
+     {
+      "id": "<id9>",
+      "project_id": "<id1>",
+      "task_id": "<id8>",
+      "title": "Add a feature",
+      "cwd": "<home>/.bench-worktrees-repo/<id8>",
+      "provider_id": "anthropic-claude-code",
+      "model_id": null,
+      "permission_mode": "default",
+      "effort": null,
+      "claude_session_id": "<id10>",
+      "status": "idle",
+      "error": null,
+      "cost": 0.001,
+      "input_tokens": 10,
+      "output_tokens": 5,
+      "created_at": "<created_at>",
+      "updated_at": "<updated_at>",
+      "archived_at": "<archived_at>",
+      "started_by_session": null,
+      "purpose": null,
+      "pause": null,
+      "model_usage": {
+       "claude-fake-1": {
+        "cost": 0.001,
+        "input_tokens": 10,
+        "output_tokens": 5
+       }
+      },
+      "auto_resume": null,
+      "seen_at": null,
+      "pinned": false,
+      "schedule_id": null,
+      "budget": null,
+      "capped": false,
+      "next_steps": null
+     }
+    ]
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "task diff after merge",
+  "value": {
+   "status": 200,
+   "body": {
+    "diff": "diff --git a/feature.js b/feature.js\nnew file mode 100644\nindex 0000000..576782a\n--- /dev/null\n+++ b/feature.js\n@@ -0,0 +1 @@\n+export const f = 1;"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task merge again",
+  "value": {
+   "status": 409,
+   "body": {
+    "error": "The task is already merged"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task 2",
+  "value": {
+   "status": 200,
+   "body": {
+    "task": {
+     "id": "<id11>",
+     "project_id": "<id1>",
+     "title": "Throwaway",
+     "description": null,
+     "base_branch": "main",
+     "base_commit": "<sha4>",
+     "branch": "bench/throwaway-<id11>:6",
+     "worktree": "<home>/.bench-worktrees-repo/<id11>",
+     "state": "active",
+     "merge_commit": null,
+     "merged_at": null,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "done": null,
+     "check_command": "npm test",
+     "check_status": null,
+     "check_tree": null,
+     "check_output": null,
+     "check_at": null,
+     "created_by_session": null,
+     "loop": null,
+     "routing": null
+    },
+    "session": {
+     "id": "<id12>",
+     "project_id": "<id1>",
+     "task_id": "<id11>",
+     "title": "Throwaway",
+     "cwd": "<home>/.bench-worktrees-repo/<id11>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "default",
+     "effort": null,
+     "claude_session_id": null,
+     "status": "idle",
+     "error": null,
+     "cost": 0,
+     "input_tokens": 0,
+     "output_tokens": 0,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": null,
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": null,
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "task close",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id11>",
+    "project_id": "<id1>",
+    "title": "Throwaway",
+    "description": null,
+    "base_branch": "main",
+    "base_commit": "<sha4>",
+    "branch": "bench/throwaway-<id11>:6",
+    "worktree": "<home>/.bench-worktrees-repo/<id11>",
+    "state": "closed",
+    "merge_commit": null,
+    "merged_at": null,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "done": null,
+    "check_command": "npm test",
+    "check_status": null,
+    "check_tree": null,
+    "check_output": null,
+    "check_at": null,
+    "created_by_session": null,
+    "loop": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task reopen",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id11>",
+    "project_id": "<id1>",
+    "title": "Throwaway",
+    "description": null,
+    "base_branch": "main",
+    "base_commit": "<sha4>",
+    "branch": "bench/throwaway-<id11>:6",
+    "worktree": "<home>/.bench-worktrees-repo/<id11>",
+    "state": "active",
+    "merge_commit": null,
+    "merged_at": null,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "done": null,
+    "check_command": "npm test",
+    "check_status": null,
+    "check_tree": null,
+    "check_output": null,
+    "check_at": null,
+    "created_by_session": null,
+    "loop": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "task 404",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such task"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "archive",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id5>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "ASK Bash",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": "<id6>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.001,
+    "input_tokens": 10,
+    "output_tokens": 5,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": "<archived_at>",
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.001,
+      "input_tokens": 10,
+      "output_tokens": 5
+     }
+    },
+    "auto_resume": null,
+    "seen_at": null,
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "sessions archived",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": "<id5>",
+     "project_id": "<id1>",
+     "task_id": null,
+     "title": "ASK Bash",
+     "cwd": "<repo>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "default",
+     "effort": null,
+     "claude_session_id": "<id6>",
+     "status": "idle",
+     "error": null,
+     "cost": 0.001,
+     "input_tokens": 10,
+     "output_tokens": 5,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": "<archived_at>",
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": {
+      "claude-fake-1": {
+       "cost": 0.001,
+       "input_tokens": 10,
+       "output_tokens": 5
+      }
+     },
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    },
+    {
+     "id": "<id12>",
+     "project_id": "<id1>",
+     "task_id": "<id11>",
+     "title": "Throwaway",
+     "cwd": "<home>/.bench-worktrees-repo/<id11>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "default",
+     "effort": null,
+     "claude_session_id": null,
+     "status": "idle",
+     "error": null,
+     "cost": 0,
+     "input_tokens": 0,
+     "output_tokens": 0,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": null,
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": null,
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    },
+    {
+     "id": "<id9>",
+     "project_id": "<id1>",
+     "task_id": "<id8>",
+     "title": "Add a feature",
+     "cwd": "<home>/.bench-worktrees-repo/<id8>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "default",
+     "effort": null,
+     "claude_session_id": "<id10>",
+     "status": "idle",
+     "error": null,
+     "cost": 0.001,
+     "input_tokens": 10,
+     "output_tokens": 5,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": "<archived_at>",
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": {
+      "claude-fake-1": {
+       "cost": 0.001,
+       "input_tokens": 10,
+       "output_tokens": 5
+      }
+     },
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    },
+    {
+     "id": "<id3>",
+     "project_id": "<id1>",
+     "task_id": null,
+     "title": "Renamed",
+     "cwd": "<repo>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": "anthropic:claude-sonnet-5",
+     "permission_mode": "plan",
+     "effort": null,
+     "claude_session_id": "<id4>",
+     "status": "idle",
+     "error": null,
+     "cost": 0.003,
+     "input_tokens": 30,
+     "output_tokens": 15,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": null,
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": {
+      "claude-fake-1": {
+       "cost": 0.003,
+       "input_tokens": 30,
+       "output_tokens": 15
+      }
+     },
+     "auto_resume": false,
+     "seen_at": "<seen_at>",
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "unarchive",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id5>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "ASK Bash",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": "<id6>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.001,
+    "input_tokens": 10,
+    "output_tokens": 5,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.001,
+      "input_tokens": 10,
+      "output_tokens": 5
+     }
+    },
+    "auto_resume": null,
+    "seen_at": null,
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "delete",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "session 404",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such session"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "ask session",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id13>",
+    "project_id": null,
+    "task_id": null,
+    "title": "MCP overview",
+    "cwd": "<root>/.bench/ask",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": null,
+    "status": "running",
+    "error": null,
+    "cost": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": null,
+    "auto_resume": null,
+    "seen_at": null,
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "ask reply",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": 29,
+     "session_id": "<id13>",
+     "kind": "user",
+     "data": {
+      "text": "MCP overview",
+      "images": 0,
+      "files": []
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 30,
+     "session_id": "<id13>",
+     "kind": "init",
+     "data": {
+      "model": "claude-fake-1",
+      "permissionMode": "default",
+      "cwd": "<root>/.bench/ask",
+      "version": "0.0.0-fake"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 31,
+     "session_id": "<id13>",
+     "kind": "assistant",
+     "data": {
+      "id": "<msg>",
+      "content": [
+       {
+        "type": "text",
+        "text": "Nothing is waiting on the person.\nNo other session is working.\n\nProjects (2):\n- Fresh One (<id2>:8): 0 active tasks, 0 open sessions\n- repo (<id1>:8): 1 active task, 2 open sessions\n\nDefaults for new sessions: Anthropic (Claude login), its default model, default mode."
+       }
+      ],
+      "parent": null,
+      "error": null,
+      "model": "claude-fake-1"
+     },
+     "created_at": "<created_at>"
+    },
+    {
+     "id": 32,
+     "session_id": "<id13>",
+     "kind": "result",
+     "data": {
+      "subtype": "success",
+      "is_error": false,
+      "duration_ms": "<duration_ms>",
+      "turns": 1,
+      "cost": 0.001
+     },
+     "created_at": "<created_at>"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "usage",
+  "value": {
+   "status": 200,
+   "rows": [
+    "{\"project_id\":false,\"task_id\":false,\"provider_id\":\"anthropic-claude-code\",\"cost\":0.001,\"input_tokens\":10,\"output_tokens\":5,\"sessions\":1}",
+    "{\"project_id\":true,\"task_id\":false,\"provider_id\":\"anthropic-claude-code\",\"cost\":0.003,\"input_tokens\":30,\"output_tokens\":15,\"sessions\":1}",
+    "{\"project_id\":true,\"task_id\":true,\"provider_id\":\"anthropic-claude-code\",\"cost\":0,\"input_tokens\":0,\"output_tokens\":0,\"sessions\":1}",
+    "{\"project_id\":true,\"task_id\":true,\"provider_id\":\"anthropic-claude-code\",\"cost\":0.001,\"input_tokens\":10,\"output_tokens\":5,\"sessions\":1}"
+   ]
+  }
+ },
+ {
+  "name": "usage by model",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "model": "claude-fake-1",
+     "cost": 0.005,
+     "input_tokens": 50,
+     "output_tokens": 25,
+     "sessions": 3
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "devices",
+  "value": {
+   "status": 200,
+   "body": [],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "push key",
+  "value": {
+   "status": 200
+  }
+ },
+ {
+  "name": "push subscribe",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "push choices",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "push unsubscribe",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "pairing",
+  "value": {
+   "status": 200,
+   "keys": [
+    "code",
+    "urls",
+    "expiresIn",
+    "qr"
+   ]
+  }
+ },
+ {
+  "name": "pair: bad code",
+  "value": {
+   "status": 401,
+   "body": {
+    "error": "That pairing code is wrong or has expired"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "server status keys",
+  "value": {
+   "keys": [
+    "pid",
+    "startedAt",
+    "uptimeMs",
+    "version",
+    "commit",
+    "root",
+    "terminals",
+    "supervised"
+   ]
+  }
+ },
+ {
+  "name": "metrics keys",
+  "value": {
+   "keys": [
+    "at",
+    "host",
+    "machine",
+    "bench",
+    "procs",
+    "storage"
+   ],
+   "host": [
+    "hostname",
+    "platform",
+    "cpus",
+    "loadavg",
+    "uptimeMs",
+    "memTotal",
+    "memFree",
+    "diskPath",
+    "diskTotal",
+    "diskFree"
+   ],
+   "bench": [
+    "memCurrent",
+    "memMax",
+    "memPeak",
+    "pids",
+    "procs",
+    "source"
+   ]
+  }
+ },
+ {
+  "name": "update status",
+  "value": {
+   "keys": [
+    "installed",
+    "source",
+    "sourceCommit",
+    "sourceDirty",
+    "newer",
+    "canUpdate",
+    "reason",
+    "last"
+   ],
+   "canUpdate": false
+  }
+ },
+ {
+  "name": "restart: unsupervised",
+  "value": {
+   "status": 409,
+   "body": {
+    "error": "Not running as a service, so nothing would start it again. Run `bench service install` on the server."
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "static index",
+  "value": {
+   "status": 200,
+   "type": "text/html; charset=utf-8"
+  }
+ },
+ {
+  "name": "static client route",
+  "value": {
+   "status": 200,
+   "type": "text/html; charset=utf-8"
+  }
+ },
+ {
+  "name": "static missing",
+  "value": {
+   "status": 404
+  }
+ },
+ {
+  "name": "vendor",
+  "value": {
+   "status": 200,
+   "cache": "public, max-age=604800"
+  }
+ },
+ {
+  "name": "event stream (types)",
+  "value": [
+   "approval",
+   "approval-done",
+   "git",
+   "hello",
+   "session",
+   "session-removed",
+   "task"
+  ]
+ },
+ {
+  "name": "schedules: none",
+  "value": {
+   "status": 200,
+   "body": [],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule: no days",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Pick at least one day"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule: bad time",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Time is HH:MM, 24-hour"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule: bad zone",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Unknown time zone Mars/Base"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule: bad mode",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Unknown mode yolo"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule add",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id14>",
+    "title": "Hackathon scan",
+    "project_id": "<id1>",
+    "prompt": "hello from a schedule",
+    "days": "1,3",
+    "time": "08:00",
+    "tz": "Africa/Lagos",
+    "mode": "acceptEdits",
+    "model_id": null,
+    "provider_id": null,
+    "effort": null,
+    "enabled": true,
+    "last_run_at": null,
+    "created_at": "<created_at>",
+    "keep_board": false,
+    "watch": null,
+    "checked_at": null,
+    "next_run_at": "<next_run_at>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule edit",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id14>",
+    "title": "Hackathon scan",
+    "project_id": "<id1>",
+    "prompt": "hello from a schedule",
+    "days": "1,2,3,4,5",
+    "time": "08:00",
+    "tz": "Africa/Lagos",
+    "mode": "acceptEdits",
+    "model_id": null,
+    "provider_id": null,
+    "effort": null,
+    "enabled": false,
+    "last_run_at": null,
+    "created_at": "<created_at>",
+    "keep_board": false,
+    "watch": null,
+    "checked_at": null,
+    "next_run_at": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule edit: unknown",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such schedule"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedules",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": "<id14>",
+     "title": "Hackathon scan",
+     "project_id": "<id1>",
+     "prompt": "hello from a schedule",
+     "days": "1,2,3,4,5",
+     "time": "08:00",
+     "tz": "Africa/Lagos",
+     "mode": "acceptEdits",
+     "model_id": null,
+     "provider_id": null,
+     "effort": null,
+     "enabled": false,
+     "last_run_at": null,
+     "created_at": "<created_at>",
+     "keep_board": false,
+     "watch": null,
+     "checked_at": null,
+     "next_run_at": null
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule run",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id15>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "Hackathon scan",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "acceptEdits",
+    "effort": null,
+    "claude_session_id": null,
+    "status": "running",
+    "error": null,
+    "cost": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": null,
+    "auto_resume": null,
+    "seen_at": null,
+    "pinned": false,
+    "schedule_id": "<id14>",
+    "budget": 2,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "scheduled session",
+  "value": {
+   "status": 200,
+   "body": {
+    "session": {
+     "id": "<id15>",
+     "project_id": "<id1>",
+     "task_id": null,
+     "title": "Hackathon scan",
+     "cwd": "<repo>",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "acceptEdits",
+     "effort": null,
+     "claude_session_id": "<id16>",
+     "status": "idle",
+     "error": null,
+     "cost": 0.001,
+     "input_tokens": 10,
+     "output_tokens": 5,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": null,
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": {
+      "claude-fake-1": {
+       "cost": 0.001,
+       "input_tokens": 10,
+       "output_tokens": 5
+      }
+     },
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": "<id14>",
+     "budget": 2,
+     "capped": false,
+     "next_steps": null
+    },
+    "events": [
+     {
+      "id": 33,
+      "session_id": "<id15>",
+      "kind": "user",
+      "data": {
+       "text": "hello from a schedule",
+       "images": 0,
+       "files": []
+      },
+      "created_at": "<created_at>"
+     },
+     {
+      "id": 34,
+      "session_id": "<id15>",
+      "kind": "init",
+      "data": {
+       "model": "claude-fake-1",
+       "permissionMode": "acceptEdits",
+       "cwd": "<repo>",
+       "version": "0.0.0-fake"
+      },
+      "created_at": "<created_at>"
+     },
+     {
+      "id": 35,
+      "session_id": "<id15>",
+      "kind": "assistant",
+      "data": {
+       "id": "<msg>",
+       "content": [
+        {
+         "type": "text",
+         "text": "Echo: hello from a schedule"
+        }
+       ],
+       "parent": null,
+       "error": null,
+       "model": "claude-fake-1"
+      },
+      "created_at": "<created_at>"
+     },
+     {
+      "id": 36,
+      "session_id": "<id15>",
+      "kind": "result",
+      "data": {
+       "subtype": "success",
+       "is_error": false,
+       "duration_ms": "<duration_ms>",
+       "turns": 1,
+       "cost": 0.001
+      },
+      "created_at": "<created_at>"
+     }
+    ],
+    "approvals": [],
+    "live": true,
+    "commands": [
+     {
+      "name": "review",
+      "description": "Review the change",
+      "argumentHint": ""
+     },
+     {
+      "name": "fake:hello",
+      "description": "(fake) Say hello",
+      "argumentHint": "<name>"
+     }
+    ]
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "schedule detail",
+  "value": {
+   "status": 200,
+   "body": {
+    "schedule": {
+     "id": "<id14>",
+     "title": "Hackathon scan",
+     "project_id": "<id1>",
+     "prompt": "hello from a schedule",
+     "days": "1,2,3,4,5",
+     "time": "08:00",
+     "tz": "Africa/Lagos",
+     "mode": "acceptEdits",
+     "model_id": null,
+     "provider_id": null,
+     "effort": null,
+     "enabled": false,
+     "last_run_at": "<last_run_at>",
+     "created_at": "<created_at>",
+     "keep_board": false,
+     "watch": null,
+     "checked_at": null,
+     "next_run_at": null
+    },
+    "runs": [
+     {
+      "id": "<id15>",
+      "title": "Hackathon scan",
+      "status": "idle",
+      "cost": 0.001,
+      "capped": false,
+      "created_at": "<created_at>",
+      "archived": false
+     }
+    ],
+    "board": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule detail: unknown",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such schedule"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule: keep a board",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id17>",
+    "title": "Job board",
+    "project_id": "<id1>",
+    "prompt": "find roles",
+    "days": "2",
+    "time": "09:00",
+    "tz": "UTC",
+    "mode": null,
+    "model_id": null,
+    "provider_id": null,
+    "effort": null,
+    "enabled": true,
+    "last_run_at": null,
+    "created_at": "<created_at>",
+    "keep_board": true,
+    "watch": null,
+    "checked_at": null,
+    "next_run_at": "<next_run_at>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "board run",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id18>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "Job board",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": null,
+    "permission_mode": "default",
+    "effort": null,
+    "claude_session_id": null,
+    "status": "running",
+    "error": null,
+    "cost": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": null,
+    "auto_resume": null,
+    "seen_at": null,
+    "pinned": false,
+    "schedule_id": "<id17>",
+    "budget": 2,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "board in reports",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "session_id": "<id18>",
+     "path": "<repo>/boards/job-board.md",
+     "name": "job-board.md",
+     "kind": "board",
+     "title": "Remote roles",
+     "size": "<size>",
+     "modified": "<modified>",
+     "seen": false,
+     "schedule_id": "<id17>",
+     "new": 2,
+     "gist": "Updated today",
+     "preview": [
+      {
+       "title": "Acme backend · New"
+      },
+      {
+       "title": "Beta API · New"
+      },
+      {
+       "title": "Gamma infra"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "board detail",
+  "value": {
+   "status": 200,
+   "body": {
+    "schedule": {
+     "id": "<id17>",
+     "title": "Job board",
+     "project_id": "<id1>",
+     "prompt": "find roles",
+     "days": "2",
+     "time": "09:00",
+     "tz": "UTC",
+     "mode": null,
+     "model_id": null,
+     "provider_id": null,
+     "effort": null,
+     "enabled": true,
+     "last_run_at": "<last_run_at>",
+     "created_at": "<created_at>",
+     "keep_board": true,
+     "watch": null,
+     "checked_at": null,
+     "next_run_at": "<next_run_at>"
+    },
+    "runs": [
+     {
+      "id": "<id18>",
+      "title": "Job board",
+      "status": "idle",
+      "cost": 0.001,
+      "capped": false,
+      "created_at": "<created_at>",
+      "archived": false
+     }
+    ],
+    "board": {
+     "session_id": "<id18>",
+     "path": "<repo>/boards/job-board.md",
+     "name": "job-board.md",
+     "title": "Remote roles",
+     "new": 2,
+     "history": [
+      "2026-01-02T00-00.md"
+     ]
+    }
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "board: turn off",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id17>",
+    "title": "Job board",
+    "project_id": "<id1>",
+    "prompt": "find roles",
+    "days": "2",
+    "time": "09:00",
+    "tz": "UTC",
+    "mode": null,
+    "model_id": null,
+    "provider_id": null,
+    "effort": null,
+    "enabled": true,
+    "last_run_at": "<last_run_at>",
+    "created_at": "<created_at>",
+    "keep_board": false,
+    "watch": null,
+    "checked_at": null,
+    "next_run_at": "<next_run_at>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "board: delete",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipes: none",
+  "value": {
+   "status": 200,
+   "body": [],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipe: no name",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "A recipe needs a name"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipe: unknown project",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such project"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipe add",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id19>",
+    "title": "Job hunt",
+    "prompt": "Find 5 remote {role} jobs in {region}, {role} only",
+    "project_id": "<id1>",
+    "blanks": [
+     "role",
+     "region"
+    ],
+    "created_at": "<created_at>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipe edit",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id19>",
+    "title": "Jobs",
+    "prompt": "Find 5 remote {role} jobs in {region}, {role} only",
+    "project_id": null,
+    "blanks": [
+     "role",
+     "region"
+    ],
+    "created_at": "<created_at>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipe edit: unknown",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such recipe"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipes",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "id": "<id19>",
+     "title": "Jobs",
+     "prompt": "Find 5 remote {role} jobs in {region}, {role} only",
+     "project_id": null,
+     "blanks": [
+      "role",
+      "region"
+     ],
+     "created_at": "<created_at>"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipe delete",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "recipe delete: again",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such recipe"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "watch: bad address",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Watch a page by its web address, starting with https://"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "watch: bad hours",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Check every 1 to 168 hours"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "watch add",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id20>",
+    "title": "Lagos roles",
+    "project_id": "<id1>",
+    "prompt": "Tell me when a role in Lagos is posted",
+    "days": "",
+    "time": "00:00",
+    "tz": "UTC",
+    "mode": null,
+    "model_id": null,
+    "provider_id": null,
+    "effort": null,
+    "enabled": true,
+    "last_run_at": null,
+    "created_at": "<created_at>",
+    "keep_board": false,
+    "watch": {
+     "url": "https://example.com/jobs",
+     "every_hours": 6
+    },
+    "checked_at": null,
+    "next_run_at": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "watch: every 2 hours",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id20>",
+    "title": "Lagos roles",
+    "project_id": "<id1>",
+    "prompt": "Tell me when a role in Lagos is posted",
+    "days": "",
+    "time": "00:00",
+    "tz": "UTC",
+    "mode": null,
+    "model_id": null,
+    "provider_id": null,
+    "effort": null,
+    "enabled": true,
+    "last_run_at": null,
+    "created_at": "<created_at>",
+    "keep_board": false,
+    "watch": {
+     "url": "https://example.com/jobs",
+     "every_hours": 2
+    },
+    "checked_at": null,
+    "next_run_at": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "watch: back to a time, missing it",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Time is HH:MM, 24-hour"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "watch: back to a time",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id20>",
+    "title": "Lagos roles",
+    "project_id": "<id1>",
+    "prompt": "Tell me when a role in Lagos is posted",
+    "days": "1",
+    "time": "08:00",
+    "tz": "UTC",
+    "mode": null,
+    "model_id": null,
+    "provider_id": null,
+    "effort": null,
+    "enabled": true,
+    "last_run_at": null,
+    "created_at": "<created_at>",
+    "keep_board": false,
+    "watch": null,
+    "checked_at": null,
+    "next_run_at": "<next_run_at>"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "watch: delete",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule delete",
+  "value": {
+   "status": 200,
+   "body": {
+    "ok": true
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "schedule delete: again",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such schedule"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "research project",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id21>",
+    "name": "Research",
+    "path": "<root>/projects/research",
+    "created_at": "<created_at>",
+    "check_command": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "research project: again",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id21>",
+    "name": "Research",
+    "path": "<root>/projects/research",
+    "created_at": "<created_at>",
+    "check_command": null,
+    "routing": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "about: none yet",
+  "value": {
+   "status": 200,
+   "body": {
+    "text": null,
+    "draft": null,
+    "include": false,
+    "path": "<root>/.bench/notes/about-me.md",
+    "changed_by": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "about: include before written",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Write About me first"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "about: not text",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "About me is text"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "about: write",
+  "value": {
+   "status": 200,
+   "body": {
+    "text": "# About me\n\n## Who you are\n\nJosh\n",
+    "draft": null,
+    "include": true,
+    "path": "<root>/.bench/notes/about-me.md",
+    "changed_by": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "about: switch off",
+  "value": {
+   "status": 200,
+   "body": {
+    "text": "# About me\n\n## Who you are\n\nJosh\n",
+    "draft": null,
+    "include": false,
+    "path": "<root>/.bench/notes/about-me.md",
+    "changed_by": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "about: no draft",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "There is no draft"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "about: nothing to undo",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "Nothing to undo"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "about: from a cv",
+  "value": {
+   "status": 200,
+   "body": {
+    "session": {
+     "id": "<id22>",
+     "project_id": "<id21>",
+     "task_id": null,
+     "title": "About me from your CV",
+     "cwd": "<root>/projects/research",
+     "provider_id": "anthropic-claude-code",
+     "model_id": null,
+     "permission_mode": "acceptEdits",
+     "effort": null,
+     "claude_session_id": null,
+     "status": "idle",
+     "error": null,
+     "cost": 0,
+     "input_tokens": 0,
+     "output_tokens": 0,
+     "created_at": "<created_at>",
+     "updated_at": "<updated_at>",
+     "archived_at": null,
+     "started_by_session": null,
+     "purpose": null,
+     "pause": null,
+     "model_usage": null,
+     "auto_resume": null,
+     "seen_at": null,
+     "pinned": false,
+     "schedule_id": null,
+     "budget": null,
+     "capped": false,
+     "next_steps": null
+    },
+    "prompt": "Read the attached CV and write a draft of my About me to <root>/.bench/notes/.about-me.draft.md. Use exactly these headings, in this order: \"## Who you are\", \"## Your work\", \"## Links\", \"## How you write\". Write short plain sentences and only what the CV says; under a heading the CV says nothing about, write \"Not in the CV.\" Start the file with \"# About me\". Do not write anything else to that file or anywhere else. Then reply in one line that the draft is ready to check."
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "vary": "accept-encoding"
+   }
+  }
+ },
+ {
+  "name": "rules",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "key": "<key>",
+     "label": "Push code",
+     "value": "ask"
+    },
+    {
+     "key": "<key>",
+     "label": "Post publicly",
+     "value": "ask"
+    },
+    {
+     "key": "<key>",
+     "label": "Delete for good",
+     "value": "ask"
+    },
+    {
+     "key": "<key>",
+     "label": "Send email",
+     "value": "never"
+    },
+    {
+     "key": "<key>",
+     "label": "Submit applications or forms",
+     "value": "never"
+    },
+    {
+     "key": "<key>",
+     "label": "Pay or move money",
+     "value": "never"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "can reach",
+  "value": {
+   "status": 200,
+   "body": {
+    "server": [
+     {
+      "key": "<key>",
+      "name": "Files, shell and the web",
+      "detail": "Always"
+     }
+    ],
+    "accounts": [
+     {
+      "key": "<key>",
+      "name": "GitHub",
+      "detail": "Not connected"
+     }
+    ],
+    "browser": {
+     "installed": false,
+     "running": false,
+     "sites": []
+    },
+    "devices": []
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "browser",
+  "value": {
+   "status": 200,
+   "body": {
+    "installed": false,
+    "running": false,
+    "sites": []
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "browser: sign out of nothing",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "Which site?"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "browser: sign out",
+  "value": {
+   "status": 200,
+   "body": {
+    "installed": false,
+    "running": false,
+    "sites": []
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "rules: set",
+  "value": {
+   "status": 200,
+   "body": [
+    {
+     "key": "<key>",
+     "label": "Push code",
+     "value": "ask"
+    },
+    {
+     "key": "<key>",
+     "label": "Post publicly",
+     "value": "ask"
+    },
+    {
+     "key": "<key>",
+     "label": "Delete for good",
+     "value": "ask"
+    },
+    {
+     "key": "<key>",
+     "label": "Send email",
+     "value": "ask"
+    },
+    {
+     "key": "<key>",
+     "label": "Submit applications or forms",
+     "value": "never"
+    },
+    {
+     "key": "<key>",
+     "label": "Pay or move money",
+     "value": "never"
+    }
+   ],
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "rules: bad value",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "A rule is allow, ask or never"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "rules: no such rule",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such rule"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "spending",
+  "value": {
+   "status": 200,
+   "body": {
+    "daily_cap": 5,
+    "run_cap": 2,
+    "paused": false,
+    "today": 0,
+    "runs_today": 2
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "spending: set",
+  "value": {
+   "status": 200,
+   "body": {
+    "daily_cap": 7.56,
+    "run_cap": 3,
+    "paused": false,
+    "today": 0,
+    "runs_today": 2
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "spending: zero",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "A cap is between $0 and $1,000"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "spending: not a number",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "A cap is between $0 and $1,000"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "spending: pause",
+  "value": {
+   "status": 200,
+   "body": {
+    "daily_cap": 7.56,
+    "run_cap": 3,
+    "paused": true,
+    "today": 0,
+    "runs_today": 2
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "budget: not capped",
+  "value": {
+   "status": 409,
+   "body": {
+    "error": "It has not stopped at its cap"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "budget: bad action",
+  "value": {
+   "status": 400,
+   "body": {
+    "error": "More or stop"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "budget: stop",
+  "value": {
+   "status": 200,
+   "body": {
+    "id": "<id3>",
+    "project_id": "<id1>",
+    "task_id": null,
+    "title": "Renamed",
+    "cwd": "<repo>",
+    "provider_id": "anthropic-claude-code",
+    "model_id": "anthropic:claude-sonnet-5",
+    "permission_mode": "plan",
+    "effort": null,
+    "claude_session_id": "<id4>",
+    "status": "idle",
+    "error": null,
+    "cost": 0.003,
+    "input_tokens": 30,
+    "output_tokens": 15,
+    "created_at": "<created_at>",
+    "updated_at": "<updated_at>",
+    "archived_at": null,
+    "started_by_session": null,
+    "purpose": null,
+    "pause": null,
+    "model_usage": {
+     "claude-fake-1": {
+      "cost": 0.003,
+      "input_tokens": 30,
+      "output_tokens": 15
+     }
+    },
+    "auto_resume": false,
+    "seen_at": "<seen_at>",
+    "pinned": false,
+    "schedule_id": null,
+    "budget": null,
+    "capped": false,
+    "next_steps": null
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ },
+ {
+  "name": "budget: no session",
+  "value": {
+   "status": 404,
+   "body": {
+    "error": "No such session"
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   }
+  }
+ }
+]

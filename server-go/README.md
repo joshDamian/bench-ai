@@ -75,35 +75,19 @@ go build -o server-go/bin/bench-go ./server-go/cmd/bench-go   # from server-go/:
 node server-go/conformance/run.mjs
 ```
 
-Runs one scenario of about 120 steps against both servers, each on a fresh data folder
-and its own copy of a test repository, both on `conformance/fake-claude.mjs` (a stand-in
-CLI that speaks the stream-json protocol, so no model is called). Every answer, and the
-WebSocket stream, is normalised (ids, times, hashes, paths) and compared byte for byte.
+Runs one scenario of about 190 steps against bench-go on a fresh data folder and its own copy
+of a test repository, on `conformance/fake-claude.mjs` (a stand-in CLI that speaks the
+stream-json protocol, so no model is called). Every answer, and the WebSocket stream, is
+normalised (ids, times, hashes, paths) and compared byte for byte with
+`conformance/expected.json`: the answers recorded when bench-go matched the Node server step for
+step, kept up since. When a change to an answer is meant, record it and commit the diff:
+
+```sh
+node server-go/conformance/run.mjs --update
+```
 
 `go test ./bench` checks the JSON writer against Node's `JSON.stringify` and the Web Push
 encryption against the `web-push` package's own decrypter.
-
-## Benchmark
-
-```sh
-node server-go/benchmark/run.mjs
-```
-
-Starts both servers on fresh data with the fake CLI, seeds the same projects, tasks and
-transcripts into both, and measures startup, memory, HTTP latency and throughput (at 1
-and 16 concurrent clients), session turns (one session, and ten at once) and WebSocket
-fan-out (50 clients on one streaming session). Memory and CPU are the server process's
-alone. It writes a Markdown and a JSON report.
-
-Against the two servers running on the VPS, read-only (GET requests only, so neither
-changes):
-
-```sh
-node server-go/benchmark/run.mjs \
-  --node-url=http://127.0.0.1:4317 --go-url=http://127.0.0.1:4318 \
-  --node-pid=$(systemctl --user show -p MainPID --value bench) \
-  --go-pid=$(systemctl --user show -p MainPID --value bench-go)
-```
 
 ## Layout
 
@@ -117,19 +101,11 @@ node server-go/benchmark/run.mjs \
 
 ## Taking turns on the same data
 
-To drive bench-go on your real data, with the option to go back to Node at any time:
+To run bench-go on your real data (the folder and port the Node server used):
 
 ```sh
-sh server-go/install --shared     # backs up ~/.bench once, then stops Node and starts Go
-sh server-go/switch node          # back to Node
-sh server-go/switch go            # and to Go again
-sh server-go/switch status        # which one is on
+sh server-go/install --shared     # backs up ~/.bench once, keeps the old Node unit off, starts Go
 ```
 
-Both servers use `~/.bench` and the Node server's port, so the apps and your Tailscale address
-need no change. Only one runs at a time: `switch` stops one before starting the other, and the
-one you switch to is the one that starts at login. The two share the same schema and migrations,
-so either can open what the other wrote. Running sessions resume on whichever server is on.
-
-The apps can also keep several servers (Settings → Server → Add a server) if you'd rather run
-bench-go on its own copy and port and switch in the app instead.
+The apps and your Tailscale address need no change. The Node server (`src/`) is no longer run
+or developed; `src/` stays for the `bench` command-line tool, which still runs on Node.
