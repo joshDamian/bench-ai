@@ -26,6 +26,7 @@ class ShellService(private val context: Context?) : IShell.Stub() {
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var last: ByteArray = ByteArray(0)
+    private var used = 0
 
     init {
         // Shell may call hidden APIs, but this process is still held to the app list; lift it.
@@ -65,7 +66,10 @@ class ShellService(private val context: Context?) : IShell.Stub() {
         // Android also trusted, its own focus and unlocked, so apps run while the phone is locked
         // and typing there never lands in what the person is using.
         val base = PUBLIC or OWN_CONTENT_ONLY or SUPPORTS_TOUCH or DESTROY_CONTENT_ON_REMOVAL
+        // Own focus keeps typing there out of the person's apps; not stealing the top focus keeps
+        // a tap there from taking the person's keyboard away (Android 15+).
         val tries = buildList {
+            if (Build.VERSION.SDK_INT >= 35) add(base or TRUSTED or OWN_DISPLAY_GROUP or ALWAYS_UNLOCKED or TOUCH_FEEDBACK_DISABLED or OWN_FOCUS or STEAL_TOP_FOCUS_DISABLED)
             if (Build.VERSION.SDK_INT >= 34) add(base or TRUSTED or OWN_DISPLAY_GROUP or ALWAYS_UNLOCKED or TOUCH_FEEDBACK_DISABLED or OWN_FOCUS)
             if (Build.VERSION.SDK_INT >= 33) add(base or TRUSTED or OWN_DISPLAY_GROUP or ALWAYS_UNLOCKED or TOUCH_FEEDBACK_DISABLED)
             add(base or TRUSTED)
@@ -75,7 +79,7 @@ class ShellService(private val context: Context?) : IShell.Stub() {
         var why: Throwable? = null
         for (flags in tries) {
             made = runCatching { dm.createVirtualDisplay("Bench", width, height, dpi, r.surface, flags) }.onFailure { why = it }.getOrNull()
-            if (made != null) break
+            if (made != null) { used = flags; break }
         }
         if (made == null) { r.close(); throw IllegalStateException("The phone would not make a hidden screen: ${why?.message}") }
         display = made
@@ -114,6 +118,9 @@ class ShellService(private val context: Context?) : IShell.Stub() {
         return last
     }
 
+    /** Whether the hidden screen keeps its own focus (1), and leaves the person's alone when touched (2). */
+    override fun focus(): Int = (if ((used and OWN_FOCUS) != 0) 1 else 0) or (if ((used and STEAL_TOP_FOCUS_DISABLED) != 0) 2 else 0)
+
     override fun close() {
         runCatching { display?.release() }
         runCatching { reader?.close() }
@@ -133,6 +140,7 @@ class ShellService(private val context: Context?) : IShell.Stub() {
         const val ALWAYS_UNLOCKED = 1 shl 12
         const val TOUCH_FEEDBACK_DISABLED = 1 shl 13
         const val OWN_FOCUS = 1 shl 14
+        const val STEAL_TOP_FOCUS_DISABLED = 1 shl 16
         // WindowManager.DISPLAY_IME_POLICY_HIDE
         const val IME_HIDE = 2
     }

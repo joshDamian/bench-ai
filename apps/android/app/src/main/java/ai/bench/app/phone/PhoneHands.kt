@@ -130,7 +130,15 @@ object PhoneHands {
         lastAction = System.currentTimeMillis()
         ai.bench.app.Notifier.using(c, share.name)
         Thread.sleep(1800)
-        return screen(c)
+        val shot = screen(c)
+        // Older Android shares one focus between the screens: say so, once, where it matters.
+        val f = runCatching { bound(c).focus() }.getOrDefault(3)
+        val note = when {
+            (f and 1) == 0 -> " This phone's Android (before 14) gives both screens one focus: while you type here, the person's typing can be interrupted. Type in one go, and close the app with phone_done when finished."
+            (f and 2) == 0 -> " On this Android (14) each tap here briefly takes focus from the person's screen; keep taps and typing short and finish with phone_done."
+            else -> ""
+        }
+        return (shot.first + note) to shot.second
     }
 
     fun tap(c: Context, x: Int, y: Int): Pair<String, String> {
