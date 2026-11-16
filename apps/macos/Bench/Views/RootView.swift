@@ -92,7 +92,13 @@ struct MainView: View {
     }
 
     @ViewBuilder private var detail: some View {
-        if let id = model.selection, let place = Place(rawValue: id) {
+        if let id = model.selection, let place = Place(rawValue: id), place == .schedules {
+            SchedulesView(store: store)
+        } else if let id = model.selection, let place = Place(rawValue: id), place == .activity {
+            ActivityView(store: store)
+        } else if let id = model.selection, id.hasPrefix("research:") {
+            ResearchView(store: store, sessionId: String(id.dropFirst("research:".count))).id(id)
+        } else if let id = model.selection, let place = Place(rawValue: id) {
             PlaceView(store: store, place: place)
         } else if let id = model.selection, id.hasPrefix("project:") {
             let pid = String(id.dropFirst("project:".count))
@@ -183,6 +189,8 @@ struct PlaceView: View {
                     list(running)
                 case .all:
                     list(live)
+                case .schedules, .activity:
+                    EmptyView()
                 }
             }
             .frame(maxWidth: 760, alignment: .leading)

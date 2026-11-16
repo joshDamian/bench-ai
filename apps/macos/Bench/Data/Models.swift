@@ -128,6 +128,8 @@ struct Session: Codable, Identifiable, Hashable {
     var model_usage: JSONValue?
     var input_tokens: Double?
     var output_tokens: Double?
+    /// The schedule that started it, if one did.
+    var schedule_id: String?
 
     var mode: Mode { Mode(rawValue: permission_mode ?? "default") ?? .default }
 }

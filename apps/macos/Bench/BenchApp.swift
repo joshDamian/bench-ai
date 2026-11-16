@@ -43,6 +43,7 @@ final class AppModel {
         else if v.hasPrefix("task:"), let t = store.task(String(v.dropFirst(5))), let p = t.project_id { rail = p }
         else if v.hasPrefix("project:") { rail = String(v.dropFirst(8)) }
         else if v.hasPrefix("files:") { rail = String(v.dropFirst(6)) }
+        else if v.hasPrefix("research:") { rail = "research" }
         else if let n = NoteRef(tab: v) { rail = n.project ?? "notes" }
     }
     var showNewSession = false
@@ -356,6 +357,9 @@ struct BenchCommands: Commands {
             Button("Needs You") { model.selection = Place.needs.rawValue }.keyboardShortcut("1", modifiers: [.command])
             Button("Running") { model.selection = Place.running.rawValue }.keyboardShortcut("2", modifiers: [.command])
             Button("All Sessions") { model.selection = Place.all.rawValue }.keyboardShortcut("3", modifiers: [.command])
+            Button("Research") { model.rail = "research" }
+            Button("Schedules") { model.go(Place.schedules.rawValue) }
+            Button("Activity") { model.go(Place.activity.rawValue) }
             Divider()
             Button("Dashboard") { openWindow(id: "dashboard") }.keyboardShortcut("d", modifiers: [.command, .shift])
         }
