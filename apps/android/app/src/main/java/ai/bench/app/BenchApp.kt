@@ -45,6 +45,9 @@ class BenchApp : Application() {
     /** The widget or a tile asked for a new session. */
     val requestNew = MutableStateFlow(false)
 
+    /** A notification asked to watch the hidden screen. */
+    val requestWatch = MutableStateFlow(false)
+
     var foreground = false
         private set
 

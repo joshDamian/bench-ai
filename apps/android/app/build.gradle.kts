@@ -59,7 +59,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        // IShell: the Shizuku user service that works apps on the hidden screen.
+        aidl = true
+    }
 }
 
 dependencies {
@@ -80,6 +84,9 @@ dependencies {
     implementation(libs.zxing.embedded)
     implementation(libs.markdown.m3)
     implementation(libs.markdown.code)
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
+    implementation(libs.hiddenapibypass)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(kotlin("test"))

@@ -114,7 +114,11 @@ object PhoneLink {
             send(hello("hello"))
             pinger?.cancel()
             pinger = scope?.launch {
-                while (isActive) { delay(25_000); send(buildJsonObject { put("type", "ping") }) }
+                while (isActive) {
+                    delay(25_000)
+                    send(buildJsonObject { put("type", "ping") })
+                    launch(Dispatchers.IO) { runCatching { PhoneHands.idle(app) } }
+                }
             }
         }
 
@@ -155,9 +159,21 @@ object PhoneLink {
         send(buildJsonObject {
             put("type", "result")
             put("id", id)
-            out.onSuccess { put("ok", true); put("text", it) }
+            out.onSuccess { put("ok", true); put("text", it.text); it.image?.let { img -> put("image", img) } }
             out.onFailure { put("ok", false); put("error", it.message ?: "The phone could not do that") }
         })
+    }
+
+    /** An installed app by the name the person sees (or its package): package and name. */
+    fun findApp(c: Context, name: String): Pair<String, String>? {
+        if (name.isBlank()) return null
+        val pm = c.packageManager
+        return pm.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER), 0)
+            .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+            .firstOrNull { it.second.equals(name, true) || it.first.equals(name, true) }
+            ?: pm.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER), 0)
+                .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+                .firstOrNull { it.second.contains(name, true) }
     }
 
     /**
@@ -165,7 +181,10 @@ object PhoneLink {
      * first), then says so; the server tells the session.
      */
     fun answer(c: Context, ask: PhoneAsk, approved: Boolean, access: String? = ask.access) {
-        if (approved) {
+        if (approved && ask.kind == "use") {
+            val found = findApp(c, ask.app.orEmpty())
+            if (found != null && !PhoneShares.blocked(found.first, found.second)) PhoneShares.set(c, PhoneShares.useShare(found.first, found.second, "ask"))
+        } else if (approved) {
             val k = PhoneShares.catalog.firstOrNull { it.kind == ask.kind && (ask.kind != "messages" || it.name.equals(ask.app, true) || it.id.equals(ask.app, true)) }
             if (k != null) PhoneShares.set(c, PhoneShare(k.id, k.kind, k.name, k.path, access ?: k.accesses.firstOrNull()?.first, "ask"))
         }

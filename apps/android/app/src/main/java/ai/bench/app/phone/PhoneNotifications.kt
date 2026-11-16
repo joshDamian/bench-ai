@@ -30,7 +30,8 @@ class PhoneNotifications : NotificationListenerService() {
     }
 
     private fun take(sbn: StatusBarNotification) {
-        val app = PhoneShares.messageApps[sbn.packageName] ?: return
+        val app = PhoneShares.messageApps[sbn.packageName]
+            ?: PhoneShares.shares.value.firstOrNull { it.kind == "use" && it.path == sbn.packageName }?.name ?: return
         val n = sbn.notification ?: return
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         val extras = n.extras ?: return

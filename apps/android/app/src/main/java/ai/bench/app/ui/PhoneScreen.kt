@@ -56,6 +56,14 @@ import ai.bench.app.phone.PhoneLink
 import ai.bench.app.phone.PhoneShare
 import ai.bench.app.phone.PhoneShares
 import ai.bench.app.phone.Shareable
+import ai.bench.app.phone.PhoneHands
+import ai.bench.app.phone.ShizukuState
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.graphics.asImageBitmap
 import ai.bench.app.ui.theme.Bench
 import kotlinx.coroutines.launch
 
@@ -83,6 +91,8 @@ fun phoneAskWhat(a: PhoneAsk): String = when (a.kind) {
     "calendar" -> if (a.access == "write") "your calendar, to add events" else "your calendar"
     "contacts" -> "your contacts"
     "sms" -> "your phone to send texts"
+    "use" -> "${a.app ?: "an app"} for you, on a hidden screen"
+    "notifications" -> "the notifications of the apps it may use"
     else -> "your phone to prepare things in apps"
 }
 
@@ -91,6 +101,8 @@ private fun openAccess(c: android.content.Context, what: String) {
     val i = when (what) {
         "notifications" -> Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
         "overlay" -> Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${c.packageName}"))
+        "shizuku" -> c.packageManager.getLaunchIntentForPackage(PhoneHands.SHIZUKU) ?: Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${PhoneHands.SHIZUKU}"))
+        "shizuku-get" -> Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${PhoneHands.SHIZUKU}"))
         else -> Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${c.packageName}"))
     }
     runCatching { c.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -101,6 +113,7 @@ private fun accessLabel(what: String) = when (what) {
     "calendar" -> "calendar access"
     "contacts" -> "contacts access"
     "sms" -> "permission to send texts"
+    "shizuku" -> "Shizuku running"
     else -> "access"
 }
 
@@ -119,6 +132,7 @@ fun PhoneScreen(store: BenchStore, onBack: () -> Unit) {
     val openNow by PhoneShares.openNow.collectAsState()
     val online by PhoneLink.online.collectAsState()
     var editing by remember { mutableStateOf<Shareable?>(null) }
+    var picking by remember { mutableStateOf(false) }
     // Android's answers come back while Bench is in the background: look again on return.
     var tick by remember { mutableIntStateOf(0) }
     val owner = LocalLifecycleOwner.current
@@ -128,6 +142,13 @@ fun PhoneScreen(store: BenchStore, onBack: () -> Unit) {
         onDispose { owner.lifecycle.removeObserver(o) }
     }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
+    // Shizuku's answers (allowed, started) also come while Bench is open.
+    DisposableEffect(Unit) {
+        val allowed = rikka.shizuku.Shizuku.OnRequestPermissionResultListener { _, _ -> tick++ }
+        val started = rikka.shizuku.Shizuku.OnBinderReceivedListener { tick++ }
+        runCatching { rikka.shizuku.Shizuku.addRequestPermissionResultListener(allowed); rikka.shizuku.Shizuku.addBinderReceivedListenerSticky(started) }
+        onDispose { runCatching { rikka.shizuku.Shizuku.removeRequestPermissionResultListener(allowed); rikka.shizuku.Shizuku.removeBinderReceivedListener(started) } }
+    }
     fun needs(kind: String): String? { tick; return PhoneShares.missing(context, kind) }
     fun turnOn(kind: String) {
         val p = PhoneShares.permissionsFor(kind)
@@ -158,6 +179,29 @@ fun PhoneScreen(store: BenchStore, onBack: () -> Unit) {
                 }
             }
         }
+        // -- Apps Bench may use, on a hidden screen, through Shizuku.
+        item("use") {
+            val st = remember(tick) { PhoneHands.state(context) }
+            val apps = shares.filter { it.kind == "use" }
+            Column {
+                Text("Use apps for you", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.muted, modifier = Modifier.padding(start = 6.dp, top = 30.dp, bottom = 10.dp))
+                ShizukuCard(st, onGet = { openAccess(context, "shizuku-get") }, onStart = { openAccess(context, "shizuku") }, onAllow = { PhoneHands.requestAllow() })
+                apps.forEachIndexed { i, a ->
+                    if (i > 0) HorizontalDivider(color = c.line, modifier = Modifier.padding(start = 62.dp))
+                    val k = Shareable(a.id, "use", a.name, "Bench opens it on a hidden screen and uses it for you", a.path)
+                    ShareRow(k, a, if (st == ShizukuState.Ready) null else "shizuku", onFix = {}) { editing = k }
+                }
+                if (apps.isNotEmpty()) HorizontalDivider(color = c.line, modifier = Modifier.padding(start = 62.dp))
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 60.dp).clip(RoundedCornerShape(14.dp)).clickable { picking = true }.padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Icon(Icons.Default.Add, null, tint = c.accent, modifier = Modifier.size(22.dp)) }
+                    Text("Add an app", fontSize = 15.5.sp, fontWeight = FontWeight.Medium, color = c.accent)
+                }
+            }
+        }
+        group("Notifications", listOf("notifications"))
         group("Messages", listOf("whatsapp", "whatsapp-business", "telegram"))
         group("Calendar and people", listOf("calendar", "contacts"))
         group("Texts", listOf("sms"))
@@ -187,7 +231,7 @@ fun PhoneScreen(store: BenchStore, onBack: () -> Unit) {
         }
         item("note") {
             Text(
-                "Banking and payment apps are never shared, and screens apps protect stay hidden. Replies and texts that ask first come as a notification: send, edit or don't.",
+                "Bench always asks before it pays, books, sends or deletes in an app. Banking and payment apps can't be added, and screens apps protect stay hidden. Replies and texts that ask first come as a notification: send, edit or don't.",
                 fontSize = 13.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 28.dp),
             )
         }
@@ -208,6 +252,98 @@ fun PhoneScreen(store: BenchStore, onBack: () -> Unit) {
             if (PhoneShares.missing(context, s.kind) != null) turnOn(s.kind)
         }, onStop = { PhoneShares.remove(context, k.id); editing = null })
     }
+    if (picking) AppPicker(shares.filter { it.kind == "use" }.mapNotNull { it.path }.toSet(), onDismiss = { picking = false }) { pkg, label ->
+        picking = false
+        editing = Shareable("use:$pkg", "use", label, "Bench opens it on a hidden screen and uses it for you", pkg)
+    }
+}
+
+/** Shizuku: what is needed, one step at a time, or that it is running. */
+@Composable
+private fun ShizukuCard(st: ShizukuState, onGet: () -> Unit, onStart: () -> Unit, onAllow: () -> Unit) {
+    val c = Bench.colors
+    Column(
+        Modifier.fillMaxWidth().padding(bottom = 6.dp).background(c.surface1, RoundedCornerShape(20.dp)).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(8.dp).background(if (st == ShizukuState.Ready) c.good else c.warn, CircleShape))
+            Text(
+                when (st) {
+                    ShizukuState.Ready -> "Shizuku is running"
+                    ShizukuState.NotInstalled -> "Needs Shizuku"
+                    ShizukuState.NotRunning -> "Shizuku is not running"
+                    ShizukuState.NeedsAllow -> "Shizuku is running"
+                },
+                fontSize = 15.sp, fontWeight = FontWeight.Medium,
+            )
+        }
+        Text(
+            when (st) {
+                ShizukuState.Ready -> "Bench opens these apps on a hidden screen, so you keep using your phone. After a restart, start Shizuku again."
+                ShizukuState.NotInstalled -> "A free app that lets apps you choose act on your phone. Bench uses it to work in apps on a hidden screen while you keep using yours."
+                ShizukuState.NotRunning -> "In Shizuku, start it with Wireless debugging. It stops when the phone restarts."
+                ShizukuState.NeedsAllow -> "Allow Bench in Shizuku. It asks once."
+            },
+            fontSize = 13.5.sp, lineHeight = 19.sp, color = c.muted,
+        )
+        when (st) {
+            ShizukuState.NotInstalled -> BigButton("Get Shizuku", height = 44.dp, size = 14.5.sp, fill = false, modifier = Modifier.padding(top = 6.dp), onClick = onGet)
+            ShizukuState.NotRunning -> BigButton("Open Shizuku", height = 44.dp, size = 14.5.sp, fill = false, modifier = Modifier.padding(top = 6.dp), onClick = onStart)
+            ShizukuState.NeedsAllow -> BigButton("Allow Bench", primary = true, height = 44.dp, size = 14.5.sp, fill = false, modifier = Modifier.padding(top = 6.dp), onClick = onAllow)
+            ShizukuState.Ready -> {}
+        }
+    }
+}
+
+/** The apps on the phone that can be shared to use (not money apps, not the phone's own controls). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppPicker(already: Set<String>, onDismiss: () -> Unit, onPick: (String, String) -> Unit) {
+    val c = Bench.colors
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    val apps = remember {
+        val pm = context.packageManager
+        pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+            .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+            .distinctBy { it.first }
+            .filter { (pkg, label) -> pkg !in already && !PhoneShares.blocked(pkg, label) }
+            .sortedBy { it.second.lowercase() }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 22.dp, end = 22.dp, bottom = 20.dp)) {
+            Text("Add an app", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            Text("Banking and payment apps can't be added.", fontSize = 14.sp, color = c.muted, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
+            androidx.compose.foundation.text.BasicTextField(
+                query, { query = it }, singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = c.text), cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+                modifier = Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(24.dp)).padding(horizontal = 18.dp, vertical = 14.dp),
+                decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search apps", fontSize = 16.sp, color = c.muted); inner() } },
+            )
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.padding(top = 10.dp).heightIn(max = 460.dp)) {
+                items(apps.filter { query.isBlank() || it.second.contains(query, true) }.size) { i ->
+                    val (pkg, label) = apps.filter { query.isBlank() || it.second.contains(query, true) }[i]
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 60.dp).clip(RoundedCornerShape(14.dp)).clickable { onPick(pkg, label) }.padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        AppIcon(pkg)
+                        Text(label, fontSize = 16.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** An app's own icon, 40dp, rounded like the other rows. */
+@Composable
+fun AppIcon(pkg: String) {
+    val context = LocalContext.current
+    val img = remember(pkg) { runCatching { androidx.core.graphics.drawable.toBitmap(context.packageManager.getApplicationIcon(pkg), 96, 96).asImageBitmap() }.getOrNull() }
+    if (img != null) androidx.compose.foundation.Image(img, null, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)))
+    else Box(Modifier.size(40.dp).background(Bench.colors.surface3, RoundedCornerShape(12.dp)))
 }
 
 @Composable
@@ -217,12 +353,14 @@ private fun ShareRow(k: Shareable, s: PhoneShare?, missing: String?, onFix: () -
         Modifier.fillMaxWidth().heightIn(min = 76.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Box(Modifier.size(40.dp).background(if (s != null) c.surface3 else c.surface1, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+        if (k.kind == "use" && k.path != null) AppIcon(k.path)
+        else Box(Modifier.size(40.dp).background(if (s != null) c.surface3 else c.surface1, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
             Icon(iconFor(k.kind), null, tint = if (s != null) c.text else c.muted, modifier = Modifier.size(20.dp))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(k.name, fontSize = 16.sp, color = if (s != null) c.text else c.muted)
-            if (missing != null) Text("Needs ${accessLabel(missing)}. Tap to turn it on.", fontSize = 13.5.sp, lineHeight = 19.sp, color = c.warn, modifier = Modifier.clickable(onClick = onFix))
+            if (missing == "shizuku") Text("Needs Shizuku running.", fontSize = 13.5.sp, lineHeight = 19.sp, color = c.warn)
+            else if (missing != null) Text("Needs ${accessLabel(missing)}. Tap to turn it on.", fontSize = 13.5.sp, lineHeight = 19.sp, color = c.warn, modifier = Modifier.clickable(onClick = onFix))
             else Text(doesText(k, s), fontSize = 13.5.sp, lineHeight = 19.sp, color = c.muted)
         }
         Text(
@@ -274,7 +412,9 @@ private fun ShareSheet(k: Shareable, current: PhoneShare?, onDismiss: () -> Unit
 fun PhoneAskSheet(store: BenchStore, a: PhoneAsk, onDone: () -> Unit) {
     val c = Bench.colors
     val context = LocalContext.current
-    val k = PhoneShares.catalog.firstOrNull { it.kind == a.kind && (a.kind != "messages" || it.name.equals(a.app, true) || it.id.equals(a.app, true)) }
+    val k = if (a.kind == "use") remember(a.id) {
+        PhoneLink.findApp(context, a.app.orEmpty())?.takeIf { !PhoneShares.blocked(it.first, it.second) }?.let { Shareable("use:${it.first}", "use", it.second, "", it.first) }
+    } else PhoneShares.catalog.firstOrNull { it.kind == a.kind && (a.kind != "messages" || it.name.equals(a.app, true) || it.id.equals(a.app, true)) }
     var access by remember(a.id) { mutableStateOf(a.access ?: k?.accesses?.firstOrNull()?.first) }
     val from = store.state.collectAsState().value.sessions.firstOrNull { it.id == a.sessionId }?.title
     val permit = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
@@ -283,6 +423,7 @@ fun PhoneAskSheet(store: BenchStore, a: PhoneAsk, onDone: () -> Unit) {
             from?.let { Text(it, fontSize = 13.sp, color = c.muted) }
             Text("Bench asks to use ${phoneAskWhat(a)}", fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold)
             if (a.why.isNotBlank()) Text(a.why, fontSize = 15.sp, lineHeight = 22.sp, color = c.muted)
+            if (k == null) Text("That app isn't on this phone, or it can't be shared.", fontSize = 14.sp, lineHeight = 20.sp, color = c.warn)
             if (k != null && k.accesses.isNotEmpty()) {
                 Box(Modifier.padding(top = 14.dp)) { Segmented(k.accesses, access ?: k.accesses.first().first, { access = it }, height = 48.dp) }
             }
@@ -304,6 +445,63 @@ fun PhoneAskSheet(store: BenchStore, a: PhoneAsk, onDone: () -> Unit) {
                     onDone()
                 }
                 BigButton("Not now", fill = false) { PhoneLink.answer(context, a, false); onDone() }
+            }
+        }
+    }
+}
+
+/**
+ * Watching the hidden screen (the "Watching it work" board): the app as Bench sees it, live,
+ * with Take over (the app moves to your screen) and Stop.
+ */
+@Composable
+fun PhoneWatch(store: BenchStore, onClose: () -> Unit) {
+    val c = Bench.colors
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val open by PhoneHands.open.collectAsState()
+    var frame by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    androidx.activity.compose.BackHandler(onBack = onClose)
+    androidx.compose.runtime.LaunchedEffect(open?.pkg) {
+        while (open != null) {
+            val b = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { PhoneHands.peek(context) }
+            b?.let { bytes -> android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { frame = it.asImageBitmap() } }
+            kotlinx.coroutines.delay(700)
+        }
+    }
+    val mins = open?.let { ((System.currentTimeMillis() - it.since) / 60_000).toInt() }
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides c.text) {
+        Column(Modifier.fillMaxSize().background(c.bg).statusBarsPadding().navigationBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Close, "Close", tint = c.text) }
+                Column(Modifier.weight(1f)) {
+                    Text(open?.name ?: "Hidden screen", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (open == null) "Nothing open" else "Bench is using it · ${if (mins == 0) "just now" else "$mins min"}", fontSize = 13.sp, color = c.muted)
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 40.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
+                val f = frame
+                if (open == null) Text("Bench is not using an app now.", fontSize = 15.sp, color = c.muted)
+                else if (f == null) Text("Waiting for the screen…", fontSize = 15.sp, color = c.muted)
+                else androidx.compose.foundation.Image(
+                    f, "The hidden screen",
+                    Modifier.clip(RoundedCornerShape(24.dp)).border(6.dp, c.surface3, RoundedCornerShape(24.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                )
+            }
+            if (open != null) Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 20.dp, top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                BigButton("Take over", Modifier.weight(1f)) {
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) { PhoneHands.takeOver(context) }
+                    onClose()
+                }
+                BigButton("Stop", fill = false) {
+                    val sid = open?.sessionId
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        PhoneHands.done(context)
+                        if (sid != null) runCatching { store.api.interrupt(sid) }
+                    }
+                    onClose()
+                }
             }
         }
     }

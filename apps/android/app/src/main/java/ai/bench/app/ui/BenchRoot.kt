@@ -238,6 +238,12 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     recipe?.let { r -> RunRecipeSheet(store, r, onDismiss = { recipe = null }) { recipe = null; open(it) } }
     if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) }, onSchedule = { newSession = false; store.schedulePrefill = it; nav.navigate("schedule/new") })
     if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true, initial = researchAsk)
+    // The hidden screen, live, when a notification or an approval asks to watch it.
+    val watching by BenchApp.instance.requestWatch.collectAsState()
+    if (watching) androidx.compose.ui.window.Dialog(
+        onDismissRequest = { BenchApp.instance.requestWatch.value = false },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) { PhoneWatch(store) { BenchApp.instance.requestWatch.value = false } }
     // What a session asks this phone to share, decided here.
     val phoneAsks by ai.bench.app.phone.PhoneLink.asks.collectAsState()
     var laterAsks by remember { mutableStateOf(setOf<String>()) }

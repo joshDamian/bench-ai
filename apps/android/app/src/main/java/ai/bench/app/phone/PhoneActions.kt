@@ -28,8 +28,46 @@ import java.time.format.DateTimeFormatter
 object PhoneActions {
     class Refused(message: String) : Exception(message)
 
-    fun run(c: Context, tool: String, shareId: String, args: JsonObject): String {
+    /** What a call answers: text, and the hidden screen as a JPEG in base64 when it shows it. */
+    data class Answer(val text: String, val image: String? = null)
+
+    fun run(c: Context, tool: String, shareId: String, args: JsonObject): Answer {
+        fun a(k: String) = args[k].str()?.trim().orEmpty()
+        fun n(k: String) = args[k].str()?.toDoubleOrNull()?.toInt() ?: throw Refused("Give $k as a number")
+        fun shot(p: Pair<String, String>) = Answer(p.first, p.second)
+        // The hands act on the app already open; they check the screen themselves.
+        when (tool) {
+            "screen" -> { if (PhoneHands.open.value == null) throw Refused("No app is open on the hidden screen. Use phone_open first."); return shot(PhoneHands.screen(c)) }
+            "tap" -> return shot(PhoneHands.tap(c, n("x"), n("y")))
+            "type" -> return shot(PhoneHands.type(c, args["text"].str().orEmpty(), args["enter"].str() == "true"))
+            "swipe" -> return shot(PhoneHands.swipe(c, n("x1"), n("y1"), n("x2"), n("y2")))
+            "key" -> return shot(PhoneHands.key(c, a("key")))
+            "done" -> { PhoneHands.done(c); return Answer("Closed the hidden screen.") }
+        }
         val share = PhoneShares.shares.value.firstOrNull { it.id == shareId } ?: throw Refused("This phone no longer shares that")
+        if (tool == "open") {
+            if (share.kind != "use") throw Refused("That is not an app shared to use")
+            return shot(PhoneHands.open(c, share, args["session_id"].str()))
+        }
+        if (tool == "notifications") return Answer(notifications(c, a("app")))
+        return Answer(runText(c, tool, share, args))
+    }
+
+    private fun notifications(c: Context, app: String): String {
+        val apps = PhoneShares.shares.value.filter { it.kind == "use" && (app.isBlank() || it.name.equals(app, true)) }
+        if (apps.isEmpty()) throw Refused(if (app.isBlank()) "No app is shared to use" else "$app is not shared")
+        // Notification access when it is on (it keeps what arrived since); else Shizuku's view of what is showing.
+        val list = if (PhoneShares.missing(c, "messages") == null) apps.flatMap { PhoneNotifications.recent(it.name, null) }.sortedBy { it.at }
+            else PhoneHands.notifications(c, apps.mapNotNull { it.path }.toSet())
+        if (list.isEmpty()) return "No recent notifications from ${apps.joinToString(", ") { it.name }}."
+        val zone = ZoneId.systemDefault()
+        return list.takeLast(40).joinToString("\n") { m ->
+            val t = Instant.ofEpochMilli(m.at).atZone(zone)
+            "${t.format(day)} ${t.format(time)} · ${m.app} · ${m.chat}: ${m.text}"
+        }
+    }
+
+    private fun runText(c: Context, tool: String, share: PhoneShare, args: JsonObject): String {
         PhoneShares.missing(c, share.kind)?.let { throw Refused("${share.name} is shared, but Android has not given Bench $it access yet. The person turns it on in Bench, This phone.") }
         fun a(k: String) = args[k].str()?.trim().orEmpty()
         return when (tool) {

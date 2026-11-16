@@ -101,12 +101,15 @@ fun askLine(a: Approval) = when (a.tool) {
     SAY -> "Say in the meeting"
     PHONE_REPLY -> "Reply to ${a.input["chat"].str() ?: "a chat"}" + (a.input["share"].str()?.takeIf { it.isNotBlank() }?.let { " on $it" } ?: "")
     PHONE_SMS -> "Text ${a.input["to"].str() ?: "a number"}"
+    PHONE_CONFIRM -> a.input["what"].str() ?: "Take this step on the phone?"
     else -> a.title ?: toolName(a.tool)
 }
 
 /** A reply in a chat on the phone, and a text from it: changed if you like, then sent. */
 const val PHONE_REPLY = "mcp__bench__phone_reply"
 const val PHONE_SMS = "mcp__bench__phone_sms"
+/** A step in an app on the hidden screen that pays, books, sends or deletes. */
+const val PHONE_CONFIRM = "mcp__bench__phone_confirm"
 
 /** A line a session wants to say in a call. */
 const val SAY = "mcp__bench__meeting_say"
@@ -132,6 +135,20 @@ private fun SayLine(approval: Approval, busy: Boolean, big: Boolean, onAnswer: (
         }
         BigButton(if (say) "Don't say" else "Don't send", height = 48.dp, size = 15.sp, enabled = !busy, fill = false) {
             onAnswer(answer(false) { put("message", if (say) "The person said no to that line; a neutral line was said instead. Don't say it another way." else "The person chose not to send it. Don't send it another way.") })
+        }
+    }
+}
+
+/** Yes or no to a step on the phone's hidden screen, with Watch to see it first. */
+@Composable
+private fun ConfirmStep(approval: Approval, busy: Boolean, onAnswer: (JsonObject) -> Unit) {
+    val c = Bench.colors
+    approval.input["detail"].str()?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 15.sp, lineHeight = 21.sp, color = c.muted) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        BigButton("Yes", Modifier.weight(1f), primary = true, height = 48.dp, size = 15.sp, enabled = !busy) { onAnswer(answer(true)) }
+        BigButton("Watch", height = 48.dp, size = 15.sp, fill = false) { ai.bench.app.BenchApp.instance.requestWatch.value = true }
+        BigButton("Don't", height = 48.dp, size = 15.sp, enabled = !busy, fill = false) {
+            onAnswer(answer(false) { put("message", "The person said no. Don't take that step; ask them what to do instead.") })
         }
     }
 }
@@ -179,6 +196,7 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
                 Questions(approval, busy, onAnswer)
             }
             SAY, PHONE_REPLY, PHONE_SMS -> SayLine(approval, busy, big = true, onAnswer = onAnswer)
+            PHONE_CONFIRM -> ConfirmStep(approval, busy, onAnswer)
             else -> {
                 // While writing why, the request folds to its first lines so the note has room.
                 Box(Modifier.fillMaxWidth().heightIn(max = if (denying) 96.dp else 280.dp).verticalScroll(rememberScrollState())) {
@@ -247,6 +265,7 @@ fun ApprovalCard(
         } else when (approval.tool) {
             "ExitPlanMode", "AskUserQuestion" -> BigButton("Open", primary = true, height = 48.dp, size = 15.sp, onClick = onOpen)
             SAY, PHONE_REPLY, PHONE_SMS -> SayLine(approval, busy, big = false, onAnswer = onAnswer)
+            PHONE_CONFIRM -> ConfirmStep(approval, busy, onAnswer)
             else -> {
                 Preview(approval, cwd, big = false)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {

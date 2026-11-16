@@ -40,7 +40,23 @@ object PhoneShares {
         Shareable("contacts", "contacts", "Contacts", "Look up a name or number"),
         Shareable("sms", "sms", "Texts", "Send an SMS"),
         Shareable("handover", "handover", "Prepare and hand over", "A message, event or route, ready in its app. You finish it."),
+        Shareable("notifications", "notifications", "Read notifications", "From the apps Bench may use: a driver arriving, a seller replying"),
     )
+
+    /**
+     * Apps that can't be shared to use: money moves in them, or they control the phone. Matched
+     * on the package and the name the person sees.
+     */
+    private val blockedWords = listOf("bank", "pay", "wallet", "money", "finance", "loan", "invest", "crypto", "binance", "bybit", "opay", "palmpay", "moniepoint", "kuda", "gtworld", "zenith", "firstbank", "uba", "fcmb", "sterling", "wema", "fidelity", "stanbic", "ecobank", "paystack", "flutterwave", "chipper", "cashapp", "paypal", "revolut", "wise", "trust", "metamask", "phantom", "coinbase")
+    private val blockedApps = setOf("com.android.settings", "com.android.vending", PhoneHands.SHIZUKU, "ai.bench.app", "com.google.android.apps.authenticator2", "com.android.chrome")
+    fun blocked(pkg: String, label: String): Boolean {
+        if (pkg in blockedApps) return true
+        val words = (pkg + " " + label).lowercase()
+        return blockedWords.any { w -> Regex("""(^|[^a-z])$w""").containsMatchIn(words) }
+    }
+
+    /** An app shared to use: one share per app. */
+    fun useShare(pkg: String, name: String, rule: String) = PhoneShare("use:$pkg", "use", name, pkg, null, rule)
 
     /** The apps whose notifications are read, by package. */
     val messageApps = catalog.filter { it.kind == "messages" }.associate { it.path!! to it.name }
@@ -69,7 +85,7 @@ object PhoneShares {
     fun setOpenNow(c: Context, on: Boolean) { _openNow.value = on; prefs(c).edit().putBoolean("open_now", on).apply() }
 
     private fun save(c: Context, list: List<PhoneShare>) {
-        val ordered = catalog.mapNotNull { k -> list.firstOrNull { it.id == k.id } }
+        val ordered = catalog.mapNotNull { k -> list.firstOrNull { it.id == k.id } } + list.filter { it.kind == "use" }.sortedBy { it.name.lowercase() }
         _shares.value = ordered
         prefs(c).edit().putString("shares", json.encodeToString(ordered)).apply()
         PhoneLink.sharesChanged()
@@ -84,6 +100,8 @@ object PhoneShares {
         "calendar" -> if (granted(c, Manifest.permission.READ_CALENDAR) && granted(c, Manifest.permission.WRITE_CALENDAR)) null else "calendar"
         "contacts" -> if (granted(c, Manifest.permission.READ_CONTACTS)) null else "contacts"
         "sms" -> if (granted(c, Manifest.permission.SEND_SMS)) null else "sms"
+        "use" -> if (PhoneHands.state(c) == ShizukuState.Ready) null else "shizuku"
+        "notifications" -> if (c.packageName in NotificationManagerCompat.getEnabledListenerPackages(c) || PhoneHands.state(c) == ShizukuState.Ready) null else "notifications"
         else -> null
     }
 

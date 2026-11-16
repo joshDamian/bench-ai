@@ -18,6 +18,15 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
+    <!-- The apps on the phone, to pick which Bench may use (package visibility, Android 11+). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <package android:name="moe.shizuku.privileged.api" />
+    </queries>
+
     <!-- Cleartext is allowed because a server on a tailnet IP or the LAN is plain http;
          tailscale serve gives https and is the recommended route. -->
     <application
@@ -103,6 +112,15 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Holds the connection to the user's self-hosted Bench server so approvals and finished work notify; there is no push service." />
         </service>
+
+        <!-- Shizuku hands Bench its binder through this (the Shizuku API's provider). -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- Message notifications from the apps this phone shares, to read and reply to. -->
         <service

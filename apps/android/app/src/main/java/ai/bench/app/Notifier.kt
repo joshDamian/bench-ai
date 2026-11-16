@@ -81,9 +81,10 @@ object Notifier {
     fun approval(context: Context, a: Approval, sessionTitle: String) {
         if (!allowed(context)) return
         val code = a.id.hashCode()
-        val phone = a.tool == ai.bench.app.ui.PHONE_REPLY || a.tool == ai.bench.app.ui.PHONE_SMS
+        val phone = a.tool == ai.bench.app.ui.PHONE_REPLY || a.tool == ai.bench.app.ui.PHONE_SMS || a.tool == ai.bench.app.ui.PHONE_CONFIRM
         val what = when (a.tool) {
             ai.bench.app.ui.PHONE_REPLY, ai.bench.app.ui.PHONE_SMS -> a.input["text"].str().orEmpty()
+            ai.bench.app.ui.PHONE_CONFIRM -> a.input["detail"].str().orEmpty()
             "AskUserQuestion" -> a.input["questions"].arr()?.firstOrNull()?.let { it["question"].str() } ?: "Claude is asking a question"
             "ExitPlanMode" -> "Claude has a plan"
             "Bash" -> "Run: " + (a.input["command"].str() ?: "a command")
@@ -91,7 +92,7 @@ object Notifier {
         }
         val b = NotificationCompat.Builder(context, APPROVALS)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
-            .setContentTitle(if (phone) ai.bench.app.ui.askLine(a) + "?" else sessionTitle)
+            .setContentTitle(if (a.tool == ai.bench.app.ui.PHONE_CONFIRM) ai.bench.app.ui.askLine(a) else if (phone) ai.bench.app.ui.askLine(a) + "?" else sessionTitle)
             .setContentText(what)
             .setStyle(NotificationCompat.BigTextStyle().bigText(what))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -106,6 +107,12 @@ object Notifier {
                 )
             }
             "ExitPlanMode" -> b.addAction(0, "Approve", action(context, "plan", a.id, code + 1))
+            // A step in an app on the hidden screen that pays, books or sends: yes, watch it first, or no.
+            ai.bench.app.ui.PHONE_CONFIRM -> {
+                b.addAction(0, "Yes", action(context, "allow", a.id, code + 1))
+                b.addAction(0, "Watch", watch(context, code + 3))
+                b.addAction(0, "Don't", action(context, "dont", a.id, code + 2))
+            }
             // A reply or a text: send it as written, change it first, or don't.
             ai.bench.app.ui.PHONE_REPLY, ai.bench.app.ui.PHONE_SMS -> {
                 b.addAction(0, "Send", action(context, "allow", a.id, code + 1))
@@ -171,6 +178,32 @@ object Notifier {
 
     fun stopRunning(context: Context, sessionId: String) = NotificationManagerCompat.from(context).cancel("run-$sessionId".hashCode())
 
+    /** Opens Bench on the hidden screen's live view. */
+    private fun watch(context: Context, code: Int) = PendingIntent.getActivity(
+        context, code, Intent(context, MainActivity::class.java).putExtra(EXTRA_WATCH, true).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+    const val EXTRA_WATCH = "watch_hidden_screen"
+    private const val USING = 0x7e57
+
+    /** While Bench uses an app on the hidden screen: which, with Watch and Stop. */
+    fun using(context: Context, app: String) {
+        if (!allowed(context)) return
+        val n = NotificationCompat.Builder(context, RUNNING)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle("Bench is using $app")
+            .setContentText("On a hidden screen. Your screen is yours.")
+            .setOngoing(true).setSilent(true).setOnlyAlertOnce(true)
+            .setUsesChronometer(true).setWhen(System.currentTimeMillis()).setShowWhen(true)
+            .setContentIntent(watch(context, USING))
+            .addAction(0, "Watch", watch(context, USING + 1))
+            .addAction(0, "Stop", action(context, "hands_stop", "hands", USING + 2))
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify(USING, n) }
+    }
+
+    fun stopUsing(context: Context) = NotificationManagerCompat.from(context).cancel(USING)
+
     /** A session asks this phone to share something more: allow it from here, or open Bench. */
     fun phoneAsk(context: Context, ask: ai.bench.app.phone.PhoneAsk) {
         if (!allowed(context)) return
@@ -201,6 +234,15 @@ class ActionReceiver : BroadcastReceiver() {
         val store = app.store.value ?: return
         val reply = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(Notifier.REPLY_KEY)?.toString()
         // What a session asked this phone to share: decided here, no server call of its own.
+        // Stop on "Bench is using …": close the hidden screen and stop the session that used it.
+        if (kind == "hands_stop") {
+            val sid = ai.bench.app.phone.PhoneHands.open.value?.sessionId
+            app.appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                ai.bench.app.phone.PhoneHands.done(context)
+                if (sid != null) runCatching { app.store.value?.api?.interrupt(sid) }
+            }
+            return
+        }
         if (kind == "phone_allow" || kind == "phone_deny") {
             ai.bench.app.phone.PhoneLink.asks.value.firstOrNull { it.id == id }?.let { ai.bench.app.phone.PhoneLink.answer(context, it, kind == "phone_allow") }
             Notifier.clear(context, id)
