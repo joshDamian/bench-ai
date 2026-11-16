@@ -15,6 +15,9 @@ struct ApprovalCard: View {
     let onAnswer: ([String: Any]) -> Void
     @State private var note = ""
     @State private var answers: [String: String] = [:]
+    /// A reply, text or line for a call, as changed before it goes.
+    @State private var edited: String?
+    @Environment(AppModel.self) private var model: AppModel?
 
     var body: some View {
         let i = approval.input
@@ -51,6 +54,56 @@ struct ApprovalCard: View {
                         .font(.system(size: 13))
                         .foregroundStyle(theme.colors.muted)
                         .padding(.horizontal, Space.sm)
+                }
+            case Self.say, Self.reply, Self.sms:
+                // A line for a call, a reply in a chat, a text: change it if you like, then send.
+                Text(Self.ask(approval)).font(.system(size: TypeScale.md, weight: .semibold))
+                if approval.tool == Self.reply, let chat = i["chat"].string { Text("In \(chat)").font(.system(size: 12.5)).foregroundStyle(theme.colors.muted) }
+                let text = Binding(get: { edited ?? i["text"].string ?? "" }, set: { edited = $0 })
+                TextField("", text: text, axis: .vertical)
+                    .textFieldStyle(.plain).font(.system(size: 13.5)).lineLimit(1...6)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: 9))
+                    .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(theme.colors.accent.opacity(0.6)))
+                let say = approval.tool == Self.say
+                HStack(spacing: Space.sm) {
+                    Button { onAnswer(["allow": true, "text": text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)]) } label: {
+                        HStack(spacing: 6) { Text(say ? "Say It" : "Send"); if !compact && !inbox { KeyHint("⌘↩") } }
+                    }
+                    .buttonStyle(CapsuleButton(kind: .primary))
+                    .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: .command))
+                    .disabled(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button { onAnswer(["allow": false, "message": say ? "The person said no to that line; a neutral line was said instead. Don't say it another way." : "The person chose not to send it. Don't send it another way."]) } label: {
+                        HStack(spacing: 6) { Text(say ? "Don’t Say" : "Don’t Send"); if !compact && !inbox { KeyHint("⌘⌫") } }
+                    }
+                    .buttonStyle(CapsuleButton(kind: .outline))
+                    .keyboardShortcut(compact ? nil : KeyboardShortcut(.delete, modifiers: .command))
+                }
+            case Self.confirm:
+                // A step in an app on the phone's hidden screen that pays, books, sends or deletes.
+                Text(i["what"].string ?? "Take this step on your phone?").font(.system(size: TypeScale.md, weight: .semibold))
+                if let d = i["detail"].string, !d.isEmpty { Text(d).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true) }
+                Text("Filled in on your phone’s hidden screen. Watch it on the phone.").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                HStack(spacing: Space.sm) {
+                    Button { onAnswer(["allow": true]) } label: { HStack(spacing: 6) { Text("Yes"); if !compact && !inbox { KeyHint("⌘↩") } } }
+                        .buttonStyle(CapsuleButton(kind: .primary))
+                        .keyboardShortcut(compact ? nil : KeyboardShortcut(.return, modifiers: .command))
+                    Button { onAnswer(["allow": false, "message": "The person said no. Don't take that step; ask them what to do instead."]) } label: {
+                        HStack(spacing: 6) { Text("Don’t"); if !compact && !inbox { KeyHint("⌘⌫") } }
+                    }
+                    .buttonStyle(CapsuleButton(kind: .outline))
+                    .keyboardShortcut(compact ? nil : KeyboardShortcut(.delete, modifiers: .command))
+                }
+            case "AskUserQuestion" where Self.takeOver(approval) != nil:
+                // A site needs you in the server's browser: sign in there, then say Done.
+                Text(Self.takeOver(approval) ?? "").font(.system(size: TypeScale.md, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+                Text("The browser on your server needs you. Bench waits.").font(.system(size: 12.5)).foregroundStyle(theme.colors.muted)
+                Button("Take Over the Browser") { if let store = model?.store { BrowserWindowController.shared.show(store: store) } }
+                    .buttonStyle(CapsuleButton(kind: .primary))
+                    .disabled(model?.store == nil)
+                HStack(spacing: Space.sm) {
+                    Button("Done") { onAnswer(Self.takeOverAnswer(approval, "Done")) }.buttonStyle(CapsuleButton(kind: .outline))
+                    Button("Skip This Site") { onAnswer(Self.takeOverAnswer(approval, "Skip this site")) }.buttonStyle(CapsuleButton(kind: .outline))
                 }
             case "AskUserQuestion":
                 HStack(spacing: 10) {
@@ -117,6 +170,21 @@ struct ApprovalCard: View {
         .background { if !inbox { RoundedRectangle(cornerRadius: 20).fill(theme.colors.warn.opacity(0.06)).padding(-4) } }
     }
 
+    static let say = "mcp__bench__meeting_say"
+    static let reply = "mcp__bench__phone_reply"
+    static let sms = "mcp__bench__phone_sms"
+    static let confirm = "mcp__bench__phone_confirm"
+
+    /// The question of a take-over (header "Take over"): a site in the server's browser needs you.
+    static func takeOver(_ a: Approval) -> String? {
+        guard a.tool == "AskUserQuestion", let q = a.input["questions"].array.first, q["header"].string?.lowercased() == "take over" else { return nil }
+        return q["question"].string ?? "A site needs you"
+    }
+
+    static func takeOverAnswer(_ a: Approval, _ choice: String) -> [String: Any] {
+        ["allow": true, "answers": [a.input["questions"].array.first?["question"].string ?? "": choice]]
+    }
+
     /// The "don't ask again" button. The server remembers it for this session only.
     static func always(_ a: Approval) -> String { "Allow for This Session" }
 
@@ -129,6 +197,10 @@ struct ApprovalCard: View {
         case "WebFetch": "Open a web page"
         case "WebSearch": "Search the web"
         case "NotebookEdit": "Edit a notebook"
+        case say: "Say in the meeting"
+        case reply: "Reply" + (a.input["share"].string.map { " on \($0)" } ?? "")
+        case sms: "Text \(a.input["to"].string ?? "a number")"
+        case confirm: a.input["what"].string ?? "Take this step on your phone?"
         default: a.title ?? "Use \(a.tool)"
         }
     }
