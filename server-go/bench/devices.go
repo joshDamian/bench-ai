@@ -16,7 +16,9 @@ package bench
 // A phone links the same way (kind "phone", from Bench for Android) and shares other things:
 // an app's messages, read from its notifications and answered through their reply action
 // ("messages"); the calendar; contacts; sending texts ("sms"); and preparing a message, event
-// or route in its app for the person to finish ("handover"). The phone_* tools use them.
+// or route in its app for the person to finish ("handover"). Through Shizuku it can also share
+// apps Bench may use for the person ("use", one share per app), worked on a hidden screen, and
+// the notifications of those apps ("notifications"). The phone_* tools use them.
 
 import (
 	"context"
@@ -32,10 +34,10 @@ import (
 )
 
 // ShareKinds are the groups a share falls in, in the order the apps list them.
-var ShareKinds = []string{"folder", "app", "screen", "run", "messages", "calendar", "contacts", "sms", "handover"}
+var ShareKinds = []string{"folder", "app", "screen", "run", "messages", "calendar", "contacts", "sms", "handover", "use", "notifications"}
 
 // PhoneKinds are the share kinds only a phone has.
-var PhoneKinds = []string{"messages", "calendar", "contacts", "sms", "handover"}
+var PhoneKinds = []string{"messages", "calendar", "contacts", "sms", "handover", "use", "notifications"}
 
 type device struct {
 	info    *Obj // id, name, version, shares, last_seen
@@ -168,7 +170,7 @@ func (d *Devices) Ask(deviceID string, o *Obj, sessionID string) (*Obj, error) {
 		return nil, fail("Ask for a folder, an app, the screen or something to run; on a phone, an app's messages, the calendar, contacts, texts or hand-overs")
 	}
 	path := strings.TrimSpace(o.Str("path"))
-	if (kind == "folder" || kind == "app" || kind == "run" || kind == "messages") && path == "" {
+	if (kind == "folder" || kind == "app" || kind == "run" || kind == "messages" || kind == "use") && path == "" {
 		return nil, fail("Say which one")
 	}
 	access := o.Str("access")
@@ -424,6 +426,10 @@ func askLabel(a *Obj) string {
 		return "sending texts"
 	case "handover":
 		return "preparing things in apps"
+	case "use":
+		return "using " + a.Str("path")
+	case "notifications":
+		return "reading notifications"
 	}
 	if a.Str("access") == "write" {
 		return a.Str("path") + " (read and write)"
@@ -443,6 +449,18 @@ func (d *Devices) share(ref string) (*Obj, *Obj, error) {
 		}
 	}
 	return nil, nil, fmt.Errorf("No share %q. Use mac_shares or phone_shares to see what is shared; to reach something else, use mac_ask or phone_ask", ref)
+}
+
+// anyShare is the first share of a kind and its device, or nils.
+func (d *Devices) anyShare(kind string) (*Obj, *Obj) {
+	for _, x := range d.List() {
+		for _, y := range arr(x.Get("shares")) {
+			if o := y.(*Obj); o.Str("kind") == kind {
+				return x, o
+			}
+		}
+	}
+	return nil, nil
 }
 
 // shareOf finds a phone share of a kind: the one named by ref (an id or a name, such as
@@ -523,11 +541,19 @@ func (d *Devices) call(ctx context.Context, dv, sh *Obj, tool string, args *Obj)
 // Rule is what a mac_* call's share says: "allow", "ask", or "" when it names no known share.
 func (d *Devices) Rule(tool string, input *Obj) string {
 	if strings.HasPrefix(tool, toolPrefix+"phone_") {
-		kind := phoneToolKind[strings.TrimPrefix(tool, toolPrefix)]
-		if kind == "" {
-			return "allow" // phone_shares and phone_ask change nothing
+		name := strings.TrimPrefix(tool, toolPrefix)
+		if name == "phone_confirm" {
+			return "ask" // the person answers it, always
 		}
-		_, sh, err := d.shareOf(kind, input.Str("share"))
+		kind := phoneToolKind[name]
+		if kind == "" {
+			return "allow" // phone_shares, phone_ask, and the hands on an app already opened
+		}
+		ref := input.Str("share")
+		if name == "phone_open" {
+			ref = input.Str("app")
+		}
+		_, sh, err := d.shareOf(kind, ref)
 		if err != nil {
 			return "allow" // the tool says it is not shared
 		}
@@ -571,7 +597,7 @@ func (d *Devices) Note() string {
 		b.WriteString("\nA Mac: use the mac_* tools (mac_shares lists them; mac_list, mac_read and mac_write for folders; mac_screenshot for the screen; mac_open for apps; mac_run for things it can run, such as adb for Android emulators).\n")
 	}
 	if phone {
-		b.WriteString("\nThe person's phone: use the phone_* tools. phone_messages reads new messages from a shared app (from its notifications, so only what arrived recently) and phone_reply answers one through the notification; phone_events and phone_add_event for the calendar; phone_contacts to look up a number; phone_sms sends a text; phone_handover prepares a message, email, event, route, call or link in its app for the person to finish there, the way to do anything an app will not let you finish yourself (a WhatsApp message to someone who has not written, say). Prefer the lightest one that does the job. Write replies and texts as the person would: short, in their voice.\n")
+		b.WriteString("\nThe person's phone: use the phone_* tools. phone_messages reads new messages from a shared app (from its notifications, so only what arrived recently) and phone_reply answers one through the notification; phone_events and phone_add_event for the calendar; phone_contacts to look up a number; phone_sms sends a text; phone_handover prepares a message, email, event, route, call or link in its app for the person to finish there, the way to do anything an app will not let you finish yourself (a WhatsApp message to someone who has not written, say). Apps shared to use: phone_open opens one on a hidden screen (the person keeps using the phone) and shows it; then phone_tap, phone_type, phone_swipe and phone_key act on it, each answering with the screen after, and phone_done closes it. Before any step that pays, books, orders, sends, posts or deletes, call phone_confirm and wait for the yes. phone_notifications reads the notifications of those apps (a driver arriving, a message). Prefer the lightest tool that does the job. Write replies and texts as the person would: short, in their voice.\n")
 	}
 	for _, dv := range list {
 		state := "online"
@@ -614,6 +640,10 @@ func shareAccess(sh *Obj) string {
 		return "texts, send"
 	case "handover":
 		return "hand-overs: prepare things in apps for the person to finish"
+	case "use":
+		return "the app " + sh.Str("name") + ", to use for the person (phone_open)"
+	case "notifications":
+		return "notifications of the apps shared to use"
 	}
 	return "runs " + sh.Str("path")
 }

@@ -38,6 +38,7 @@ func TestPhoneLinkSharesAndTools(t *testing.T) {
 	send(O("type", "hello", "id", "p1", "name", "Pixel", "kind", "phone", "shares", []any{
 		O("id", "whatsapp", "kind", "messages", "name", "WhatsApp", "path", "com.whatsapp", "access", "reply", "rule", "ask"),
 		O("id", "calendar", "kind", "calendar", "name", "Calendar", "access", "read", "rule", "allow"),
+		O("id", "use:sinet.startup.inDriver", "kind", "use", "name", "inDrive", "path", "sinet.startup.inDriver", "rule", "allow"),
 	}))
 	waitFor(t, func() bool { l := d.List(); return len(l) == 1 && truthy(l[0].Get("online")) })
 	if d.List()[0].Str("kind") != "phone" {
@@ -45,6 +46,10 @@ func TestPhoneLinkSharesAndTools(t *testing.T) {
 	}
 	if d.Rule("mcp__bench__phone_reply", O("share", "WhatsApp")) != "ask" || d.Rule("mcp__bench__phone_events", O()) != "allow" || d.Rule("mcp__bench__phone_ask", O()) != "allow" {
 		t.Fatal("rules")
+	}
+	// Opening an app follows its share; confirming always asks; the hands follow the open app.
+	if d.Rule("mcp__bench__phone_open", O("app", "inDrive")) != "allow" || d.Rule("mcp__bench__phone_confirm", O()) != "ask" || d.Rule("mcp__bench__phone_tap", O()) != "allow" {
+		t.Fatal("app rules")
 	}
 	if !strings.Contains(d.Note(), "phone_messages") || strings.Contains(d.Note(), "mac_list") {
 		t.Fatal("note")

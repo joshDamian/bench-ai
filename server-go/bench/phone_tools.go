@@ -14,6 +14,14 @@ var phoneToolKind = map[string]string{
 	"phone_messages": "messages", "phone_reply": "messages",
 	"phone_events": "calendar", "phone_add_event": "calendar",
 	"phone_contacts": "contacts", "phone_sms": "sms", "phone_handover": "handover",
+	"phone_open": "use", "phone_notifications": "notifications",
+}
+
+// phoneHands are the tools that act on the app open on the hidden screen: they go to the phone
+// the apps are on, which checks the screen still shows a shared app before acting.
+var phoneHands = map[string]string{
+	"phone_screen": "screen", "phone_tap": "tap", "phone_type": "type", "phone_swipe": "swipe",
+	"phone_key": "key", "phone_done": "done",
 }
 
 var appProp = strProp("The app whose messages, e.g. WhatsApp; empty when only one app's messages are shared")
@@ -47,9 +55,25 @@ func phoneToolList() []any {
 				"place", strProp("Event place, or where a route goes"), "url", strProp("A link to open"),
 				"label", strProp("One short line the person sees, e.g. 'Reply to the Jiji seller'"),
 			), "what", "label")),
+		tool("phone_open", "Opens a shared app on a hidden screen on the person's phone, so they keep using theirs, and returns what it shows. Then act with phone_tap, phone_type, phone_swipe and phone_key; finish with phone_done.", false,
+			macSchema(O("app", strProp("The app, as phone_shares names it (e.g. inDrive)")), "app")),
+		tool("phone_screen", "What the app on the hidden screen shows now: a screenshot, with its size in pixels.", true, macSchema(O())),
+		tool("phone_tap", "Taps the hidden screen at x, y (pixels in the last screenshot). Answers with the screen after.", false,
+			macSchema(O("x", O("type", "number"), "y", O("type", "number")), "x", "y")),
+		tool("phone_type", "Types text into the focused field on the hidden screen (tap the field first). Answers with the screen after.", false,
+			macSchema(O("text", strProp("The text"), "enter", O("type", "boolean", "description", "Press enter after")), "text")),
+		tool("phone_swipe", "Swipes on the hidden screen from x1, y1 to x2, y2 (pixels), to scroll. Answers with the screen after.", false,
+			macSchema(O("x1", O("type", "number"), "y1", O("type", "number"), "x2", O("type", "number"), "y2", O("type", "number")), "x1", "y1", "x2", "y2")),
+		tool("phone_key", "Presses a key on the hidden screen: back, enter, or search. Answers with the screen after.", false,
+			macSchema(O("key", O("type", "string", "enum", []any{"back", "enter", "search"})), "key")),
+		tool("phone_confirm", "Asks the person before a step that pays, books, orders, sends, posts or deletes, with what it is. Call it, wait for the answer, and only then take the step.", false,
+			macSchema(O("what", strProp("The step, as a question: 'Book this ride on inDrive?'"), "detail", strProp("What it is: the amount, who, when")), "what", "detail")),
+		tool("phone_done", "Closes the hidden screen and the app on it. Call it when the task in the app is finished.", false, macSchema(O())),
+		tool("phone_notifications", "Recent notifications from the apps shared to use (a driver arriving, a seller's message): app, title, text, when.", true,
+			macSchema(O("app", strProp("Optional: only this app")))),
 		tool("phone_ask", "Asks the person's phone to share something more. They approve or decline it on the phone; carry on meanwhile.", false,
-			macSchema(O("kind", O("type", "string", "enum", []any{"messages", "calendar", "contacts", "sms", "handover"}),
-				"app", strProp("For messages: the app, e.g. WhatsApp"),
+			macSchema(O("kind", O("type", "string", "enum", []any{"calendar", "contacts", "sms", "handover", "use", "notifications"}),
+				"app", strProp("For use: the app, e.g. inDrive"),
 				"access", O("type", "string", "enum", []any{"read", "reply", "write"}, "description", "messages: read or reply; calendar: read or write"),
 				"why", strProp("One line on why, shown on the phone")), "kind", "why")),
 	}
@@ -68,11 +92,28 @@ func phoneTools(svc *Service, sessionID string) map[string]func(context.Context,
 					return toolErr(err.Error())
 				}
 			}
-			r, err := d.call(ctx, dv, sh, tool, a)
+			r, err := d.call(ctx, dv, sh, tool, a.Clone().Set("session_id", sessionID))
 			if err != nil {
 				return toolErr(err.Error())
 			}
-			return toolOK(r.Str("text"))
+			return phoneResult(r)
+		}
+	}
+	// The hands go to the phone with apps shared to use; the phone knows which one is open.
+	hands := func(tool string) func(context.Context, *Obj) *Obj {
+		return func(ctx context.Context, a *Obj) *Obj {
+			dv, sh, err := d.shareOf("use", "")
+			if err != nil && !strings.Contains(err.Error(), "More than one") {
+				return toolErr("No app on the phone is shared to use. phone_ask asks for one")
+			}
+			if dv == nil {
+				dv, sh = d.anyShare("use")
+			}
+			r, err := d.call(ctx, dv, sh, tool, a.Clone().Set("session_id", sessionID))
+			if err != nil {
+				return toolErr(err.Error())
+			}
+			return phoneResult(r)
 		}
 	}
 	return map[string]func(context.Context, *Obj) *Obj{
@@ -99,6 +140,20 @@ func phoneTools(svc *Service, sessionID string) map[string]func(context.Context,
 		"phone_contacts": call("contacts", nil),
 		"phone_sms":      call("sms", nil),
 		"phone_handover": call("handover", nil),
+		"phone_open": func(ctx context.Context, a *Obj) *Obj {
+			return call("open", nil)(ctx, a.Clone().Set("share", a.Str("app")))
+		},
+		"phone_notifications": call("notifications", nil),
+		"phone_screen":        hands("screen"),
+		"phone_tap":           hands("tap"),
+		"phone_type":          hands("type"),
+		"phone_swipe":         hands("swipe"),
+		"phone_key":           hands("key"),
+		"phone_done":          hands("done"),
+		// The approval is the point: by the time this runs, the person said yes.
+		"phone_confirm": toolFn(func(ctx context.Context, a *Obj) (string, error) {
+			return "The person said yes. Take the step now.", nil
+		}),
 		"phone_ask": toolFn(func(ctx context.Context, a *Obj) (string, error) {
 			var dev *Obj
 			for _, x := range d.List() {
@@ -123,4 +178,17 @@ func phoneTools(svc *Service, sessionID string) map[string]func(context.Context,
 			return fmt.Sprintf("Asked %s for %s. %s The person approves or declines it on the phone; you are told here when they do. Carry on with other steps.", dev.Str("name"), askLabel(ask), where), nil
 		}),
 	}
+}
+
+// phoneResult is a phone's answer as a tool result: its text, and the screen when it sent one.
+func phoneResult(r *Obj) *Obj {
+	img := r.Str("image")
+	if img == "" {
+		return toolOK(r.Str("text"))
+	}
+	content := []any{O("type", "image", "data", img, "mimeType", "image/jpeg")}
+	if t := r.Str("text"); t != "" {
+		content = append(content, O("type", "text", "text", t))
+	}
+	return O("content", content)
 }
