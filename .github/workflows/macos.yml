@@ -115,6 +115,8 @@ jobs:
         if: failure()
         run: |
           cat "$RUNNER_TEMP"/test.log "$RUNNER_TEMP"/build.log 2>/dev/null | grep -E "error:|error -|\*\* .* FAILED|Command .* failed" | sort -u | head -30 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
+          # A compiler crash prints no "error:" line: show its report.
+          grep -E -A25 "Stack dump|Please submit a bug report|Assertion failed|Segmentation fault|swift-frontend.*(crash|signal)" "$RUNNER_TEMP"/build.log 2>/dev/null | head -60 || true
 
       # On Josh's Mac the build is already where it's used: put it in /Applications, with no
       # download for Chrome or Gatekeeper to stop. A running Bench keeps going; reopen it for this one.

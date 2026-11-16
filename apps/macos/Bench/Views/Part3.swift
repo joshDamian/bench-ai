@@ -323,7 +323,6 @@ struct MadeCard: View {
         return what + " · " + When.short(r["modified"].string)
     }
     var body: some View {
-        let kind = report["kind"].string
         VStack(alignment: .leading, spacing: 4) {
             Text(Self.head(report))
                 .font(.system(size: 12)).foregroundStyle(theme.colors.muted)
@@ -593,7 +592,7 @@ struct CallBar: View {
                     Toggle("One-on-one", isOn: Binding(get: { trusted }, set: { set(["trusted": $0]) })).toggleStyle(.button).controlSize(.small)
                     if !trusted {
                         Menu(Self.speechLabel(m)) {
-                            ForEach(Self.speech, id: \.0) { k, v in Button(v) { set(["speech": k]) } }
+                            ForEach(Self.speech, id: \.0) { item in Button(item.1) { set(["speech": item.0]) } }
                         }
                         .menuStyle(.borderlessButton).fixedSize()
                     }
