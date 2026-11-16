@@ -26,8 +26,8 @@ GO_HOME="${BENCH_GO_HOME:-$HOME/.local/share/bench-go}"
 DATA="${BENCH_DATA_DIR:-$HOME/.bench-go}"
 LIVE="${BENCH_LIVE_DATA:-$HOME/.bench}"
 PORT="${BENCH_GO_PORT:-4318}"
-# --shared: bench-go uses the Node server's own data folder and port, and the two take turns
-# (server-go/switch). Same database, same address, so the apps need no change.
+# --shared: bench-go uses the Node server's old data folder and port, and the Node unit is kept
+# off. Same database, same address, so the apps need no change.
 SHARED=0
 [ -f "$HOME/.config/systemd/user/bench-go.shared" ] && SHARED=1
 BIN_DIR="$HOME/.local/bin"
@@ -174,8 +174,12 @@ EOF
     systemctl --user daemon-reload
     if [ "$SHARED" -eq 1 ]; then
       touch "$HOME/.config/systemd/user/bench-go.shared"
-      # Only one server may run on the shared data: switch stops Node and starts Go.
-      sh "$(dirname "$0")/switch" go
+      # Only one server may run on the shared data: the old Node unit stays off.
+      systemctl --user disable --now bench.service 2>/dev/null || true
+      i=0; while systemctl --user is-active --quiet bench.service 2>/dev/null && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done
+      systemctl --user enable bench-go.service
+      systemctl --user restart bench-go.service
+      say "Service: bench-go.service (systemctl --user status bench-go)"
     else
       systemctl --user enable --now bench-go.service
       systemctl --user restart bench-go.service
@@ -195,7 +199,7 @@ done
 
 say "" "Installed: $RELEASE" "Command:   $BIN_DIR/bench-go serve" "Data:      $DATA" "Address:   http://127.0.0.1:$PORT"
 if [ "$SHARED" -eq 1 ]; then
-  say "" "Same port as the Node server, so the apps keep working as they are." "Back to Node: sh server-go/switch node   ·   which is on: sh server-go/switch status"
+  say "" "Same port and data the Node server had, so the apps keep working as they are."
 else
   say "" "To reach it from your phone or Mac over Tailscale, on its own port:" "  tailscale serve --bg --https=8444 http://127.0.0.1:$PORT" "then add https://<this machine>.<tailnet>.ts.net:8444 as a server in the app."
 fi

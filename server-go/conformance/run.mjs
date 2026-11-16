@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Conformance: the same scenario, step by step, against the Node server and the Go
-// server, each on a fresh data folder and its own copy of a test repository, both
-// driving the fake Claude CLI. Every answer is normalised - ids, times, hashes, paths -
-// and the two are compared. Exit 1 when any step differs.
+// Conformance: one scenario, step by step, against the Go server on a fresh data folder and
+// its own copy of a test repository, driving the fake Claude CLI. Every answer is normalised -
+// ids, times, hashes, paths - and compared with expected.json, the answers recorded when the
+// Go server matched the Node server it replaced (and kept up since). Exit 1 when any differs.
 //
 //   node server-go/conformance/run.mjs [--keep] [--only=<step substring>]
+//   node server-go/conformance/run.mjs --update     # a change is meant: record Go's answers
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,6 +17,8 @@ const repoRoot = path.resolve(here, '..', '..');
 const fake = path.join(here, 'fake-claude.mjs');
 const keep = process.argv.includes('--keep');
 const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7);
+const update = process.argv.includes('--update');
+const expectedFile = path.join(here, 'expected.json');
 const goBin = process.env.BENCH_GO_BIN || path.join(repoRoot, 'server-go', 'bin', 'bench-go');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,9 +40,7 @@ function makeRepo(dir) {
 async function start(kind, root, port) {
   const env = { ...process.env, BENCH_CHROMIUM: '/nonexistent', BENCH_ROOT: root, PORT: String(port), BENCH_CLAUDE_BIN: fake, BENCH_PROJECTS_DIR: path.join(root, 'projects'), BENCH_TMP_ROOTS: path.join(root, 'tmp') };
   fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
-  const child = kind === 'node'
-    ? spawn(process.execPath, [path.join(repoRoot, 'src', 'cli.mjs'), 'serve'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
-    : spawn(goBin, ['serve'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(goBin, ['serve'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   child.stdout.on('data', (d) => (log += d));
   child.stderr.on('data', (d) => (log += d));
@@ -63,10 +64,9 @@ function normaliser(root, repo, home) {
     return map.get(v);
   };
   const VOLATILE = new Set(['push', 'key', 'created_at', 'updated_at', 'archived_at', 'last_seen_at', 'merged_at', 'check_at', 'started_at', 'ended_at', 'mtime', 'at', 'uptimeMs', 'startedAt', 'pid', 'ms', 'duration_ms', 'expiresIn', 'code_hash', 'qr', 'code', 'removed_at', 'size', 'loadavg', 'memFree', 'diskFree', 'until', 'seen_at', 'next_run_at', 'last_run_at', 'modified', 'sent_at']);
-  // What only the Go server gives (Node is no longer developed): left out of the comparison.
-  const GO_ONLY = new Set(['gist', 'preview']);
   const str = (s) => {
-    s = s.split(root).join('<root>').split(repo).join('<repo>').split(home).join('<home>');
+    // The temp folder the run made is new each time: <tmp>.
+    s = s.split(root).join('<root>').split(repo).join('<repo>').split(home).join('<home>').split(path.dirname(home)).join('<tmp>');
     for (const m of s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || []) tag(ids, m, 'id');
     // Ids are also shown cut to 8 or 6 characters: in tool text, and in a task's branch.
     for (const [full, t] of ids) s = s.split(full).join(t).split(full.slice(0, 8)).join(`${t}:8`).replace(new RegExp(`-${full.slice(0, 6)}\\b`, 'g'), `-${t}:6`);
@@ -82,7 +82,7 @@ function normaliser(root, repo, home) {
     if (key && VOLATILE.has(key) && v !== null && v !== undefined) return `<${key}>`;
     if (typeof v === 'string') return str(v);
     if (Array.isArray(v)) return v.map((x) => walk(x));
-    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([k]) => !GO_ONLY.has(k)).map(([k, x]) => [str(k), walk(x, k)]));
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [str(k), walk(x, k)]));
     return v;
   };
   return walk;
@@ -391,50 +391,56 @@ async function scenario(srv, repo, root) {
   return out;
 }
 
-// --- run both, compare --------------------------------------------------------------------
+// --- run, compare with what is expected ---------------------------------------------------
 
 const base = fs.mkdtempSync(path.join(os.tmpdir(), 'bench-conformance-'));
-const results = {};
-for (const [kind, port] of [['node', 5521], ['go', 5522]]) {
-  const root = path.join(base, kind, 'data');
-  const repo = path.join(base, kind, 'repo');
-  fs.mkdirSync(root, { recursive: true });
-  makeRepo(repo);
-  const srv = await start(kind, root, port);
-  try {
-    const steps = await scenario(srv, repo, root);
-    const norm = normaliser(root, repo, path.join(base, kind));
-    results[kind] = steps.map((s) => ({ name: s.name, value: norm(s.value) }));
-  } finally {
-    srv.child.kill('SIGTERM');
-    if (process.env.SHOW_LOG) console.log(`--- ${kind} log\n${srv.log()}`);
-  }
+const root = path.join(base, 'go', 'data');
+const repo = path.join(base, 'go', 'repo');
+fs.mkdirSync(root, { recursive: true });
+makeRepo(repo);
+const srv = await start('go', root, 5522);
+let got;
+try {
+  const steps = await scenario(srv, repo, root);
+  const norm = normaliser(root, repo, path.join(base, 'go'));
+  got = steps.map((s) => ({ name: s.name, value: norm(s.value) }));
+} finally {
+  srv.child.kill('SIGTERM');
+  if (process.env.SHOW_LOG) console.log(`--- log\n${srv.log()}`);
 }
 
+if (update) {
+  if (only) { console.log('--update records the whole scenario; run it without --only.'); process.exit(1); }
+  fs.writeFileSync(expectedFile, JSON.stringify(got, null, 1) + '\n');
+  console.log(`Recorded ${got.length} steps in ${path.relative(repoRoot, expectedFile)}.`);
+  fs.rmSync(base, { recursive: true, force: true });
+  process.exit(0);
+}
+
+const expected = JSON.parse(fs.readFileSync(expectedFile, 'utf8'));
 let same = 0;
 const diffs = [];
-for (let i = 0; i < results.node.length; i++) {
-  const a = results.node[i];
-  const b = results.go.find((x) => x.name === a.name);
-  const ja = JSON.stringify(a.value, null, 1);
-  const jb = JSON.stringify(b?.value, null, 1);
-  if (ja === jb) same++;
-  else diffs.push({ name: a.name, node: ja, go: jb });
+for (const b of got) {
+  const a = expected.find((x) => x.name === b.name);
+  const ja = JSON.stringify(a?.value, null, 1);
+  const jb = JSON.stringify(b.value, null, 1);
+  if (a && ja === jb) same++;
+  else diffs.push({ name: b.name, want: a ? ja : 'undefined (a new step: record it with --update)', got: jb });
 }
 for (const d of diffs) {
   console.log(`\n✗ ${d.name}`);
-  const la = d.node.split('\n');
-  const lb = (d.go || 'undefined').split('\n');
+  const la = d.want.split('\n');
+  const lb = d.got.split('\n');
   let shown = 0;
   for (let i = 0; i < Math.max(la.length, lb.length) && shown < 12; i++) {
     if (la[i] !== lb[i]) {
-      console.log(`  node: ${(la[i] ?? '').trim().slice(0, 160)}\n  go:   ${(lb[i] ?? '').trim().slice(0, 160)}`);
+      console.log(`  want: ${(la[i] ?? '').trim().slice(0, 160)}\n  got:  ${(lb[i] ?? '').trim().slice(0, 160)}`);
       shown++;
     }
   }
 }
-console.log(`\n${same} of ${results.node.length} steps match${diffs.length ? `; ${diffs.length} differ` : ''}.`);
-fs.writeFileSync(path.join(base, 'results.json'), JSON.stringify(results, null, 1));
+console.log(`\n${same} of ${got.length} steps match${diffs.length ? `; ${diffs.length} differ` : ''}.`);
+fs.writeFileSync(path.join(base, 'results.json'), JSON.stringify(got, null, 1));
 console.log(`Full results: ${path.join(base, 'results.json')}`);
 if (!keep && !diffs.length) fs.rmSync(base, { recursive: true, force: true });
 process.exit(diffs.length ? 1 : 0);

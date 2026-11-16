@@ -9,3 +9,5 @@ UI work: `Design-brief.md` says what each view is for, its one primary action, i
 <!-- bench:design-check -->
 UI changes: before you finish, run `/bench:verify-ui` and show its before and after screenshots. The design gate is `sh .bench/design-check.sh`: 0 passed, 1 a defect it names, 2 it could not look, which is a failure. Fix what it names.
 <!-- /bench:design-check -->
+
+The server is Go, in `server-go/`. `src/` is the old Node server: no longer run or developed, kept only because the `bench` command-line tool (`src/cli.mjs`) still uses it. Change server behaviour in `server-go/` only; conformance (`node server-go/conformance/run.mjs`) checks bench-go against `server-go/conformance/expected.json`.
