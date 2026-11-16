@@ -271,7 +271,9 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
     val readyCount = reads.size + drafts.size + finished.size
     // What a run asked the Mac for: it waits on the Mac, and the run carries on meanwhile.
     val devices by store.devices.collectAsState()
-    val macAsks = devices.flatMap { d -> d.asks.filter { it.session_id != null }.map { d to it } }
+    // (What a run asks this phone is decided on this phone, in its own sheet.)
+    val thisPhone = ai.bench.app.phone.PhoneShares.deviceId(androidx.compose.ui.platform.LocalContext.current)
+    val macAsks = devices.filter { it.id != thisPhone }.flatMap { d -> d.asks.filter { it.session_id != null }.map { d to it } }
     val needCount = s.approvals.size + failed.size + capped.size + macAsks.size
     // Timed runs by when they start, then the pages being watched.
     val next = (schedules.filter { it.enabled && it.next_run_at != null }.sortedBy { it.next_run_at } + schedules.filter { it.enabled && it.watch != null }).distinctBy { it.id }

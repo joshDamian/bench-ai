@@ -223,10 +223,16 @@ fun FileViewer(files: SessionFiles, f: FileInfo, top: (@Composable () -> Unit)? 
 }
 
 /**
- * A page a session made, live: its script runs, its state stays (localStorage), but it reaches
- * no network and no files. Its colours come from the app's theme through the CSS variables the
- * reports note names. Links open outside, in the browser or the email app.
+ * A page a session made, live: its script runs, its state stays (localStorage), and it reaches
+ * no files. From the network it gets only what a page is built from: scripts, styles and fonts
+ * from the common CDNs (a chart library, say), and pictures (a listing's photos). Anything else,
+ * a fetch to some API included, is refused. Its colours come from the app's theme through the
+ * CSS variables the reports note names. Links open outside, in the browser or the email app.
  */
+/** Where a page may load scripts, styles and fonts from. */
+private val PAGE_CDNS = setOf("cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "cdn.tailwindcss.com", "code.jquery.com", "esm.sh", "fonts.googleapis.com", "fonts.gstatic.com")
+private val PICTURES = setOf("png", "jpg", "jpeg", "webp", "gif", "svg", "avif")
+
 @android.annotation.SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun HtmlPage(html: String, key: String) {
@@ -249,10 +255,17 @@ fun HtmlPage(html: String, key: String) {
                 setBackgroundColor(c.bg.toArgb())
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
-                settings.blockNetworkLoads = true
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 webViewClient = object : android.webkit.WebViewClient() {
+                    override fun shouldInterceptRequest(view: android.webkit.WebView, req: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? {
+                        val u = req.url
+                        val host = u.host.orEmpty()
+                        if (host.endsWith(".pages.bench.invalid")) return null
+                        val picture = req.method == "GET" && (req.requestHeaders["Accept"].orEmpty().startsWith("image/") || u.path.orEmpty().substringAfterLast('.').lowercase() in PICTURES)
+                        if (u.scheme == "https" && req.method == "GET" && (host in PAGE_CDNS || picture)) return null
+                        return android.webkit.WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
+                    }
                     override fun shouldOverrideUrlLoading(view: android.webkit.WebView, req: android.webkit.WebResourceRequest): Boolean {
                         val u = req.url
                         if (u.host?.endsWith(".pages.bench.invalid") == true) return false

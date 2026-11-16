@@ -99,8 +99,14 @@ fun askLine(a: Approval) = when (a.tool) {
     "ExitPlanMode" -> "Claude has a plan"
     "AskUserQuestion" -> "Claude is asking"
     SAY -> "Say in the meeting"
+    PHONE_REPLY -> "Reply to ${a.input["chat"].str() ?: "a chat"}" + (a.input["share"].str()?.takeIf { it.isNotBlank() }?.let { " on $it" } ?: "")
+    PHONE_SMS -> "Text ${a.input["to"].str() ?: "a number"}"
     else -> a.title ?: toolName(a.tool)
 }
+
+/** A reply in a chat on the phone, and a text from it: changed if you like, then sent. */
+const val PHONE_REPLY = "mcp__bench__phone_reply"
+const val PHONE_SMS = "mcp__bench__phone_sms"
 
 /** A line a session wants to say in a call. */
 const val SAY = "mcp__bench__meeting_say"
@@ -120,11 +126,12 @@ private fun SayLine(approval: Approval, busy: Boolean, big: Boolean, onAnswer: (
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 200.dp).background(c.surface1, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        BigButton("Say it", Modifier.weight(1f), primary = true, height = 48.dp, size = 15.sp, enabled = !busy && text.isNotBlank()) {
+        val say = approval.tool == SAY
+        BigButton(if (say) "Say it" else "Send", Modifier.weight(1f), primary = true, height = 48.dp, size = 15.sp, enabled = !busy && text.isNotBlank()) {
             onAnswer(answer(true) { put("text", text.trim()) })
         }
-        BigButton("Don't say", height = 48.dp, size = 15.sp, enabled = !busy, fill = false) {
-            onAnswer(answer(false) { put("message", "The person said no to that line; a neutral line was said instead. Don't say it another way.") })
+        BigButton(if (say) "Don't say" else "Don't send", height = 48.dp, size = 15.sp, enabled = !busy, fill = false) {
+            onAnswer(answer(false) { put("message", if (say) "The person said no to that line; a neutral line was said instead. Don't say it another way." else "The person chose not to send it. Don't send it another way.") })
         }
     }
 }
@@ -171,7 +178,7 @@ fun ApprovalSheet(approval: Approval, cwd: String, onAnswer: (JsonObject) -> Uni
                 if (onTakeOver != null && takeOverQuestion(approval) != null) BigButton("Take over the browser", primary = true, height = 48.dp, enabled = !busy, onClick = onTakeOver)
                 Questions(approval, busy, onAnswer)
             }
-            SAY -> SayLine(approval, busy, big = true, onAnswer = onAnswer)
+            SAY, PHONE_REPLY, PHONE_SMS -> SayLine(approval, busy, big = true, onAnswer = onAnswer)
             else -> {
                 // While writing why, the request folds to its first lines so the note has room.
                 Box(Modifier.fillMaxWidth().heightIn(max = if (denying) 96.dp else 280.dp).verticalScroll(rememberScrollState())) {
@@ -239,7 +246,7 @@ fun ApprovalCard(
             }
         } else when (approval.tool) {
             "ExitPlanMode", "AskUserQuestion" -> BigButton("Open", primary = true, height = 48.dp, size = 15.sp, onClick = onOpen)
-            SAY -> SayLine(approval, busy, big = false, onAnswer = onAnswer)
+            SAY, PHONE_REPLY, PHONE_SMS -> SayLine(approval, busy, big = false, onAnswer = onAnswer)
             else -> {
                 Preview(approval, cwd, big = false)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {

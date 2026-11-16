@@ -148,7 +148,8 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
             composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
             composable("about") { AboutScreen(store, onBack = { nav.popBackStack() }, onOpen = open, onRules = { nav.navigate("rules") }) }
             composable("rules") { RulesScreen(store, onBack = { nav.popBackStack() }) }
-            composable("reach") { CanReachScreen(store, onBack = { nav.popBackStack() }, onBrowser = { nav.navigate("browser") }, onDevice = { nav.navigate("device/$it") }) }
+            composable("reach") { CanReachScreen(store, onBack = { nav.popBackStack() }, onBrowser = { nav.navigate("browser") }, onDevice = { nav.navigate("device/$it") }, onPhone = { nav.navigate("phone") }) }
+            composable("phone") { PhoneScreen(store, onBack = { nav.popBackStack() }) }
             composable("device/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { e ->
                 DeviceScreen(store, e.arguments?.getString("id") ?: "", onBack = { nav.popBackStack() })
             }
@@ -237,6 +238,11 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     recipe?.let { r -> RunRecipeSheet(store, r, onDismiss = { recipe = null }) { recipe = null; open(it) } }
     if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) }, onSchedule = { newSession = false; store.schedulePrefill = it; nav.navigate("schedule/new") })
     if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true, initial = researchAsk)
+    // What a session asks this phone to share, decided here.
+    val phoneAsks by ai.bench.app.phone.PhoneLink.asks.collectAsState()
+    var laterAsks by remember { mutableStateOf(setOf<String>()) }
+    // Swiped away: it waits in its notification instead.
+    phoneAsks.firstOrNull { it.id !in laterAsks }?.let { a -> PhoneAskSheet(store, a) { laterAsks = laterAsks + a.id } }
     if (addProject) AddProjectSheet(store, onDismiss = { addProject = false }, onAdded = { addProject = false; nav.navigate("project/$it") })
 }
 

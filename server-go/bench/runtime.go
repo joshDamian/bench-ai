@@ -1341,8 +1341,8 @@ func (r *Runtime) Answer(approvalID string, a *Obj) (bool, error) {
 		}
 		input = input.Clone().Set("answers", ans)
 	}
-	// A line for the meeting may be changed before it is said.
-	if h.approval.Str("tool") == toolPrefix+"meeting_say" {
+	// A line for the meeting, a reply or a text may be changed before it goes.
+	if t := h.approval.Str("tool"); t == toolPrefix+"meeting_say" || t == toolPrefix+"phone_reply" || t == toolPrefix+"phone_sms" {
 		if t := strings.TrimSpace(a.Str("text")); t != "" {
 			input = input.Clone().Set("text", t)
 		}

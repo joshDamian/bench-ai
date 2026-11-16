@@ -97,19 +97,32 @@ func macTools(svc *Service, sessionID string) map[string]func(context.Context, *
 	}
 }
 
-// withDevices adds the mac_* tools to a session's bench server once a device has linked, and
+// withDevices adds the mac_* tools once a Mac has linked, the phone_* tools once a phone has, and
 // the meeting_* tools when the server can take part in calls.
 func withDevices(svc *Service, sessionID string, m *MCPServer) *MCPServer {
-	devices := len(svc.Devices().List()) > 0
+	macs, phones := false, false
+	for _, x := range svc.Devices().List() {
+		if x.Str("kind") == "phone" {
+			phones = true
+		} else {
+			macs = true
+		}
+	}
 	calls := truthy(svc.Meeting().Ready().Get("audio"))
-	if !devices && !calls {
+	if !macs && !phones && !calls {
 		return m
 	}
 	extraList := []any{}
 	extra := map[string]func(context.Context, *Obj) *Obj{}
-	if devices {
+	if macs {
 		extraList = append(extraList, macToolList()...)
 		for k, v := range macTools(svc, sessionID) {
+			extra[k] = v
+		}
+	}
+	if phones {
+		extraList = append(extraList, phoneToolList()...)
+		for k, v := range phoneTools(svc, sessionID) {
 			extra[k] = v
 		}
 	}

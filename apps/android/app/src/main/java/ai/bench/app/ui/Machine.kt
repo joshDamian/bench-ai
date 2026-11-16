@@ -143,16 +143,23 @@ fun RulesScreen(store: BenchStore, onBack: () -> Unit) {
 
 /** Can reach: what Bench can use beyond its own folders, grouped by kind (the Can reach board). */
 @Composable
-fun CanReachScreen(store: BenchStore, onBack: () -> Unit, onBrowser: () -> Unit = {}, onDevice: (String) -> Unit = {}) {
+fun CanReachScreen(store: BenchStore, onBack: () -> Unit, onBrowser: () -> Unit = {}, onDevice: (String) -> Unit = {}, onPhone: () -> Unit = {}) {
     val c = Bench.colors
     var reach by remember { mutableStateOf<ai.bench.app.data.Reach?>(null) }
     LaunchedEffect(Unit) { reach = runCatching { store.api.reach() }.getOrNull() }
+    val me = ai.bench.app.phone.PhoneShares.deviceId(androidx.compose.ui.platform.LocalContext.current)
     Page("Can reach", "What Bench can use beyond its own folders.", onBack) {
         val r = reach ?: return@Page
+        section("This phone")
+        item("phone") {
+            val shared = ai.bench.app.phone.PhoneShares.shares.collectAsState().value
+            Card { NavRow("Shared with Bench", if (shared.isEmpty()) "Nothing" else "${shared.size} thing${if (shared.size == 1) "" else "s"}", shared.joinToString(", ") { it.name }.ifBlank { null }) { onPhone() } }
+        }
+        val macs = r.devices.filter { it.key != me }
         section("Your Mac")
         item("devices") {
-            if (r.devices.isEmpty()) Text("Not linked. In Bench for Mac, share something under Settings › Shared with Bench.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp))
-            else Card { r.devices.forEach { d -> NavRow(d.name, d.detail) { onDevice(d.key) } } }
+            if (macs.isEmpty()) Text("Not linked. In Bench for Mac, share something under Settings › Shared with Bench.", fontSize = 14.5.sp, lineHeight = 20.sp, color = c.muted, modifier = Modifier.padding(start = 6.dp, end = 6.dp))
+            else Card { macs.forEach { d -> NavRow(d.name, d.detail) { onDevice(d.key) } } }
         }
         section("Accounts")
         item("accounts") {

@@ -12,6 +12,11 @@ package bench
 //
 // The share kinds are generic: what a "run" share runs is the Mac's business, so a new kind of
 // thing to run needs no change here.
+//
+// A phone links the same way (kind "phone", from Bench for Android) and shares other things:
+// an app's messages, read from its notifications and answered through their reply action
+// ("messages"); the calendar; contacts; sending texts ("sms"); and preparing a message, event
+// or route in its app for the person to finish ("handover"). The phone_* tools use them.
 
 import (
 	"context"
@@ -27,7 +32,10 @@ import (
 )
 
 // ShareKinds are the groups a share falls in, in the order the apps list them.
-var ShareKinds = []string{"folder", "app", "screen", "run"}
+var ShareKinds = []string{"folder", "app", "screen", "run", "messages", "calendar", "contacts", "sms", "handover"}
+
+// PhoneKinds are the share kinds only a phone has.
+var PhoneKinds = []string{"messages", "calendar", "contacts", "sms", "handover"}
 
 type device struct {
 	info    *Obj // id, name, version, shares, last_seen
@@ -132,7 +140,11 @@ func (d *Devices) List() []*Obj {
 		if shares == nil {
 			shares = []any{}
 		}
-		out = append(out, O("id", id, "name", info.Str("name"), "version", info.Get("version"), "online", online, "last_seen", info.Get("last_seen"), "shares", shares, "asks", mine))
+		kind := info.Str("kind")
+		if kind == "" {
+			kind = "mac"
+		}
+		out = append(out, O("id", id, "name", info.Str("name"), "kind", kind, "version", info.Get("version"), "online", online, "last_seen", info.Get("last_seen"), "shares", shares, "asks", mine))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Str("name") < out[j].Str("name") })
 	return out
@@ -153,20 +165,36 @@ func (d *Devices) Device(id string) (*Obj, error) {
 func (d *Devices) Ask(deviceID string, o *Obj, sessionID string) (*Obj, error) {
 	kind := o.Str("kind")
 	if !inList(ShareKinds, kind) {
-		return nil, fail("Ask for a folder, an app, the screen or something to run")
+		return nil, fail("Ask for a folder, an app, the screen or something to run; on a phone, an app's messages, the calendar, contacts, texts or hand-overs")
 	}
 	path := strings.TrimSpace(o.Str("path"))
-	if (kind == "folder" || kind == "app" || kind == "run") && path == "" {
+	if (kind == "folder" || kind == "app" || kind == "run" || kind == "messages") && path == "" {
 		return nil, fail("Say which one")
 	}
 	access := o.Str("access")
-	if kind == "folder" && access != "write" {
-		access = "read"
+	switch kind {
+	case "folder", "calendar":
+		if access != "write" {
+			access = "read"
+		}
+	case "messages":
+		if access != "reply" {
+			access = "read"
+		}
+	default:
+		access = ""
 	}
 	d.mu.Lock()
 	ok := false
 	for _, x := range d.known() {
-		ok = ok || x.Str("id") == deviceID
+		if x.Str("id") == deviceID {
+			ok = true
+			// A phone shares phone things; a Mac, Mac things.
+			if (x.Str("kind") == "phone") != inList(PhoneKinds, kind) {
+				d.mu.Unlock()
+				return nil, fail(fmt.Sprintf("%s does not share that kind of thing", x.Str("name")))
+			}
+		}
 	}
 	if !ok {
 		d.mu.Unlock()
@@ -308,7 +336,14 @@ func (d *Devices) Link(ws *websocket.Conn) {
 			if name == "" {
 				name = "Mac"
 			}
-			info := O("id", id, "name", name, "version", msg.Get("version"), "shares", cleanShares(msg.Get("shares")), "last_seen", isoNow())
+			kind := msg.Str("kind")
+			if kind != "phone" {
+				kind = "mac"
+			}
+			if dev != nil && dev.info.Str("kind") != "" {
+				kind = dev.info.Str("kind")
+			}
+			info := O("id", id, "name", name, "kind", kind, "version", msg.Get("version"), "shares", cleanShares(msg.Get("shares")), "last_seen", isoNow())
 			d.mu.Lock()
 			d.remember(info)
 			if dev == nil {
@@ -373,6 +408,22 @@ func askLabel(a *Obj) string {
 		return a.Str("path")
 	case "run":
 		return "run " + a.Str("path")
+	case "messages":
+		if a.Str("access") == "reply" {
+			return a.Str("path") + " messages (read and reply)"
+		}
+		return a.Str("path") + " messages (read only)"
+	case "calendar":
+		if a.Str("access") == "write" {
+			return "the calendar (read and add)"
+		}
+		return "the calendar (read only)"
+	case "contacts":
+		return "contacts"
+	case "sms":
+		return "sending texts"
+	case "handover":
+		return "preparing things in apps"
 	}
 	if a.Str("access") == "write" {
 		return a.Str("path") + " (read and write)"
@@ -391,7 +442,35 @@ func (d *Devices) share(ref string) (*Obj, *Obj, error) {
 			}
 		}
 	}
-	return nil, nil, fmt.Errorf("No share %q. Use mac_shares to see what is shared; to reach something else, use mac_ask", ref)
+	return nil, nil, fmt.Errorf("No share %q. Use mac_shares or phone_shares to see what is shared; to reach something else, use mac_ask or phone_ask", ref)
+}
+
+// shareOf finds a phone share of a kind: the one named by ref (an id or a name, such as
+// "WhatsApp"), or the only one of that kind when ref is empty.
+func (d *Devices) shareOf(kind, ref string) (*Obj, *Obj, error) {
+	ref = strings.TrimSpace(ref)
+	var dv, sh *Obj
+	n := 0
+	for _, x := range d.List() {
+		for _, y := range arr(x.Get("shares")) {
+			o := y.(*Obj)
+			if o.Str("kind") != kind {
+				continue
+			}
+			if ref == "" || o.Str("id") == ref || strings.EqualFold(o.Str("name"), ref) || strings.EqualFold(o.Str("path"), ref) {
+				dv, sh = x, o
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		what := map[string]string{"messages": "messages from that app", "calendar": "its calendar", "contacts": "its contacts", "sms": "sending texts", "handover": "hand-overs"}[kind]
+		return nil, nil, fmt.Errorf("No phone shares %s. phone_shares lists what is shared; phone_ask asks for more", what)
+	}
+	if n > 1 && ref == "" {
+		return nil, nil, fmt.Errorf("More than one share fits; say which (phone_shares lists them)")
+	}
+	return dv, sh, nil
 }
 
 // Call sends one call to the device a share is on and waits for its answer.
@@ -400,10 +479,17 @@ func (d *Devices) Call(ctx context.Context, shareRef, tool string, args *Obj) (*
 	if err != nil {
 		return nil, err
 	}
+	return d.call(ctx, dv, sh, tool, args)
+}
+
+func (d *Devices) call(ctx context.Context, dv, sh *Obj, tool string, args *Obj) (*Obj, error) {
 	d.mu.Lock()
 	dev := d.live[dv.Str("id")]
 	if dev == nil {
 		d.mu.Unlock()
+		if dv.Str("kind") == "phone" {
+			return nil, fmt.Errorf("%s is offline (no signal, or Bench for Android is not running). Carry on with other steps and say this needs the phone", dv.Str("name"))
+		}
 		return nil, fmt.Errorf("%s is offline (asleep, or Bench for Mac is closed). Carry on with other steps and say this needs the Mac", dv.Str("name"))
 	}
 	d.next++
@@ -436,6 +522,17 @@ func (d *Devices) Call(ctx context.Context, shareRef, tool string, args *Obj) (*
 
 // Rule is what a mac_* call's share says: "allow", "ask", or "" when it names no known share.
 func (d *Devices) Rule(tool string, input *Obj) string {
+	if strings.HasPrefix(tool, toolPrefix+"phone_") {
+		kind := phoneToolKind[strings.TrimPrefix(tool, toolPrefix)]
+		if kind == "" {
+			return "allow" // phone_shares and phone_ask change nothing
+		}
+		_, sh, err := d.shareOf(kind, input.Str("share"))
+		if err != nil {
+			return "allow" // the tool says it is not shared
+		}
+		return sh.Str("rule")
+	}
 	if !strings.HasPrefix(tool, toolPrefix+"mac_") {
 		return ""
 	}
@@ -461,7 +558,21 @@ func (d *Devices) Note() string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("# The person's other devices\n\nThese devices share part of themselves with you; nothing else on them is reachable. Use the mac_* tools (mac_shares lists them; mac_list, mac_read and mac_write for folders; mac_screenshot for the screen; mac_open for apps; mac_run for things it can run, such as adb for Android emulators). To reach something not shared, use mac_ask: the person approves it on the device, so carry on with other steps meanwhile.\n")
+	b.WriteString("# The person's other devices\n\nThese devices share part of themselves with you; nothing else on them is reachable. To reach something not shared, ask (mac_ask, phone_ask): the person approves it on the device, so carry on with other steps meanwhile.\n")
+	mac, phone := false, false
+	for _, dv := range list {
+		if dv.Str("kind") == "phone" {
+			phone = true
+		} else {
+			mac = true
+		}
+	}
+	if mac {
+		b.WriteString("\nA Mac: use the mac_* tools (mac_shares lists them; mac_list, mac_read and mac_write for folders; mac_screenshot for the screen; mac_open for apps; mac_run for things it can run, such as adb for Android emulators).\n")
+	}
+	if phone {
+		b.WriteString("\nThe person's phone: use the phone_* tools. phone_messages reads new messages from a shared app (from its notifications, so only what arrived recently) and phone_reply answers one through the notification; phone_events and phone_add_event for the calendar; phone_contacts to look up a number; phone_sms sends a text; phone_handover prepares a message, email, event, route, call or link in its app for the person to finish there, the way to do anything an app will not let you finish yourself (a WhatsApp message to someone who has not written, say). Prefer the lightest one that does the job. Write replies and texts as the person would: short, in their voice.\n")
+	}
 	for _, dv := range list {
 		state := "online"
 		if !truthy(dv.Get("online")) {
@@ -487,6 +598,22 @@ func shareAccess(sh *Obj) string {
 		return "screen, look only"
 	case "app":
 		return "app, open it"
+	case "messages":
+		if sh.Str("access") == "reply" {
+			return sh.Str("name") + " messages, read and reply"
+		}
+		return sh.Str("name") + " messages, read only"
+	case "calendar":
+		if sh.Str("access") == "write" {
+			return "calendar, read and add events"
+		}
+		return "calendar, read only"
+	case "contacts":
+		return "contacts, look up"
+	case "sms":
+		return "texts, send"
+	case "handover":
+		return "hand-overs: prepare things in apps for the person to finish"
 	}
 	return "runs " + sh.Str("path")
 }
