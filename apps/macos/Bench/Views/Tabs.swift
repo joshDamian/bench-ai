@@ -26,7 +26,7 @@ extension AppModel {
     /// Whether the current tab shows something worth keeping: anything but nothing or a place list.
     private var tabInUse: Bool {
         guard let s = selection else { return false }
-        return Place(rawValue: s) == nil && !["inbox", "ask", "notes"].contains(s)
+        return Place(rawValue: s) == nil && !["inbox", "ask", "notes", "research"].contains(s)
     }
 
     /// An existing session, task or project page, from a list. Within the project the current
@@ -184,6 +184,7 @@ private struct TabChip: View {
     /// The tab's title, where it is, and its state mark.
     private func describe() -> (String, String, Mark) {
         if let p = Place(rawValue: id) { return (p.title, "", .idle) }
+        if id.hasPrefix("research:") { return (question(store.session(String(id.dropFirst(9)))?.title ?? "Research"), "Research", .idle) }
         if id.hasPrefix("files:") { return ("Files", store.project(String(id.dropFirst(6)))?.name ?? "", .idle) }
         if let n = NoteRef(tab: id) {
             let title = model.notes.title(n) ?? n.fileName.replacingOccurrences(of: ".md", with: "")

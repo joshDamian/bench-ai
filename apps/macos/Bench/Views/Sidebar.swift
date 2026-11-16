@@ -2,12 +2,14 @@ import SwiftUI
 
 /// Places a sidebar row can open besides a session, task or project.
 enum Place: String, CaseIterable {
-    case needs = "place:needs", running = "place:running", all = "place:all"
+    case needs = "place:needs", running = "place:running", all = "place:all", schedules = "place:schedules", activity = "place:activity"
     var title: String {
         switch self {
         case .needs: "Needs you"
         case .running: "Running"
         case .all: "All sessions"
+        case .schedules: "Schedules"
+        case .activity: "Activity"
         }
     }
 }
@@ -144,6 +146,8 @@ struct Sidebar: View {
           LazyVStack(alignment: .leading, spacing: 1) {
             if rail == "inbox" {
                 inbox
+            } else if rail == "research" {
+                ResearchList(store: store)
             } else if rail == "ask" {
                 header(title: "Ask Bench", sub: "Questions about Bench itself", project: nil)
                 let known = Set(store.projects.map(\.id))
@@ -171,6 +175,7 @@ struct Sidebar: View {
         if !needs.isEmpty { Section { ForEach(needs) { sessionRow($0, showProject: true) } } header: { label("Needs you") } }
         if !running.isEmpty { Section { ForEach(running) { sessionRow($0, showProject: true) } } header: { label("Running") } }
         if !recent.isEmpty { Section { ForEach(Array(recent)) { sessionRow($0, showProject: true) } } header: { label("Recent") } }
+        InboxExtras(store: store)
     }
 
     /// The selection as the lists set it: through the tab rules in `AppModel.go`.
@@ -395,6 +400,10 @@ struct ProjectRail: View {
                  fill: nil, mark: nil, badge: needs) {
                 Image(systemName: "tray").font(.system(size: 14, weight: .medium))
                     .foregroundStyle(model.rail == "inbox" ? Color.white : theme.colors.text)
+            }
+            tile(id: "research", label: "Research", sub: "Everything Claude found out", keys: nil, fill: nil, mark: nil, badge: 0) {
+                Image(systemName: "text.magnifyingglass").font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(model.rail == "research" ? Color.white : theme.colors.text)
             }
             tile(id: "notes", label: "Notes", sub: "Not tied to a project", keys: nil, fill: nil, mark: nil, badge: 0) {
                 Image(systemName: "note.text").font(.system(size: 13, weight: .medium))

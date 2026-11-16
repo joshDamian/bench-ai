@@ -158,6 +158,7 @@ struct SessionView: View {
                         }
                     }
                 }
+                if !embedded { CallBar(store: store, sessionId: sessionId) }
                 if !embedded && app.showTerminal {
                     VSplitView {
                         conversation.frame(minHeight: 260)
