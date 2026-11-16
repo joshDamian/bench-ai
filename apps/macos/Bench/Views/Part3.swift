@@ -311,10 +311,21 @@ struct ReportRef: Identifiable { let v: JSONValue; var id: String { v["path"].st
 struct MadeCard: View {
     @Environment(\.theme) private var theme
     let report: JSONValue
+
+    static func head(_ r: JSONValue) -> String {
+        let what: String
+        switch r["kind"].string {
+        case "drafts": what = "\(Int(r["unsent"].number ?? 0)) drafts to send"
+        case "page": what = "Page"
+        case "board": what = "Board"
+        default: what = "Report"
+        }
+        return what + " · " + When.short(r["modified"].string)
+    }
     var body: some View {
         let kind = report["kind"].string
         VStack(alignment: .leading, spacing: 4) {
-            Text([kind == "drafts" ? "\(Int(report["unsent"].number ?? 0)) drafts to send" : kind == "page" ? "Page" : kind == "board" ? "Board" : "Report", When.short(report["modified"].string)].joined(separator: " · "))
+            Text(Self.head(report))
                 .font(.system(size: 12)).foregroundStyle(theme.colors.muted)
             Text(report["title"].string ?? "").font(.system(size: 15, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             if let g = report["gist"].string ?? report["preview"].array.first?["title"].string {
@@ -478,14 +489,24 @@ struct SchedulesView: View {
         .modifier(KeepExtras(api: store.api))
     }
 
+    static func line(_ s: JSONValue, watch: Bool) -> String {
+        if watch {
+            let every: Double = s["watch"]?["every_hours"].number ?? 6
+            return page(s["watch"]?["url"].string) + " · every \(Int(every)) hours"
+        }
+        var parts: [String] = [When.days(s["days"].string)]
+        if let t = s["time"].string { parts.append(t) }
+        if s["keep_board"].bool { parts.append("keeps one board") }
+        return parts.joined(separator: " · ")
+    }
+
     @ViewBuilder private func section(_ title: String, _ list: [JSONValue]) -> some View {
         if !list.isEmpty {
             Text(title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.colors.muted).padding(.top, 26).padding(.bottom, 8)
             Group2 {
                 ForEach(Array(list.enumerated()), id: \.offset) { i, s in
                     let watch = s["watch"]?.object.isEmpty == false
-                    let sub = watch ? "\(page(s["watch"]?["url"].string)) · every \(Int(s["watch"]?["every_hours"].number ?? 6)) hours"
-                        : [When.days(s["days"].string), s["time"].string, s["keep_board"].bool ? "keeps one board" : nil].compactMap { $0 }.joined(separator: " · ")
+                    let sub = Self.line(s, watch: watch)
                     GroupRow(title: s["title"].string ?? "Schedule", sub: sub, first: i == 0) {
                         Text(watch ? (s["checked_at"].string.map { "Checked \(Format.ago($0)) ago" } ?? "First look soon") : When.next(s["next_run_at"].string))
                             .font(.system(size: 12)).foregroundStyle(theme.colors.muted)
@@ -563,21 +584,21 @@ struct CallBar: View {
                 HStack(spacing: 10) {
                     Circle().fill(m["audio_problem"].string == nil ? theme.colors.good : theme.colors.bad).frame(width: 8, height: 8)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(m["presenting"].bool ? (trusted ? "One-on-one · presenting" : "In a call · presenting") : trusted ? "One-on-one call" : m["ready"]?["listen"].bool == true ? "In a call · listening" : "In a call · can’t hear it")
+                        Text(Self.state(m))
                             .font(.system(size: 13, weight: .semibold))
-                        Text(m["audio_problem"].string.map { "Its voice isn’t reaching the call: \($0)" } ?? m["since"].string.map { "For \(Format.ago($0))" } ?? "")
+                        Text(Self.line(m))
                             .font(.system(size: 11.5)).foregroundStyle(m["audio_problem"].string == nil ? theme.colors.muted : theme.colors.bad).lineLimit(1)
                     }
                     Spacer(minLength: 12)
                     Toggle("One-on-one", isOn: Binding(get: { trusted }, set: { set(["trusted": $0]) })).toggleStyle(.button).controlSize(.small)
                     if !trusted {
-                        Menu(Self.speech.first { $0.0 == m["speech"].string }?.1 ?? "Speech") {
+                        Menu(Self.speechLabel(m)) {
                             ForEach(Self.speech, id: \.0) { k, v in Button(v) { set(["speech": k]) } }
                         }
                         .menuStyle(.borderlessButton).fixedSize()
                     }
                     if m["ready"]?["voice"].string == "kokoro", !voices.isEmpty {
-                        let current = voices.first { Int($0["id"].number ?? -1) == Int(m["voice"].number ?? -2) }?["name"].string ?? "Voice"
+                        let current = Self.voiceName(m, voices)
                         Menu("Voice · \(current)") {
                             ForEach(Array(voices.enumerated()), id: \.offset) { _, v in
                                 Button("\(v["name"].string ?? "") · \(v["detail"].string ?? "")") { set(["voice": Int(v["id"].number ?? 3)]) }
@@ -601,6 +622,32 @@ struct CallBar: View {
                 try? await Task.sleep(for: .seconds(m?["session_id"].string == sessionId ? 3 : 15))
             }
         }
+    }
+
+    private static func state(_ m: JSONValue) -> String {
+        let trusted = m["trusted"].bool
+        if m["presenting"].bool { return trusted ? "One-on-one · presenting" : "In a call · presenting" }
+        if trusted { return "One-on-one call" }
+        let listening: Bool = m["ready"]?["listen"].bool ?? false
+        return listening ? "In a call · listening" : "In a call · can’t hear it"
+    }
+
+    private static func line(_ m: JSONValue) -> String {
+        if let p = m["audio_problem"].string { return "Its voice isn’t reaching the call: " + p }
+        if let since = m["since"].string { return "For " + Format.ago(since) }
+        return ""
+    }
+
+    private static func voiceName(_ m: JSONValue, _ voices: [JSONValue]) -> String {
+        let id: Double = m["voice"].number ?? -1
+        for v in voices where v["id"].number == id { return v["name"].string ?? "Voice" }
+        return "Voice"
+    }
+
+    private static func speechLabel(_ m: JSONValue) -> String {
+        let current: String = m["speech"].string ?? "ask"
+        for (k, v) in speech where k == current { return v }
+        return "Speech"
     }
 
     private func set(_ body: [String: Any]) {
