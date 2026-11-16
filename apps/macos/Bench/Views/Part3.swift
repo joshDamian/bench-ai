@@ -605,9 +605,7 @@ struct CallBar: View {
                         }
                         .menuStyle(.borderlessButton).fixedSize()
                     }
-                    Button("Stop") {
-                        Task { if let d = try? await store.api.call("/api/meeting/stop", method: "POST", body: [:]) { m = try? JSONDecoder().decode(JSONValue.self, from: d) } }
-                    }
+                    Button("Stop") { stop() }
                     .buttonStyle(TonalButton(height: 26))
                 }
                 .padding(.horizontal, 20).padding(.vertical, 10)
@@ -647,6 +645,11 @@ struct CallBar: View {
         let current: String = m["speech"].string ?? "ask"
         for (k, v) in speech where k == current { return v }
         return "Speech"
+    }
+
+    /// Ends the call (the shadowed `m` in the body is the one shown, not this state).
+    private func stop() {
+        Task { if let d = try? await store.api.call("/api/meeting/stop", method: "POST", body: [:]) { self.m = try? JSONDecoder().decode(JSONValue.self, from: d) } }
     }
 
     private func set(_ body: [String: Any]) {
