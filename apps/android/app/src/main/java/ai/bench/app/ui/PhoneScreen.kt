@@ -341,7 +341,9 @@ private fun AppPicker(already: Set<String>, onDismiss: () -> Unit, onPick: (Stri
 @Composable
 fun AppIcon(pkg: String) {
     val context = LocalContext.current
-    val img = remember(pkg) { runCatching { androidx.core.graphics.drawable.toBitmap(context.packageManager.getApplicationIcon(pkg), 96, 96).asImageBitmap() }.getOrNull() }
+    val img = remember(pkg) { runCatching { context.packageManager.getApplicationIcon(pkg).let { d ->
+        android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888).also { b -> d.setBounds(0, 0, 96, 96); d.draw(android.graphics.Canvas(b)) }
+    }.asImageBitmap() }.getOrNull() }
     if (img != null) androidx.compose.foundation.Image(img, null, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)))
     else Box(Modifier.size(40.dp).background(Bench.colors.surface3, RoundedCornerShape(12.dp)))
 }

@@ -67,7 +67,7 @@ object PhoneHands {
         )
         val s = runBlocking {
             withTimeout(15_000) {
-                suspendCancellableCoroutine { k ->
+                suspendCancellableCoroutine<IShell?> { k ->
                     val conn = object : ServiceConnection {
                         override fun onServiceConnected(name: ComponentName?, b: IBinder?) { if (k.isActive) k.resume(b?.let { IShell.Stub.asInterface(it) }) }
                         override fun onServiceDisconnected(name: ComponentName?) { shell = null; displayId = -1 }
