@@ -33,12 +33,6 @@ object PhoneActions {
         PhoneShares.missing(c, share.kind)?.let { throw Refused("${share.name} is shared, but Android has not given Bench $it access yet. The person turns it on in Bench, This phone.") }
         fun a(k: String) = args[k].str()?.trim().orEmpty()
         return when (tool) {
-            "messages" -> messages(share, a("chat"))
-            "reply" -> {
-                if (share.access != "reply") throw Refused("${share.name} is shared to read only")
-                PhoneNotifications.reply(c, share.name, a("chat"), a("text"))?.let { throw Refused(it) }
-                "Replied to ${a("chat")} on ${share.name}."
-            }
             "events" -> events(c, a("from"), a("to"))
             "add_event" -> {
                 if (share.access != "write") throw Refused("The calendar is shared to read only")
@@ -53,18 +47,6 @@ object PhoneActions {
 
     private val day = DateTimeFormatter.ofPattern("EEE d MMM")
     private val time = DateTimeFormatter.ofPattern("H:mm")
-
-    private fun messages(share: PhoneShare, chat: String): String {
-        val list = PhoneNotifications.recent(share.name, chat).takeLast(40)
-        if (list.isEmpty()) return if (chat.isBlank()) "No new ${share.name} messages since Bench was linked." else "No new messages from “$chat”."
-        val zone = ZoneId.systemDefault()
-        val answerable = PhoneNotifications.answerable(share.name).toSet()
-        return list.joinToString("\n") { m ->
-            val t = Instant.ofEpochMilli(m.at).atZone(zone)
-            val who = if (m.from == m.chat) m.chat else "${m.from} in ${m.chat}"
-            "${t.format(day)} ${t.format(time)} · $who: ${m.text}"
-        } + if (answerable.isNotEmpty()) "\n\nCan reply now (phone_reply): ${answerable.joinToString(", ")}" else ""
-    }
 
     private fun parse(s: String, fallback: ZonedDateTime): ZonedDateTime {
         if (s.isBlank()) return fallback

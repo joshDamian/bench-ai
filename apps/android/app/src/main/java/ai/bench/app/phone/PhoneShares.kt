@@ -3,7 +3,6 @@ package ai.bench.app.phone
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,17 +32,12 @@ data class Shareable(val id: String, val kind: String, val name: String, val sub
 
 object PhoneShares {
     val catalog = listOf(
-        Shareable("whatsapp", "messages", "WhatsApp", "New messages, and replies from the notification", "com.whatsapp", listOf("read" to "Read only", "reply" to "Read and reply")),
-        Shareable("whatsapp-business", "messages", "WhatsApp Business", "New messages, and replies from the notification", "com.whatsapp.w4b", listOf("read" to "Read only", "reply" to "Read and reply")),
-        Shareable("telegram", "messages", "Telegram", "New messages, and replies from the notification", "org.telegram.messenger", listOf("read" to "Read only", "reply" to "Read and reply")),
         Shareable("calendar", "calendar", "Calendar", "Your events", accesses = listOf("read" to "Read only", "write" to "Read and add")),
         Shareable("contacts", "contacts", "Contacts", "Look up a name or number"),
         Shareable("sms", "sms", "Texts", "Send an SMS"),
         Shareable("handover", "handover", "Prepare and hand over", "A message, event or route, ready in its app. You finish it."),
     )
 
-    /** The apps whose notifications are read, by package. */
-    val messageApps = catalog.filter { it.kind == "messages" }.associate { it.path!! to it.name }
 
     private val json = Json { ignoreUnknownKeys = true }
     private val _shares = MutableStateFlow<List<PhoneShare>>(emptyList())
@@ -80,7 +74,6 @@ object PhoneShares {
 
     /** What Android must allow before a share works, or null when it is already allowed. */
     fun missing(c: Context, kind: String): String? = when (kind) {
-        "messages" -> if (c.packageName in NotificationManagerCompat.getEnabledListenerPackages(c)) null else "notifications"
         "calendar" -> if (granted(c, Manifest.permission.READ_CALENDAR) && granted(c, Manifest.permission.WRITE_CALENDAR)) null else "calendar"
         "contacts" -> if (granted(c, Manifest.permission.READ_CONTACTS)) null else "contacts"
         "sms" -> if (granted(c, Manifest.permission.SEND_SMS)) null else "sms"

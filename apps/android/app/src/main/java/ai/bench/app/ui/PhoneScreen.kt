@@ -158,7 +158,6 @@ fun PhoneScreen(store: BenchStore, onBack: () -> Unit) {
                 }
             }
         }
-        group("Messages", listOf("whatsapp", "whatsapp-business", "telegram"))
         group("Calendar and people", listOf("calendar", "contacts"))
         group("Texts", listOf("sms"))
         group("Open apps for you", listOf("handover")) {
