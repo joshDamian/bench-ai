@@ -243,6 +243,10 @@ export interface Session {
   pinned?: boolean;
   /** The schedule that started it, if one did. */
   schedule_id?: string | null;
+  /** The most one query of an unattended run may spend, in USD. */
+  budget?: number | null;
+  /** It stopped at its budget and waits for the person. */
+  capped?: boolean;
 }
 
 /** A persisted transcript entry. `kind` is the SDK message type, or `user` for what the person sent. */

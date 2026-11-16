@@ -7,6 +7,8 @@ import Observation
 @Observable
 final class BenchStore {
     let api: BenchAPI
+    /// What this Mac shares with Bench, and the link that serves it.
+    let link: MacLink
 
     var ready = false
     var connected = false
@@ -48,6 +50,7 @@ final class BenchStore {
 
     init(config: ServerConfig) {
         api = BenchAPI(config: config)
+        link = MacLink(api: api)
     }
 
     var needsYouCount: Int { approvals.count }
@@ -83,6 +86,7 @@ final class BenchStore {
         started = true
         Task { await refresh() }
         connect()
+        link.start()
         // A Mac that slept has a socket that only looks open.
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reconnectNow() }
@@ -94,6 +98,7 @@ final class BenchStore {
 
     func stop() {
         started = false
+        link.stop()
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
         pingTimer?.invalidate()

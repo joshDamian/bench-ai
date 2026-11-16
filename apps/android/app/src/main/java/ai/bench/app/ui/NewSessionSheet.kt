@@ -89,7 +89,7 @@ private fun fieldColors() = OutlinedTextFieldDefaults.colors(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String) -> Unit, research: Boolean = false) {
+fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String) -> Unit, research: Boolean = false, onSchedule: (ai.bench.app.data.SchedulePrefill) -> Unit = {}, initial: String = "") {
     val s by store.state.collectAsState()
     val c = Bench.colors
     val scope = rememberCoroutineScope()
@@ -98,7 +98,7 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
     // Research works in the Research project's own folder: no branch, a report at the end.
     var where by remember { mutableStateOf(if (research) "checkout" else "task") }
     LaunchedEffect(research) { if (research) runCatching { store.api.research() }.onSuccess { projectId = it.id; store.refresh() } }
-    var prompt by remember { mutableStateOf("") }
+    var prompt by remember { mutableStateOf(initial) }
     var mode by remember { mutableStateOf(Mode.of(s.defaults.mode)) }
     var modelId by remember { mutableStateOf(s.defaults.modelId) }
     var providerId by remember { mutableStateOf<String?>(null) }
@@ -188,6 +188,13 @@ fun NewSessionSheet(store: BenchStore, onDismiss: () -> Unit, onCreated: (String
                 if (picked.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     picked.forEach { f -> AttachmentTile(f.name, f.uri, f.type.startsWith("image/"), f.size, null, null) { picked = picked - f } }
                 }
+                // "Whenever a new role is posted…": a run once would miss the point; offer a When… instead.
+                if (projectId != null && WHENEVER.containsMatchIn(prompt)) Text(
+                    "Run this whenever it happens instead",
+                    fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = c.accent,
+                    modifier = Modifier.padding(horizontal = 4.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .clickable { onSchedule(ai.bench.app.data.SchedulePrefill(prompt.lineSequence().first().take(60), prompt.trim(), projectId)) }.padding(vertical = 4.dp),
+                )
                 error?.let { Text(it, color = c.bad, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp)) }
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     androidx.compose.material3.IconButton(onClick = { files.launch("*/*") }) { androidx.compose.material3.Icon(Icons.Default.Add, "Attach a file", tint = c.muted) }
@@ -561,3 +568,6 @@ private fun BrowseRow(name: String, sub: String?, color: androidx.compose.ui.gra
         sub?.let { Text(it, fontSize = 12.sp, color = Bench.colors.accent) }
     }
 }
+
+/** A prompt about something that keeps happening: "whenever", "every time", "when … is posted". */
+private val WHENEVER = Regex("""\b(whenever|every time|each time|when (a |an |the )?(new )?\w+( \w+)? (is|are|gets?) (posted|listed|published|added|released|changed?|updated|announced))\b""", RegexOption.IGNORE_CASE)

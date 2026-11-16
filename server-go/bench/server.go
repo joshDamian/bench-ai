@@ -424,7 +424,12 @@ func (s *Server) wire() {
 			if a.Str("title") != "" {
 				body += " — " + a.Str("title")
 			}
-			go s.pushAll(O("title", "Approval needed: "+tool, "body", body, "url", SessionPath(ss), "tag", "approval-"+a.Str("id"), "approvalId", a.Str("id"), "sessionId", ss.Str("id")), "approval")
+			title := "Approval needed: " + tool
+			// A line for a call: the line itself, so it can be read from the lock screen.
+			if a.Str("tool") == toolPrefix+"meeting_say" {
+				title, body = "Say this in the call?", a.ObjAt("input").Str("text")
+			}
+			go s.pushAll(O("title", title, "body", body, "url", SessionPath(ss), "tag", "approval-"+a.Str("id"), "approvalId", a.Str("id"), "sessionId", ss.Str("id")), "approval")
 		}
 	})
 	rt.On("suggestion", func(x any) {
@@ -443,7 +448,7 @@ func (s *Server) wire() {
 	rt.On("turn-done", func(x any) {
 		td := x.(TurnDone)
 		ss := td.Session
-		if ss == nil {
+		if ss == nil || s.Svc.QuietRun(ss, td.Reply) {
 			return
 		}
 		if td.Limited {
@@ -464,6 +469,8 @@ func (s *Server) wire() {
 	})
 	s.Svc.On("task", func(t any) { s.broadcast(O("type", "task", "task", t), "") })
 	s.Svc.On("git", func(p any) { s.broadcast(O("type", "git", "project_id", p), "") })
+	s.Svc.On("devices", func(any) { s.broadcast(O("type", "devices"), "") })
+	s.Svc.On("meeting", func(any) { s.broadcast(O("type", "meeting"), "") })
 }
 
 // --- helpers -------------------------------------------------------------------------------
@@ -1316,9 +1323,55 @@ func (s *Server) routesInit() {
 	s.route("GET", "/api/schedules", func(c *ctxt) (any, error) { return svc.Schedules(), nil })
 	s.route("POST", "/api/schedules", func(c *ctxt) (any, error) { return svc.AddSchedule(c.body) })
 	s.route("PATCH", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.UpdateSchedule(c.params[0], c.body) })
-	s.route("DELETE", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.DeleteSchedule(c.params[0]) })
+	s.route("DELETE", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.DeleteSchedule(c.params[0], q(c, "runs") == "1") })
+	s.route("GET", "/api/schedules/:id", func(c *ctxt) (any, error) { return svc.ScheduleDetail(c.params[0]) })
 	s.route("POST", "/api/schedules/:id/run", func(c *ctxt) (any, error) { return svc.RunSchedule(c.params[0]) })
 	s.route("POST", "/api/research", func(c *ctxt) (any, error) { return svc.Research() })
+	s.route("GET", "/api/about", func(c *ctxt) (any, error) { return svc.About(), nil })
+	s.route("PUT", "/api/about", func(c *ctxt) (any, error) { return svc.SaveAbout(c.body) })
+	s.route("POST", "/api/about/draft", func(c *ctxt) (any, error) { return svc.AboutDraft(c.body.Get("action")) })
+	s.route("POST", "/api/about/undo", func(c *ctxt) (any, error) { return svc.AboutUndo() })
+	s.route("POST", "/api/about/from-cv", func(c *ctxt) (any, error) { return svc.AboutFromCV() })
+	s.route("GET", "/api/activity", func(c *ctxt) (any, error) {
+		days, _ := strconv.Atoi(q(c, "days"))
+		return svc.Activity(days), nil
+	})
+	s.route("POST", "/api/activity/seen", func(c *ctxt) (any, error) { return svc.SeenActivity(), nil })
+	s.route("GET", "/api/brief", func(c *ctxt) (any, error) { return svc.BriefSettings(), nil })
+	s.route("PUT", "/api/brief", func(c *ctxt) (any, error) { return svc.SetBrief(c.body), nil })
+	s.route("POST", "/api/activity/:id/undo", func(c *ctxt) (any, error) { return svc.UndoActivity(c.params[0]) })
+	s.route("GET", "/api/housekeeping", func(c *ctxt) (any, error) { return svc.Housekeeping(), nil })
+	s.route("PUT", "/api/housekeeping", func(c *ctxt) (any, error) { return svc.SetHousekeeping(c.body), nil })
+	s.route("GET", "/api/archive", func(c *ctxt) (any, error) { return svc.Archive(), nil })
+	s.route("POST", "/api/archive/restore", func(c *ctxt) (any, error) { return svc.Restore(c.body.Str("kind"), c.body.Str("id")) })
+	s.route("DELETE", "/api/archive", func(c *ctxt) (any, error) { return svc.EmptyArchive(), nil })
+	s.route("GET", "/api/meeting", func(c *ctxt) (any, error) { return svc.Meeting().View(), nil })
+	s.route("PUT", "/api/meeting", func(c *ctxt) (any, error) { return svc.Meeting().Set(c.body) })
+	s.route("POST", "/api/meeting/stop", func(c *ctxt) (any, error) { return svc.Meeting().Stop(), nil })
+	s.route("GET", "/api/linked-devices", func(c *ctxt) (any, error) { return svc.Devices().List(), nil })
+	s.route("GET", "/api/linked-devices/:id", func(c *ctxt) (any, error) { return svc.Devices().Device(c.params[0]) })
+	s.route("DELETE", "/api/linked-devices/:id", func(c *ctxt) (any, error) { return svc.Devices().Forget(c.params[0]) })
+	s.route("POST", "/api/linked-devices/:id/ask", func(c *ctxt) (any, error) { return svc.Devices().Ask(c.params[0], c.body, "") })
+	s.route("DELETE", "/api/linked-devices/asks/:id", func(c *ctxt) (any, error) { return svc.Devices().CancelAsk(c.params[0]) })
+	s.route("GET", "/api/recipes", func(c *ctxt) (any, error) { return svc.Recipes(), nil })
+	s.route("POST", "/api/recipes", func(c *ctxt) (any, error) { return svc.AddRecipe(c.body) })
+	s.route("PATCH", "/api/recipes/:id", func(c *ctxt) (any, error) { return svc.UpdateRecipe(c.params[0], c.body) })
+	s.route("DELETE", "/api/recipes/:id", func(c *ctxt) (any, error) { return svc.DeleteRecipe(c.params[0]) })
+	s.route("GET", "/api/spending", func(c *ctxt) (any, error) { return svc.SpendingInfo(), nil })
+	s.route("PUT", "/api/spending", func(c *ctxt) (any, error) { return svc.SetSpending(c.body) })
+	s.route("POST", "/api/sessions/:id/budget", func(c *ctxt) (any, error) { return svc.Budget(c.params[0], c.body.Get("action")) })
+	s.route("GET", "/api/rules", func(c *ctxt) (any, error) { return svc.Runtime.Rules().List(), nil })
+	s.route("GET", "/api/reach", func(c *ctxt) (any, error) { return svc.Reach(), nil })
+	s.route("GET", "/api/browser", func(c *ctxt) (any, error) { return svc.Runtime.Browser().Status(), nil })
+	s.route("POST", "/api/browser/sign-out", func(c *ctxt) (any, error) {
+		site, _ := c.body.Get("site").(string)
+		if site == "" {
+			return nil, fail("Which site?")
+		}
+		svc.Runtime.Browser().SignOut(site)
+		return svc.Runtime.Browser().Status(), nil
+	})
+	s.route("PUT", "/api/rules", func(c *ctxt) (any, error) { return svc.Runtime.Rules().Set(c.body.Get("key"), c.body.Get("value")) })
 	s.route("POST", "/api/sessions/:id/archive", func(c *ctxt) (any, error) {
 		archived := c.body.Get("archived") != false
 		r, err := svc.ArchiveSession(c.params[0], archived)
@@ -1994,6 +2047,20 @@ func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
 		delete(s.clients, c)
 		s.hubMu.Unlock()
 		c.close(websocket.StatusNormalClosure, "")
+	case "/api/linked-devices/link":
+		// Bench for Mac: what it shares, and the calls sessions make into it.
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
+		if err != nil {
+			return
+		}
+		s.Svc.Devices().Link(ws)
+	case "/api/browser/view":
+		// The take-over view: the server's browser, streamed to the person, their input sent back.
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
+		if err != nil {
+			return
+		}
+		s.Svc.Runtime.Browser().View(ws)
 	case "/api/terminal":
 		if Env("DISABLE_TERMINAL") != "" {
 			refuse(w, "403 Forbidden")

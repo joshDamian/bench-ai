@@ -1,0 +1,67 @@
+#!/bin/sh
+# Sets up calls for bench-go: a speaker and microphone Bench can use (PulseAudio), and its
+# voice and hearing (server-go/voice/bench_voice.py: Kokoro to speak, a streaming recogniser
+# to hear, both through sherpa-onnx, models kept loaded). Run it once, as the account Bench
+# runs as:
+#
+#   sh server-go/meeting-setup
+#
+# It asks for sudo once, for the system packages. The rest goes in ~/.local/share/bench-go/voice:
+#   venv/                  Python with sherpa-onnx
+#   bench_voice.py         the helper
+#   models/kokoro          the voice (Kokoro v1.0: 54 voices)
+#   models/asr             hearing, live (NeMo fast-conformer, streaming, English)
+#   models/accurate        hearing, second pass (NVIDIA Parakeet TDT 0.6B v2, English)
+# Then it restarts bench-go, whose browser starts again with the speaker and microphone.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+HOME_DIR="${BENCH_GO_HOME:-$HOME/.local/share/bench-go}"
+VOICE_DIR="$HOME_DIR/voice"
+SHERPA_PY=1.13.8
+REL=https://github.com/k2-fsa/sherpa-onnx/releases/download
+say() { for l in "$@"; do printf '%s\n' "$l"; done; }
+
+say "System packages (PulseAudio, Python)…"
+sudo apt-get update -qq
+sudo apt-get install -y -qq pulseaudio pulseaudio-utils python3-venv curl bzip2 >/dev/null
+
+# PulseAudio for this account, kept running: Bench's speaker and microphone live in it.
+systemctl --user enable --now pulseaudio.socket pulseaudio.service >/dev/null 2>&1 || pulseaudio --start --exit-idle-time=-1 || true
+
+say "The voice helper…"
+mkdir -p "$VOICE_DIR/models"
+[ -x "$VOICE_DIR/venv/bin/python" ] || python3 -m venv "$VOICE_DIR/venv"
+"$VOICE_DIR/venv/bin/pip" install -q --upgrade pip >/dev/null
+"$VOICE_DIR/venv/bin/pip" install -q "sherpa-onnx==$SHERPA_PY" numpy
+cp "$ROOT/server-go/voice/bench_voice.py" "$VOICE_DIR/bench_voice.py"
+
+fetch() { # name, folder in models
+  if [ ! -d "$VOICE_DIR/models/$2" ]; then
+    say "  $1…"
+    curl -fsSL "$3" | tar -xj -C "$VOICE_DIR/models"
+    mv "$VOICE_DIR/models/$1" "$VOICE_DIR/models/$2"
+  fi
+}
+fetch kokoro-multi-lang-v1_0 kokoro "$REL/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
+fetch sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms asr "$REL/asr-models/sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms.tar.bz2"
+# The accurate second pass (about 650 MB): each finished sentence is heard again by it.
+fetch sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8 accurate "$REL/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2"
+
+# A quick check: say something.
+if printf '{"id":"1","text":"Bench can speak."}\n' | "$VOICE_DIR/venv/bin/python" "$VOICE_DIR/bench_voice.py" say --models "$VOICE_DIR/models" 2>/dev/null | grep -q '"file"'; then
+  say "Voice: works"
+else
+  say "Voice: the helper did not speak; check $VOICE_DIR"
+fi
+rm -f /tmp/bench-say-*.wav
+
+# What the first version of this script installed, no longer used.
+rm -rf "$HOME_DIR/piper" "$HOME_DIR/whisper"
+
+if systemctl --user is-active --quiet bench-go.service 2>/dev/null; then
+  systemctl --user restart bench-go.service
+  say "Restarted bench-go: its browser now has a speaker and microphone."
+fi
+say "" "Done. In a session: join a call in the browser, and Bench listens and speaks there." \
+    "For a one-on-one, turn it on from the call bar in the app."

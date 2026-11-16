@@ -49,6 +49,29 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
     val reports: StateFlow<List<Report>> = _reports.asStateFlow()
     private val _schedules = MutableStateFlow<List<Schedule>>(emptyList())
     val schedules: StateFlow<List<Schedule>> = _schedules.asStateFlow()
+    /** Caps for unattended runs, and whether they are paused. */
+    private val _spending = MutableStateFlow<Spending?>(null)
+    val spending: StateFlow<Spending?> = _spending.asStateFlow()
+    fun setSpending(s: Spending) { _spending.value = s }
+    /** Runs that happened on their own since the person last looked at Activity, for Home's line. */
+    private val _activityUnseen = MutableStateFlow(0)
+    val activityUnseen: StateFlow<Int> = _activityUnseen.asStateFlow()
+    fun clearActivityUnseen() { _activityUnseen.value = 0 }
+    /** Saved prompts with blanks, for New. */
+    private val _recipes = MutableStateFlow<List<Recipe>>(emptyList())
+    val recipes: StateFlow<List<Recipe>> = _recipes.asStateFlow()
+    fun setRecipes(list: List<Recipe>) { _recipes.value = list }
+    /** The call a session is in, if any. */
+    private val _meeting = MutableStateFlow<MeetingState?>(null)
+    val meeting: StateFlow<MeetingState?> = _meeting.asStateFlow()
+    fun loadMeeting() { scope.launch { runCatching { api.meeting() }.onSuccess { _meeting.value = it } } }
+    fun setMeeting(m: MeetingState) { _meeting.value = m }
+    /** Devices that share part of themselves (the Mac), with what waits on them. */
+    private val _devices = MutableStateFlow<List<LinkedDevice>>(emptyList())
+    val devices: StateFlow<List<LinkedDevice>> = _devices.asStateFlow()
+    fun loadDevices() { scope.launch { runCatching { api.linkedDevices() }.onSuccess { _devices.value = it } } }
+    /** A new schedule's starting fields, set by Keep watching and taken once by the form. */
+    var schedulePrefill: SchedulePrefill? = null
     private var extrasJob: Job? = null
 
     /** Reloads reports and schedules; a burst of calls makes one request. */
@@ -58,11 +81,21 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
             delay(300)
             runCatching { api.reports() }.onSuccess { _reports.value = it }
             runCatching { api.schedules() }.onSuccess { _schedules.value = it }
+            runCatching { api.spending() }.onSuccess { _spending.value = it }
+            runCatching { api.recipes() }.onSuccess { _recipes.value = it }
+            runCatching { api.linkedDevices() }.onSuccess { _devices.value = it }
+            runCatching { api.meeting() }.onSuccess { _meeting.value = it }
+            runCatching { api.activity() }.onSuccess { _activityUnseen.value = it.unseen }
         }
     }
 
+    /** Sessions the person looked at, newest first: the Recent sheet. Kept for this run of the app. */
+    private val _recent = MutableStateFlow<List<String>>(emptyList())
+    val recent: StateFlow<List<String>> = _recent.asStateFlow()
+
     /** The person looked at a session: Home stops listing it as new. Applied here at once. */
     fun markSeen(id: String) {
+        _recent.update { (listOf(id) + it.filter { x -> x != id }).take(20) }
         val at = java.time.Instant.now().toString()
         _state.update { st -> st.copy(sessions = st.sessions.map { if (it.id == id) it.copy(seen_at = maxOf(at, it.updated_at)) else it }) }
         _reports.update { list -> list.map { if (it.session_id == id) it.copy(seen = true) else it } }
@@ -246,6 +279,8 @@ class BenchStore(val api: BenchApi, private val scope: CoroutineScope) {
             is ServerMessage.Event -> { noteStep(m.event); _session.tryEmit(m) }
             is ServerMessage.Delta, is ServerMessage.Suggestion, is ServerMessage.Commands -> _session.tryEmit(m)
             is ServerMessage.Git, ServerMessage.Pong -> Unit
+            ServerMessage.DevicesChanged -> loadDevices()
+            ServerMessage.MeetingChanged -> loadMeeting()
         }
     }
 

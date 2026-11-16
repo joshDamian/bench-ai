@@ -232,6 +232,11 @@ type Runtime struct {
 	Store        *Store
 	idle         time.Duration
 	mcp          func(sessionID string) *MCPServer
+	// DevicesNote and ShareRule come from the service: what linked devices share (devices.go).
+	DevicesNote func() string
+	ShareRule   func(tool string, in *Obj) string
+	// Answered is told each approval's answer (a meeting line said no to speaks another).
+	Answered func(approval *Obj, allowed bool)
 	mu           sync.Mutex
 	startMu      sync.Mutex
 	live         map[string]*live
@@ -243,6 +248,9 @@ type Runtime struct {
 	probes       map[string]*probe
 	tmpBefore    map[string]map[string]bool
 	notes        *Notes
+	rules        *Rules
+	about        *About
+	browser      *Browser
 	stop         chan struct{}
 }
 
@@ -756,6 +764,13 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 	env = mergeEnv(env, pe)
 	env = mergeEnv(env, []string{"TMPDIR=" + scratch, "TMP=" + scratch, "TEMP=" + scratch, "CLAUDE_AGENT_SDK_CLIENT_APP=bench"})
 	id := s.Str("id")
+	// The browser, for project sessions, when Chromium is installed: started now so its tools find it.
+	var browserMCP *Obj
+	if !ask {
+		if browserMCP = r.Browser().MCP(); browserMCP != nil {
+			go r.Browser().Ensure()
+		}
+	}
 	attach := AttachNote(r.AttachmentsDir(id))
 	var parts []string
 	add := func(x string) {
@@ -776,6 +791,14 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		add(scratchNote(scratch))
 		add(attach)
 		add(ReportsNote(ReportsDir(r.AttachmentsDir(id))))
+		add(r.About().Note())
+		add(r.Rules().Note())
+		if r.DevicesNote != nil {
+			add(r.DevicesNote())
+		}
+		if browserMCP != nil {
+			add(BrowserNote)
+		}
 		add(r.Notes().Brief(pp))
 		if routed != nil {
 			add(RoutingNote)
@@ -805,6 +828,7 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		PartialMessages:   true,
 		PromptSuggestions: true,
 		Effort:            s.Str("effort"),
+		MaxBudgetUsd:      s.Num("budget"),
 		Resume:            s.Str("claude_session_id"),
 		AppendSystemPrompt: instructions,
 		OnStderr: func(line string) {
@@ -843,11 +867,16 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 	if r.mcp != nil {
 		o.MCP = r.mcp(id)
 	}
+	if browserMCP != nil {
+		o.ExtraMCP = O("browser", browserMCP)
+		// Browsing is not asked about step by step; the rules still stop what leaves the box.
+		o.AllowedTools = []string{"mcp__browser"}
+	}
 	if s.Str("task_id") != "" && s.Str("purpose") != "review" {
 		o.Hooks = append(o.Hooks, HookSpec{Event: "Stop", Timeout: int(CheckTimeout.Seconds()) + 60, Fn: func(ctx context.Context, in *Obj) *Obj { return r.onStop(ctx, id, in) }})
 	}
 	o.Hooks = append(o.Hooks,
-		HookSpec{Event: "PreToolUse", Fn: func(ctx context.Context, in *Obj) *Obj { return r.beforeTool(in) }},
+		HookSpec{Event: "PreToolUse", Fn: func(ctx context.Context, in *Obj) *Obj { return r.beforeTool(id, in) }},
 		HookSpec{Event: "PostToolUse", Fn: func(ctx context.Context, in *Obj) *Obj { return r.afterTool(id, in) }},
 		HookSpec{Event: "PostToolUseFailure", Fn: func(ctx context.Context, in *Obj) *Obj { return r.afterTool(id, in) }},
 	)
@@ -1097,7 +1126,18 @@ func (r *Runtime) onResult(l *live, id string, m *Obj, priced *Obj) {
 	if byModel.Len() > 0 {
 		patch.Set("model_usage", byModel)
 	}
-	if truthy(m.Get("is_error")) && m.Str("subtype") != "error_during_execution" {
+	capped := m.Str("subtype") == "error_max_budget_usd"
+	if capped {
+		patch.Set("capped", true)
+	}
+	if m.Str("subtype") == "success" {
+		if steps := ThenSteps(m.Str("result")); steps != nil {
+			patch.Set("next_steps", steps)
+		} else {
+			patch.Set("next_steps", nil)
+		}
+	}
+	if truthy(m.Get("is_error")) && m.Str("subtype") != "error_during_execution" && !capped {
 		var errs []string
 		for _, e := range arr(m.Get("errors")) {
 			errs = append(errs, str(e))
@@ -1113,6 +1153,9 @@ func (r *Runtime) onResult(l *live, id string, m *Obj, priced *Obj) {
 		}
 	}
 	r.update(id, patch)
+	if capped {
+		r.event(id, "notice", O("text", "Stopped at its $"+jsNum(s.Num("budget"))+" cap."))
+	}
 	l.mu.Lock()
 	l.writeUp = false
 	limit := l.limit
@@ -1128,7 +1171,11 @@ func (r *Runtime) onResult(l *live, id string, m *Obj, priced *Obj) {
 		r.Emit("limit", LimitEvent{SessionID: id, Message: limit.Message, Until: until})
 	}
 	if turns == 0 {
-		r.Emit("turn-done", TurnDone{Session: r.Store.GetSession(id), OK: !truthy(m.Get("is_error")), Limited: limit != nil})
+		reply := ""
+		if m.Str("subtype") == "success" {
+			reply = m.Str("result")
+		}
+		r.Emit("turn-done", TurnDone{Session: r.Store.GetSession(id), OK: !truthy(m.Get("is_error")), Limited: limit != nil, Reply: reply})
 	}
 }
 
@@ -1142,6 +1189,8 @@ type TurnDone struct {
 	Session *Obj
 	OK      bool
 	Limited bool
+	// Reply is the turn's last text, when it ended well.
+	Reply string
 }
 
 // ask is the CLI's question about one tool call, held until a person answers.
@@ -1273,6 +1322,9 @@ func (r *Runtime) Answer(approvalID string, a *Obj) (bool, error) {
 	if h == nil {
 		return false, fail("That request is no longer waiting", 404)
 	}
+	if r.Answered != nil {
+		r.Answered(h.approval, truthy(a.Get("allow")))
+	}
 	if !truthy(a.Get("allow")) {
 		msg := strings.TrimSpace(a.Str("message"))
 		if msg == "" {
@@ -1288,6 +1340,12 @@ func (r *Runtime) Answer(approvalID string, a *Obj) (bool, error) {
 			ans = O()
 		}
 		input = input.Clone().Set("answers", ans)
+	}
+	// A line for the meeting, a reply or a text may be changed before it goes.
+	if t := h.approval.Str("tool"); t == toolPrefix+"meeting_say" || t == toolPrefix+"phone_reply" || t == toolPrefix+"phone_sms" {
+		if t := strings.TrimSpace(a.Str("text")); t != "" {
+			input = input.Clone().Set("text", t)
+		}
 	}
 	if h.approval.Str("tool") == "ExitPlanMode" {
 		mode := a.Str("mode")
@@ -1393,7 +1451,35 @@ func (r *Runtime) SetModel(id string, providerID string, modelID any, hasModel b
 	return r.update(id, patch), nil
 }
 
-func (r *Runtime) beforeTool(in *Obj) *Obj {
+func (r *Runtime) beforeTool(sid string, in *Obj) *Obj {
+	// A call into a device's share follows that share's rule, set on the device.
+	if r.ShareRule != nil {
+		switch r.ShareRule(in.Str("tool_name"), in.ObjAt("tool_input")) {
+		case "allow":
+			return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "allow", "permissionDecisionReason", "Allowed for this share on the device"))
+		case "ask":
+			return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "ask", "permissionDecisionReason", "Asks first: this share on the device"))
+		}
+	}
+	// The person's Never list: stopped here, before the tool runs, in every permission mode.
+	rule, value := r.Rules().Decide(in.Str("tool_name"), in.ObjAt("tool_input"))
+	// Asks first: put to the person even in a mode that would let it run.
+	if value == "ask" {
+		return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "ask", "permissionDecisionReason", "Asks first: "+strings.ToLower(rule.Label)))
+	}
+	if value == "never" {
+		label := strings.ToLower(rule.Label)
+		r.Notice(sid, "Stopped before it could "+label+": that is on your Never list.")
+		by := "Never rule"
+		if ss := r.Store.GetSession(sid); ss != nil {
+			by = "In " + ss.Str("title")
+		}
+		r.Store.AddActivity("never", "Stopped before it could "+label, by, "On your Never list", sid, nil)
+		return O("hookSpecificOutput", O("hookEventName", "PreToolUse", "permissionDecision", "deny", "permissionDecisionReason", "Blocked by the person's Never list: "+label+". Do not try another way. Prepare it for the person to finish instead (an email as a drafts file in the reports folder)."))
+	}
+	if r.About().Touches(in.Str("tool_name"), in.ObjAt("tool_input")) {
+		r.About().Before()
+	}
 	if id := in.Str("tool_use_id"); id != "" {
 		snap := tmpSnapshot()
 		r.mu.Lock()
@@ -1404,6 +1490,9 @@ func (r *Runtime) beforeTool(in *Obj) *Obj {
 }
 
 func (r *Runtime) afterTool(sid string, in *Obj) *Obj {
+	if r.About().Touches(in.Str("tool_name"), in.ObjAt("tool_input")) {
+		r.About().After(sid)
+	}
 	tid := in.Str("tool_use_id")
 	r.mu.Lock()
 	before, ok := r.tmpBefore[tid]

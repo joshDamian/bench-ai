@@ -15,6 +15,9 @@ import ai.bench.app.data.SessionEvent
 import ai.bench.app.data.SlashCommand
 import ai.bench.app.data.Transcript
 import ai.bench.app.data.UploadRef
+import ai.bench.app.data.arr
+import ai.bench.app.data.get
+import ai.bench.app.data.str
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,13 +43,47 @@ data class Stream(val text: String = "", val thinking: String = "")
 /** The server's page size for a transcript read (src/store.mjs listEvents). */
 private const val PAGE = 400
 
-class SessionViewModel(val sessionId: String, private val store: BenchStore) : ViewModel() {
+class SessionViewModel(val sessionId: String, val store: BenchStore) : ViewModel() {
     val api = store.api
 
     /** Looking at a session clears it from Home's "Ready for you". */
     fun markSeen() = store.markSeen(sessionId)
 
     private val events = MutableStateFlow<List<SessionEvent>>(emptyList())
+
+    /**
+     * "Since you looked": one line on what changed after a moment - turns finished, files
+     * changed, commits - and where it is now. Null when nothing happened.
+     */
+    fun sinceYouLooked(since: String): String? {
+        val after = events.value.filter { it.created_at > since }
+        if (after.isEmpty()) return null
+        val turns = after.count { it.kind == "result" }
+        val files = mutableSetOf<String>()
+        var commits = 0
+        after.filter { it.kind == "assistant" }.forEach { e ->
+            e.data["content"].arr().orEmpty().filter { it["type"].str() == "tool_use" }.forEach { b ->
+                val input = b["input"]
+                when (b["name"].str()) {
+                    "Edit", "Write", "MultiEdit", "NotebookEdit" -> input["file_path"].str()?.let { files += it }
+                    "Bash" -> if (input["command"].str().orEmpty().contains("git commit")) commits++
+                }
+            }
+        }
+        val s = session.value
+        val parts = buildList {
+            if (turns > 0) add(if (turns == 1) "finished a turn" else "finished $turns turns")
+            if (files.isNotEmpty()) add("changed ${files.size} file${if (files.size == 1) "" else "s"}")
+            if (commits > 0) add("made $commits commit${if (commits == 1) "" else "s"}")
+            when {
+                approvals.value.isNotEmpty() || s?.status == "waiting" -> add("waiting for you")
+                s?.status == "running" -> add("still working")
+                s?.status == "error" -> add("stopped with an error")
+                s?.capped == true -> add("stopped at its cap")
+            }
+        }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(", ")
+    }
     private val _stream = MutableStateFlow(Stream())
     val stream: StateFlow<Stream> = _stream.asStateFlow()
     private val _loading = MutableStateFlow(true)

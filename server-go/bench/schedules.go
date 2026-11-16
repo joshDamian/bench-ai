@@ -33,11 +33,27 @@ func (s *Store) schedule(r *Obj) *Obj {
 		return nil
 	}
 	r.Set("enabled", truthy(r.Get("enabled")))
+	r.Set("keep_board", truthy(r.Get("keep_board")))
+	r.Delete("watch_hash")
+	r.Delete("archived_at")
+	if w := r.Str("watch"); w != "" {
+		r.Set("watch", ParseJSON(w))
+	} else {
+		r.Set("watch", nil)
+	}
 	return r
 }
 
+// watchColumn is a watch as its column holds it: JSON, or NULL.
+func watchColumn(v any) any {
+	if w, ok := v.(*Obj); ok && w != nil {
+		return string(ToJSON(w))
+	}
+	return nil
+}
+
 func (s *Store) ListSchedules() []*Obj {
-	rows := s.all("SELECT * FROM schedules ORDER BY created_at")
+	rows := s.all("SELECT * FROM schedules WHERE archived_at IS NULL ORDER BY created_at")
 	for _, r := range rows {
 		s.schedule(r)
 	}
@@ -45,7 +61,18 @@ func (s *Store) ListSchedules() []*Obj {
 }
 
 func (s *Store) GetSchedule(id string) *Obj {
-	return s.schedule(s.one("SELECT * FROM schedules WHERE id=?", id))
+	return s.schedule(s.one("SELECT * FROM schedules WHERE id=? AND archived_at IS NULL", id))
+}
+
+// ArchivedSchedules are the deleted schedules the archive can bring back.
+func (s *Store) ArchivedSchedules() []*Obj {
+	rows := s.all("SELECT id,title,archived_at FROM schedules WHERE archived_at IS NOT NULL ORDER BY archived_at DESC")
+	return nonNil(rows)
+}
+
+// RestoreSchedule brings a deleted schedule back, off, so it does not run until turned on.
+func (s *Store) RestoreSchedule(id string) bool {
+	return changes(s.exec("UPDATE schedules SET archived_at=NULL WHERE id=? AND archived_at IS NOT NULL", id)) > 0
 }
 
 func (s *Store) AddSchedule(o *Obj) *Obj {
@@ -54,17 +81,35 @@ func (s *Store) AddSchedule(o *Obj) *Obj {
 	if v, ok := o.Get("enabled").(bool); ok && !v {
 		enabled = 0
 	}
-	s.exec("INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		id, o.Str("title"), o.Str("project_id"), o.Str("prompt"), o.Str("days"), o.Str("time"), o.Str("tz"), o.Get("mode"), o.Get("model_id"), o.Get("provider_id"), o.Get("effort"), enabled, isoNow())
+	keep := 0
+	if truthy(o.Get("keep_board")) {
+		keep = 1
+	}
+	s.exec("INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at,keep_board,watch) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		id, o.Str("title"), o.Str("project_id"), o.Str("prompt"), o.Str("days"), o.Str("time"), o.Str("tz"), o.Get("mode"), o.Get("model_id"), o.Get("provider_id"), o.Get("effort"), enabled, isoNow(), keep, watchColumn(o.Get("watch")))
 	return s.GetSchedule(id)
 }
 
 func (s *Store) UpdateSchedule(id string, patch *Obj) *Obj {
+	for _, k := range []string{"enabled", "keep_board"} {
+		if v, ok := patch.Get(k).(bool); ok {
+			patch = patch.Clone().Set(k, sqlVal(v))
+		}
+	}
+	if patch.Has("watch") {
+		patch = patch.Clone().Set("watch", watchColumn(patch.Get("watch")))
+	}
 	s.patch("schedules", id, patch)
 	return s.GetSchedule(id)
 }
 
+// DeleteSchedule puts a schedule in the archive: off, and out of every list.
 func (s *Store) DeleteSchedule(id string) bool {
+	return changes(s.exec("UPDATE schedules SET archived_at=?, enabled=0 WHERE id=? AND archived_at IS NULL", isoNow(), id)) > 0
+}
+
+// PurgeSchedule removes a schedule for good.
+func (s *Store) PurgeSchedule(id string) bool {
 	return changes(s.exec("DELETE FROM schedules WHERE id=?", id)) > 0
 }
 
@@ -103,7 +148,7 @@ func hasDay(days []int, d int) bool {
 
 // NextRun is when a schedule next starts a session, or nil when it is off or has no days.
 func NextRun(sch *Obj, from time.Time) *time.Time {
-	if !truthy(sch.Get("enabled")) {
+	if !truthy(sch.Get("enabled")) || sch.ObjAt("watch") != nil {
 		return nil
 	}
 	days := scheduleDays(sch)
@@ -134,7 +179,7 @@ func NextRun(sch *Obj, from time.Time) *time.Time {
 // Due is whether a schedule should start a session now: on one of its days, at or after its
 // time, and not yet that day.
 func Due(sch *Obj, at time.Time) bool {
-	if !truthy(sch.Get("enabled")) {
+	if !truthy(sch.Get("enabled")) || sch.ObjAt("watch") != nil {
 		return false
 	}
 	loc := zone(sch.Str("tz"))
@@ -160,10 +205,13 @@ type Scheduler struct {
 	svc  *Service
 	stop chan struct{}
 	once sync.Once
+	// Watches whose page is being fetched now, so one look is not started twice.
+	mu      sync.Mutex
+	looking map[string]bool
 }
 
 func NewScheduler(svc *Service) *Scheduler {
-	sc := &Scheduler{svc: svc, stop: make(chan struct{})}
+	sc := &Scheduler{svc: svc, stop: make(chan struct{}), looking: map[string]bool{}}
 	go func() {
 		t := time.NewTicker(30 * time.Second)
 		defer t.Stop()
@@ -180,8 +228,22 @@ func NewScheduler(svc *Service) *Scheduler {
 }
 
 func (sc *Scheduler) Tick(at time.Time) {
+	sc.svc.MorningBrief(at)
+	sc.svc.Housekeep(at, false)
 	for _, sch := range sc.svc.Store.ListSchedules() {
+		if CheckDue(sch, at) {
+			go sc.Look(sch, at)
+		}
 		if !Due(sch, at) {
+			continue
+		}
+		// Paused: it waits, and runs later today if unpaused. Over the day's cap: skipped for today.
+		if ok, paused, reason := sc.svc.Unattended(); !ok {
+			if paused {
+				continue
+			}
+			sc.svc.Store.UpdateSchedule(sch.Str("id"), O("last_run_at", isoTime(at)))
+			fmt.Fprintf(os.Stderr, "schedule %s: skipped, %s\n", sch.Str("title"), reason)
 			continue
 		}
 		if _, err := sc.svc.RunSchedule(sch.Str("id")); err != nil {
@@ -236,7 +298,25 @@ func (s *Service) scheduleFields(o *Obj, partial bool) (*Obj, error) {
 		}
 		row.Set("project_id", p.Str("id"))
 	}
-	if need("days") {
+	if o.Has("watch") && !isUndef(o.Get("watch")) {
+		w, err := watchFields(o.Get("watch"))
+		if err != nil {
+			return nil, err
+		}
+		row.Set("watch", w)
+	}
+	// A watch runs when its page changes, so it needs no days or time.
+	watching := row.ObjAt("watch") != nil
+	absent := func(k string) bool { return !o.Has(k) || isUndef(o.Get(k)) }
+	if watching && !partial {
+		if absent("days") {
+			row.Set("days", "")
+		}
+		if absent("time") {
+			row.Set("time", "00:00")
+		}
+	}
+	if need("days") && !(watching && absent("days")) {
 		var raw []string
 		if a, ok := o.Get("days").([]any); ok {
 			for _, x := range a {
@@ -262,7 +342,7 @@ func (s *Service) scheduleFields(o *Obj, partial bool) (*Obj, error) {
 		sort.Strings(days)
 		row.Set("days", strings.Join(days, ","))
 	}
-	if need("time") {
+	if need("time") && !(watching && absent("time")) {
 		if !hhmm.MatchString(str(o.Get("time"))) {
 			return nil, fail("Time is HH:MM, 24-hour")
 		}
@@ -297,6 +377,9 @@ func (s *Service) scheduleFields(o *Obj, partial bool) (*Obj, error) {
 	if o.Has("enabled") && !isUndef(o.Get("enabled")) {
 		row.Set("enabled", truthy(o.Get("enabled")))
 	}
+	if o.Has("keepBoard") && !isUndef(o.Get("keepBoard")) {
+		row.Set("keep_board", truthy(o.Get("keepBoard")))
+	}
 	return row, nil
 }
 
@@ -309,24 +392,40 @@ func (s *Service) AddSchedule(o *Obj) (*Obj, error) {
 }
 
 func (s *Service) UpdateSchedule(id string, o *Obj) (*Obj, error) {
-	if s.Store.GetSchedule(id) == nil {
+	was := s.Store.GetSchedule(id)
+	if was == nil {
 		return nil, fail("No such schedule", 404)
 	}
 	row, err := s.scheduleFields(o, true)
 	if err != nil {
 		return nil, err
 	}
+	// A different page starts again from its first look.
+	if row.Has("watch") && row.ObjAt("watch").Str("url") != was.ObjAt("watch").Str("url") {
+		row.Set("watch_hash", nil).Set("checked_at", nil)
+		os.Remove(watchFile(s.Store.Dir, id))
+	}
 	return scheduleView(s.Store.UpdateSchedule(id, row)), nil
 }
 
-func (s *Service) DeleteSchedule(id string) (*Obj, error) {
+// DeleteSchedule puts a schedule in the archive; with runs, the sessions it started go there too.
+func (s *Service) DeleteSchedule(id string, runs bool) (*Obj, error) {
 	if !s.Store.DeleteSchedule(id) {
 		return nil, fail("No such schedule", 404)
+	}
+	if runs {
+		for _, r := range s.Store.SessionsOfSchedule(id) {
+			if r.Str("archived_at") == "" {
+				s.ArchiveSession(r.Str("id"), true)
+			}
+		}
 	}
 	return O("ok", true), nil
 }
 
-func (s *Service) RunSchedule(id string) (*Obj, error) {
+// RunSchedule starts a schedule's session now, as its time would; for a watch, with what
+// changed on its page.
+func (s *Service) RunSchedule(id string, added ...string) (*Obj, error) {
 	sch := s.Store.GetSchedule(id)
 	if sch == nil {
 		return nil, fail("No such schedule", 404)
@@ -341,9 +440,22 @@ func (s *Service) RunSchedule(id string) (*Obj, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.Runtime.Emit("session", s.Store.UpdateSession(ss.Str("id"), O("schedule_id", id)))
+	s.Runtime.Emit("session", s.Store.UpdateSession(ss.Str("id"), O("schedule_id", id, "budget", s.Spending().Settings().Num("run_cap"))))
 	s.Store.UpdateSchedule(id, O("last_run_at", isoNow()))
-	if _, err := s.Send(ss.Str("id"), sch.Str("prompt"), SendOpts{}); err != nil {
+	// A schedule that keeps one board: the version before this run is kept, and the run is told where the board is.
+	prompt := sch.Str("prompt")
+	if w := sch.ObjAt("watch"); w != nil {
+		a := ""
+		if len(added) > 0 {
+			a = added[0]
+		}
+		prompt = WatchPrompt(prompt, w.Str("url"), a)
+	}
+	if p := s.Store.GetProject(sch.Str("project_id")); p != nil && truthy(sch.Get("keep_board")) {
+		SnapshotBoard(p.Str("path"), sch.Str("title"))
+		prompt += "\n\n" + BoardNote(p.Str("path"), sch.Str("title"))
+	}
+	if _, err := s.Send(ss.Str("id"), prompt, SendOpts{}); err != nil {
 		return nil, err
 	}
 	return s.Session(ss.Str("id"))
@@ -365,7 +477,8 @@ func ReportsNote(dir string) string {
 		"- To read: Markdown (.md). Lead with the answer, then the detail; links inline.\n" +
 		"- To use: one self-contained HTML page (.html) when it needs sorting, filtering, checkboxes or a chart. Inline its CSS and script; it gets no network. Use the CSS variables --bg, --surface, --text, --muted, --accent, --line for colours, so it matches the person's light or dark theme, and keep state in localStorage. For choices use buttons or chips, not <select>: a select opens the phone's own unstyled picker.\n" +
 		"- Emails to send: a drafts file (name.drafts.json): {\"title\": \"...\", \"drafts\": [{\"to\": \"address\", \"subject\": \"...\", \"body\": \"plain text\", \"why\": \"one line on why this person\"}]}. Bench never sends them; the person opens each in their own email app. Never send email yourself.\n\n" +
-		"One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file."
+		"One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file.\n\n" +
+		"When there is an obvious next step the person may want, end your reply with it on its own line, as \"Then: \" and the step in a few words they would say themselves (\"Then: Draft cold emails for the top 3\"). Two at most; none when nothing follows."
 }
 
 func reportKind(file string) string {
@@ -414,6 +527,117 @@ func reportTitle(full, kind string) string {
 	return name
 }
 
+// reportPreview adds what Home shows of a report without opening it: "gist", its first
+// paragraph, and "preview", up to three lines of what it lists ({title, sub}). For drafts, the
+// first unsent emails: who to, and the subject.
+func reportPreview(item *Obj, full, kind string) {
+	switch kind {
+	case "drafts":
+		lines := []any{}
+		for _, x := range draftList(full) {
+			d, ok := x.(*Obj)
+			if !ok || truthy(d.Get("sent_at")) {
+				continue
+			}
+			lines = append(lines, O("title", clip(d.Str("subject"), 90), "sub", clip("To "+d.Str("to"), 60)))
+			if len(lines) == 2 {
+				break
+			}
+		}
+		item.Set("preview", lines)
+	case "report", "board":
+		b, err := os.ReadFile(full)
+		if err != nil {
+			return
+		}
+		text := string(b)
+		if len(text) > 40000 {
+			text = text[:40000]
+		}
+		gist, lines := mdPreview(text)
+		if gist != "" {
+			item.Set("gist", gist)
+		}
+		if len(lines) > 0 {
+			item.Set("preview", lines)
+		}
+	}
+}
+
+var mdMark = regexp.MustCompile(`\*\*|__|` + "`" + `|\[([^\]]*)\]\([^)]*\)`)
+
+func plainMD(s string) string {
+	return strings.TrimSpace(mdMark.ReplaceAllStringFunc(s, func(m string) string {
+		if strings.HasPrefix(m, "[") {
+			return mdMark.FindStringSubmatch(m)[1]
+		}
+		return ""
+	}))
+}
+
+// mdPreview: the first paragraph after the title, and the first three items the report lists
+// (sub-headings, else list items), each split at a dash or colon into a title and the rest.
+func mdPreview(text string) (string, []any) {
+	gist := ""
+	var heads, items []any
+	para := []string{}
+	split := func(s string) *Obj {
+		s = plainMD(s)
+		for _, sep := range []string{" — ", " – ", " - ", ": "} {
+			if i := strings.Index(s, sep); i > 0 && i < 70 {
+				return O("title", clip(strings.TrimSpace(s[:i]), 70), "sub", clip(strings.TrimSpace(s[i+len(sep):]), 90))
+			}
+		}
+		return O("title", clip(s, 90))
+	}
+	for _, raw := range strings.Split(text, "\n") {
+		l := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(l, "# "):
+			continue
+		case strings.HasPrefix(l, "## ") || strings.HasPrefix(l, "### "):
+			if gist == "" && len(para) > 0 {
+				gist = strings.Join(para, " ")
+			}
+			h := strings.TrimSpace(strings.TrimLeft(l, "#"))
+			if len(heads) < 3 && !strings.EqualFold(h, "summary") && !strings.EqualFold(h, "sources") {
+				heads = append(heads, split(h))
+			}
+		case strings.HasPrefix(l, "- ") || strings.HasPrefix(l, "* ") || (len(l) > 3 && l[0] >= '0' && l[0] <= '9' && strings.HasPrefix(l[1:], ". ")):
+			if gist == "" && len(para) > 0 {
+				gist = strings.Join(para, " ")
+			}
+			if len(items) < 3 {
+				items = append(items, split(strings.TrimSpace(l[strings.Index(l, " ")+1:])))
+			}
+		case l == "" || strings.HasPrefix(l, "|") || strings.HasPrefix(l, ">") || strings.HasPrefix(l, "!["):
+			if gist == "" && len(para) > 0 {
+				gist = strings.Join(para, " ")
+			}
+		default:
+			if gist == "" {
+				para = append(para, l)
+			}
+		}
+	}
+	if gist == "" && len(para) > 0 {
+		gist = strings.Join(para, " ")
+	}
+	lines := heads
+	if len(lines) == 0 {
+		lines = items
+	}
+	return clip(plainMD(gist), 220), lines
+}
+
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n-1])) + "…"
+}
+
 func draftList(full string) []any {
 	b, err := os.ReadFile(full)
 	if err != nil {
@@ -450,7 +674,11 @@ func (s *Service) Reports() []*Obj {
 			kind := reportKind(f.Name())
 			modified := isoTime(st.ModTime())
 			seen := ss.Str("seen_at") != "" && ss.Str("seen_at") >= modified
-			item := O("session_id", e.Name(), "path", full, "name", f.Name(), "kind", kind, "title", reportTitle(full, kind), "size", st.Size(), "modified", modified, "seen", seen)
+			var schedID any
+			if v := ss.Str("schedule_id"); v != "" {
+				schedID = v
+			}
+			item := O("session_id", e.Name(), "path", full, "name", f.Name(), "kind", kind, "title", reportTitle(full, kind), "size", st.Size(), "modified", modified, "seen", seen, "schedule_id", schedID)
 			if kind == "drafts" {
 				list := draftList(full)
 				unsent := 0
@@ -462,9 +690,11 @@ func (s *Service) Reports() []*Obj {
 				item.Set("drafts", len(list))
 				item.Set("unsent", unsent)
 			}
+			reportPreview(item, full, kind)
 			out = append(out, item)
 		}
 	}
+	out = append(out, s.boardReports()...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Str("modified") > out[j].Str("modified") })
 	return out
 }

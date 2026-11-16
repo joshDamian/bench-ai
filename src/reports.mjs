@@ -8,6 +8,7 @@
 // The apps list them on Home ("Ready for you") until the session is looked at.
 import fs from 'node:fs';
 import path from 'node:path';
+import { findBoard, boardTitle, newCount } from './boards.mjs';
 
 /** @param {string} attachmentsDir */
 export const reportsDir = (attachmentsDir) => path.join(attachmentsDir, 'reports');
@@ -20,7 +21,15 @@ When the person asked for something to read or use - research, a shortlist, a co
 - To use: one self-contained HTML page (.html) when it needs sorting, filtering, checkboxes or a chart. Inline its CSS and script; it gets no network. Use the CSS variables --bg, --surface, --text, --muted, --accent, --line for colours, so it matches the person's light or dark theme, and keep state in localStorage. For choices use buttons or chips, not <select>: a select opens the phone's own unstyled picker.
 - Emails to send: a drafts file (name.drafts.json): {"title": "...", "drafts": [{"to": "address", "subject": "...", "body": "plain text", "why": "one line on why this person"}]}. Bench never sends them; the person opens each in their own email app. Never send email yourself.
 
-One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file.`;
+One file per output, with a clear name - it is what the person sees. Mixing is fine: a job hunt can be an HTML board and a drafts file.
+
+When there is an obvious next step the person may want, end your reply with it on its own line, as "Then: " and the step in a few words they would say themselves ("Then: Draft cold emails for the top 3"). Two at most; none when nothing follows.`;
+
+/** The next steps a reply offered, from its "Then: …" lines; null when it offered none. @param {string|null|undefined} reply */
+export function thenSteps(reply) {
+  const steps = [...String(reply ?? '').matchAll(/^[ \t]*(?:[-*][ \t]*)?\**Then:\**[ \t]*(.+?)[ \t]*$/gim)].map((m) => m[1].replace(/\*+$/, '').trim()).filter((x) => x && x.length <= 120);
+  return steps.length ? steps.slice(0, 2) : null;
+}
 
 /** @param {string} file */
 export function kindOf(file) {
@@ -73,13 +82,24 @@ export function listReports(svc) {
       if (!st?.isFile()) continue;
       const kind = kindOf(file);
       const modified = st.mtime.toISOString();
-      const item = { session_id: id, path: full, name: file, kind, title: titleOf(full, kind), size: st.size, modified, seen: !!s.seen_at && s.seen_at >= modified };
+      const item = { session_id: id, path: full, name: file, kind, title: titleOf(full, kind), size: st.size, modified, seen: !!s.seen_at && s.seen_at >= modified, schedule_id: s.schedule_id || null };
       if (kind === 'drafts') {
         const list = drafts(full);
         Object.assign(item, { drafts: list.length, unsent: list.filter((/** @type {any} */ x) => !x.sent_at).length });
       }
       out.push(item);
     }
+  }
+  // Boards: one per schedule that keeps one, seen when its latest run was looked at after it changed.
+  for (const sch of svc.store.listSchedules()) {
+    if (!sch.keep_board) continue;
+    const project = svc.store.getProject(sch.project_id);
+    const file = project ? findBoard(project.path, sch.title) : null;
+    const last = file ? svc.store.sessionsOfSchedule(sch.id)[0] : null;
+    if (!file || !last) continue;
+    const st = fs.statSync(file);
+    const modified = st.mtime.toISOString();
+    out.push({ session_id: last.id, path: file, name: path.basename(file), kind: 'board', title: boardTitle(file, sch.title), size: st.size, modified, seen: !!last.seen_at && last.seen_at >= modified, schedule_id: sch.id, new: newCount(file) });
   }
   return out.sort((a, b) => (a.modified < b.modified ? 1 : -1));
 }

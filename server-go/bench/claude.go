@@ -102,6 +102,9 @@ type ProcOptions struct {
 	Settings           *Obj
 	Agents             *Obj
 	MaxTurns           int
+	MaxBudgetUsd       float64
+	ExtraMCP           *Obj // stdio MCP servers, by name
+	AllowedTools       []string
 	Hooks              []HookSpec
 	MCP                *MCPServer
 	CanUseTool         func(ctx context.Context, req *Obj) *Obj
@@ -145,6 +148,9 @@ func StartProc(o ProcOptions) (*Proc, error) {
 	if o.MaxTurns > 0 {
 		args = append(args, "--max-turns="+strconv.Itoa(o.MaxTurns))
 	}
+	if o.MaxBudgetUsd > 0 {
+		args = append(args, "--max-budget-usd="+strconv.FormatFloat(o.MaxBudgetUsd, 'f', -1, 64))
+	}
 	if o.Model != "" {
 		args = append(args, "--model="+o.Model)
 	}
@@ -177,6 +183,12 @@ func StartProc(o ProcOptions) (*Proc, error) {
 	}
 	if o.Settings != nil {
 		args = append(args, "--settings", string(ToJSON(o.Settings)))
+	}
+	if o.ExtraMCP != nil {
+		args = append(args, "--mcp-config", string(ToJSON(O("mcpServers", o.ExtraMCP))))
+	}
+	if len(o.AllowedTools) > 0 {
+		args = append(args, "--allowedTools", strings.Join(o.AllowedTools, ","))
 	}
 	cmd := exec.Command(ClaudeBin(), args...)
 	cmd.Dir = o.Cwd

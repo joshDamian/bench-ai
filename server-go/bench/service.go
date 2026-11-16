@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -101,6 +102,11 @@ type Service struct {
 	Loop     *Loop
 	Resumer  *Resumer
 	Scheduler *Scheduler
+
+	mu       sync.Mutex
+	spending *Spending
+	devices  *Devices
+	meeting  *Meeting
 }
 
 func NewService(root string) (*Service, error) {
@@ -118,10 +124,37 @@ func NewService(root string) (*Service, error) {
 	s.Loop = NewLoop(s)
 	s.Resumer = NewResumer(s)
 	s.Scheduler = NewScheduler(s)
+	// What the person's other devices share: told to sessions, and the rule each call follows.
+	s.Runtime.DevicesNote = func() string {
+		n := s.Devices().Note()
+		// Calls: told when the server can take part in one.
+		if truthy(s.Meeting().Ready().Get("audio")) {
+			if n != "" {
+				n += "\n\n"
+			}
+			n += s.Meeting().Note()
+		}
+		return n
+	}
+	s.Runtime.ShareRule = func(tool string, in *Obj) string {
+		if r := s.Meeting().Rule(tool, in); r != "" {
+			return r
+		}
+		return s.Devices().Rule(tool, in)
+	}
+	s.Runtime.Answered = func(a *Obj, allowed bool) { s.Meeting().Answered(a, allowed) }
 	s.Runtime.On("turn-done", func(x any) {
 		td := x.(TurnDone)
 		if td.Session != nil && td.Session.Str("project_id") != "" {
 			s.Emit("git", td.Session.Str("project_id"))
+		}
+	})
+	// A watch's run that found nothing that matters is put away, read, without a word.
+	s.Runtime.On("turn-done", func(x any) {
+		td := x.(TurnDone)
+		if s.QuietRun(td.Session, td.Reply) {
+			s.ArchiveSession(td.Session.Str("id"), true)
+			s.Store.MarkSeen(td.Session.Str("id"))
 		}
 	})
 	s.Runtime.On("task", func(t any) { s.Emit("task", t) })
@@ -1596,6 +1629,7 @@ func (s *Service) Doctor() *Obj {
 }
 
 func (s *Service) Shutdown() {
+	s.Runtime.Browser().Stop()
 	s.Scheduler.Stop()
 	s.Resumer.Shutdown()
 	s.Runtime.Shutdown()

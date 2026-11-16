@@ -167,7 +167,7 @@ func NewStore(root string) (*Store, error) {
 	if err := s.migrate(); err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + activitySchema); err != nil {
 		return nil, err
 	}
 	for _, col := range []string{"provider_model_id", "invocation_model_id", "display_name"} {
@@ -188,6 +188,21 @@ func NewStore(root string) (*Store, error) {
 	}
 	s.addColumn("sessions", "pinned", "INTEGER")
 	s.addColumn("sessions", "schedule_id", "TEXT")
+	// budget: the most one query of an unattended run may spend; capped: it stopped there.
+	s.addColumn("sessions", "budget", "REAL")
+	s.addColumn("sessions", "capped", "INTEGER")
+	// next_steps: the "Then: …" steps a session's last reply offered, as JSON.
+	s.addColumn("sessions", "next_steps", "TEXT")
+	// keep_board: the schedule keeps one board up to date instead of a report per run.
+	s.addColumn("schedules", "keep_board", "INTEGER")
+	// watch: a page the schedule runs on when it changes, as JSON {url, every_hours}, instead of
+	// days and a time; watch_hash: the page's text when last seen; checked_at: when that was.
+	for _, c := range []string{"watch", "watch_hash", "checked_at"} {
+		s.addColumn("schedules", c, "TEXT")
+	}
+	// archived_at: a deleted schedule, kept for the archive (Go only; it is also turned off,
+	// so a Node server reading the same database shows it as Off and never runs it).
+	s.addColumn("schedules", "archived_at", "TEXT")
 	s.addColumn("projects", "routing", "TEXT")
 	s.addColumn("tasks", "routing", "TEXT")
 	if err := s.projectlessSessions(); err != nil {
@@ -777,6 +792,8 @@ func (s *Store) session(r *Obj) *Obj {
 		r.Set("auto_resume", truthy(r.Get("auto_resume")))
 	}
 	r.Set("pinned", truthy(r.Get("pinned")))
+	r.Set("capped", truthy(r.Get("capped")))
+	r.Set("next_steps", jsonCol(r.Get("next_steps")))
 	return r
 }
 
@@ -825,12 +842,14 @@ func (s *Store) UpdateSession(id string, patch *Obj) *Obj {
 			continue
 		}
 		switch k {
-		case "pause", "model_usage":
+		case "pause", "model_usage", "next_steps":
 			if v == nil {
 				row.Set(k, nil)
 			} else {
 				row.Set(k, string(ToJSON(v)))
 			}
+		case "capped":
+			row.Set(k, sqlVal(truthy(v)))
 		case "auto_resume":
 			if v == nil {
 				row.Set(k, nil)

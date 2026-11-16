@@ -84,6 +84,12 @@ data class Session(
     val pinned: Boolean = false,
     /** The schedule that started it, if one did. */
     val schedule_id: String? = null,
+    /** The most one query of an unattended run may spend, in USD. */
+    val budget: Double? = null,
+    /** It stopped at its budget and waits for the person. */
+    val capped: Boolean = false,
+    /** The "Then: …" steps its last reply offered. */
+    val next_steps: List<String>? = null,
 ) {
     /** Changed since the person last looked: a reply, a finish, an error. */
     val unseen get() = seen_at == null || updated_at > seen_at
@@ -103,7 +109,105 @@ data class Report(
     val seen: Boolean = false,
     val drafts: Int? = null,
     val unsent: Int? = null,
+    /** The schedule whose run made it. */
+    val schedule_id: String? = null,
+    /** A board: how many entries its last run marked new. */
+    val new: Int? = null,
+    /** Its first paragraph, for Home. */
+    val gist: String? = null,
+    /** Up to three things it lists; for drafts, the first unsent emails (subject, who to). */
+    val preview: List<PreviewLine>? = null,
 )
+
+@Serializable
+data class PreviewLine(val title: String = "", val sub: String? = null)
+
+/** Who the person is, read by every session (GET /api/about). */
+@Serializable
+data class About(
+    val text: String? = null,
+    /** A draft made from a CV, used only once saved. */
+    val draft: String? = null,
+    val include: Boolean = false,
+    val path: String = "",
+    val changed_by: ChangedBy? = null,
+) {
+    @Serializable
+    data class ChangedBy(val session_id: String, val title: String? = null)
+}
+
+/** Caps for unattended runs, and today's spend (GET /api/spending). */
+@Serializable
+data class Spending(
+    val daily_cap: Double = 5.0,
+    val run_cap: Double = 2.0,
+    val paused: Boolean = false,
+    val today: Double = 0.0,
+    val runs_today: Int = 0,
+)
+
+/** The browser on the server (GET /api/browser). */
+@Serializable
+data class BrowserStatus(val installed: Boolean = false, val running: Boolean = false, val sites: List<String> = emptyList())
+
+/** Can reach (GET /api/reach): what Bench can use beyond its own folders. */
+/** A device that shares part of itself with Bench (GET /api/devices): the person's Mac. Go server only. */
+@Serializable
+data class LinkedDevice(
+    val id: String,
+    val name: String,
+    val version: String? = null,
+    val online: Boolean = false,
+    val last_seen: String? = null,
+    val shares: List<Share> = emptyList(),
+    val asks: List<DeviceAsk> = emptyList(),
+) {
+    /** kind: folder, app, screen or run; rule: allow or ask. Set on the device only. */
+    @Serializable
+    data class Share(val id: String, val kind: String, val name: String = "", val path: String? = null, val access: String = "", val rule: String = "ask")
+}
+
+/** The call a session is in, in the server's browser (GET /api/meeting). Go server only.
+ * speech: ask (each line waits for you), some (small talk on its own), allow (speaks freely). */
+@Serializable
+data class MeetingState(
+    val session_id: String? = null,
+    val since: String? = null,
+    val speech: String = "ask",
+    /** A one-on-one: only you are in the call; it hears you and talks back freely. */
+    val trusted: Boolean = false,
+    /** Showing a deck in the call. */
+    val presenting: Boolean = false,
+    /** Whether the call is getting Bench's voice: ok, muted, silent or unknown; and why not. */
+    val audio_out: String = "unknown",
+    val audio_problem: String? = null,
+    val voice: Int = 3,
+    val speed: Double = 1.05,
+    val heard: Int = 0,
+    val error: String? = null,
+    val ready: Ready = Ready(),
+    val voices: List<Voice> = emptyList(),
+) {
+    /** voice: kokoro, espeak or null. */
+    @Serializable
+    data class Ready(val audio: Boolean = false, val voice: String? = null, val listen: Boolean = false)
+    @Serializable
+    data class Voice(val id: Int, val name: String, val detail: String = "")
+}
+
+/** Something Bench asked a device to share, waiting there for the person to decide. */
+@Serializable
+data class DeviceAsk(val id: String, val device_id: String, val kind: String, val path: String = "", val access: String = "", val why: String = "", val session_id: String? = null, val created_at: String = "")
+
+@Serializable
+data class Reach(val server: List<Item> = emptyList(), val accounts: List<Item> = emptyList(), val browser: BrowserStatus? = null, val devices: List<Item> = emptyList()) {
+    @Serializable
+    data class Item(val key: String, val name: String, val detail: String = "")
+}
+
+/** One rule: what Bench may do, asks about, or never does (GET /api/rules). value: allow, ask or never. */
+@Serializable
+data class Rule(val key: String, val label: String, val value: String)
 
 /** A session that starts on its own (GET /api/schedules). days: 0 Sunday .. 6 Saturday. */
 @Serializable
@@ -122,7 +226,74 @@ data class Schedule(
     val enabled: Boolean = true,
     val last_run_at: String? = null,
     val next_run_at: String? = null,
+    /** Keeps one board up to date instead of a report per run. */
+    val keep_board: Boolean = false,
+    /** Runs when this page changes instead of at a time. */
+    val watch: Watch? = null,
+    /** When the watched page was last looked at. */
+    val checked_at: String? = null,
 )
+
+/** What Bench did (GET /api/activity): runs and other doings, newest first. Go server only. */
+@Serializable
+data class ActivityFeed(val items: List<ActivityItem> = emptyList(), val unseen: Int = 0, val seen_at: String? = null)
+
+@Serializable
+data class ActivityItem(
+    val at: String,
+    val kind: String = "run",
+    val title: String = "",
+    val by: String? = null,
+    val detail: String? = null,
+    val session_id: String? = null,
+    val cost: Double = 0.0,
+    val badge: String? = null,
+    val undo: Boolean = false,
+    val id: Long? = null,
+)
+
+/** Housekeeping (GET /api/housekeeping): what Bench tidies on its own. Go server only. */
+@Serializable
+data class Housekeeping(
+    val archive_idle: Boolean = true,
+    val prune_branches: Boolean = true,
+    val free_disk: Boolean = true,
+    val keep_board: Boolean = true,
+    val freed: Freed? = null,
+    val archived: Int = 0,
+) {
+    @Serializable
+    data class Freed(val bytes: Double = 0.0, val at: String = "")
+}
+
+/** The archive (GET /api/archive): what was put away and can come back. */
+@Serializable
+data class ArchiveList(val sessions: List<Item> = emptyList(), val schedules: List<Item> = emptyList()) {
+    @Serializable
+    data class Item(val id: String, val title: String = "", val archived_at: String? = null, val project_id: String? = null)
+}
+
+/** A saved prompt with blanks, run again from New (GET /api/recipes). */
+@Serializable
+data class Recipe(val id: String, val title: String, val prompt: String, val project_id: String? = null, val blanks: List<String> = emptyList())
+
+/** What a new schedule starts with when it comes from a session's Keep watching. */
+data class SchedulePrefill(val title: String, val prompt: String, val projectId: String?)
+
+@Serializable
+data class Watch(val url: String, val every_hours: Int = 6)
+
+/** "linkedin.com/jobs" from "https://www.linkedin.com/jobs/": a page's address as the rows show it. */
+fun pageName(url: String): String = url.removePrefix("https://").removePrefix("http://").removePrefix("www.").trimEnd('/')
+
+/** A schedule's own page (GET /api/schedules/:id): its runs and the board it keeps. */
+@Serializable
+data class ScheduleDetail(val schedule: Schedule, val runs: List<Run> = emptyList(), val board: Board? = null) {
+    @Serializable
+    data class Run(val id: String, val title: String = "", val status: String = "idle", val cost: Double = 0.0, val capped: Boolean = false, val created_at: String = "", val archived: Boolean = false)
+    @Serializable
+    data class Board(val session_id: String? = null, val path: String, val name: String, val title: String = "", val new: Int = 0, val history: List<String> = emptyList())
+}
 
 @Serializable
 data class SessionPause(val until: String? = null, val message: String = "", val tries: Int = 0)
@@ -276,4 +447,8 @@ sealed interface ServerMessage {
     data class Commands(val sessionId: String, val commands: List<SlashCommand>) : ServerMessage
     data class Git(val projectId: String) : ServerMessage
     data object Pong : ServerMessage
+    /** A device linked, went offline, or changed what it shares or what waits on it. */
+    data object DevicesChanged : ServerMessage
+    /** A call started or stopped, or how freely it speaks changed. */
+    data object MeetingChanged : ServerMessage
 }

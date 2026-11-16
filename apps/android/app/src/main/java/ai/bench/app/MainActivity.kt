@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
     private fun handle(intent: Intent?) {
         intent ?: return
         intent.getStringExtra(Notifier.EXTRA_SESSION)?.let { openSession.value = it }
+        if (intent.getBooleanExtra(Notifier.EXTRA_WATCH, false)) BenchApp.instance.requestWatch.value = true
         if (intent.getBooleanExtra(SystemReach.EXTRA_NEW, false)) BenchApp.instance.requestNew.value = true
         when (intent.action) {
             Intent.ACTION_SEND -> {

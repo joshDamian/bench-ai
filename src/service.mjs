@@ -14,7 +14,11 @@ import { Loop, newLoop } from './loop.mjs';
 import { Resumer } from './resume.mjs';
 import { Scheduler, scheduleView, validZone } from './schedules.mjs';
 import { listReports, markDraft } from './reports.mjs';
+import { Spending, startOfDay } from './spending.mjs';
+import { snapshotBoard, BOARD_NOTE, findBoard, boardTitle, newCount, boardHistory } from './boards.mjs';
 import { routingPatch, DEFAULT_ROUTING } from './routing.mjs';
+import { Recipes } from './recipes.mjs';
+import { watchFields, watchPrompt, isNothingNew, watchFile } from './watch.mjs';
 import { holders, removable, sizeOf } from './artifacts.mjs';
 import * as g from './git.mjs';
 
@@ -88,6 +92,13 @@ export class Service extends EventEmitter {
     this.scheduler = new Scheduler(this);
     this.scheduler.start();
     this.runtime.on('turn-done', ({ session }) => session?.project_id && this.emit('git', session.project_id));
+    // A watch's run that found nothing that matters is put away, read, without a word.
+    this.runtime.on('turn-done', ({ session, reply }) => {
+      if (session && this.quietRun(session, reply)) {
+        this.archiveSession(session.id);
+        this.store.markSeen(session.id);
+      }
+    });
     this.runtime.on('task', (t) => this.emit('task', t));
     this.#importLegacy();
     // What archived sessions left in /tmp that was still open when they were archived, or
@@ -1081,12 +1092,19 @@ export class Service extends EventEmitter {
       row.prompt = String(o.prompt).trim();
     }
     if (need('projectId')) row.project_id = this.project(o.projectId).id;
-    if (need('days')) {
+    if (o.watch !== undefined) row.watch = watchFields(o.watch, (m) => fail(m));
+    // A watch runs when its page changes, so it needs no days or time.
+    const watching = !!row.watch;
+    if (row.watch && !partial) {
+      if (o.days === undefined) row.days = '';
+      if (o.time === undefined) row.time = '00:00';
+    }
+    if (need('days') && !(watching && o.days === undefined)) {
       const days = (Array.isArray(o.days) ? o.days : String(o.days || '').split(',')).filter((/** @type {any} */ x) => String(x).trim() !== '').map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
       if (!days.length) throw fail('Pick at least one day');
       row.days = [...new Set(days)].sort().join(',');
     }
-    if (need('time')) {
+    if (need('time') && !(watching && o.time === undefined)) {
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(o.time || ''))) throw fail('Time is HH:MM, 24-hour');
       row.time = o.time;
     }
@@ -1101,6 +1119,7 @@ export class Service extends EventEmitter {
     }
     for (const [k, col] of [['modelId', 'model_id'], ['providerId', 'provider_id'], ['effort', 'effort']]) if (o[k] !== undefined) row[col] = o[k] || null;
     if (o.enabled !== undefined) row.enabled = !!o.enabled;
+    if (o.keepBoard !== undefined) row.keep_board = !!o.keepBoard;
     return row;
   }
 
@@ -1111,25 +1130,58 @@ export class Service extends EventEmitter {
 
   /** @param {string} id @param {Record<string, any>} o */
   updateSchedule(id, o) {
-    if (!this.store.getSchedule(id)) throw fail('No such schedule', 404);
-    return scheduleView(this.store.updateSchedule(id, this.#scheduleFields(o, true)));
+    const was = this.store.getSchedule(id);
+    if (!was) throw fail('No such schedule', 404);
+    const row = this.#scheduleFields(o, true);
+    // A different page starts again from its first look.
+    if (row.watch !== undefined && row.watch?.url !== was.watch?.url) {
+      Object.assign(row, { watch_hash: null, checked_at: null });
+      fs.rmSync(watchFile(this.store.dir, id), { force: true });
+    }
+    return scheduleView(this.store.updateSchedule(id, row));
+  }
+
+  /** Whether a turn was a watch's run that found nothing that matters. @param {Session} s @param {string|null|undefined} reply */
+  quietRun(s, reply) {
+    return !!s.schedule_id && !!this.store.getSchedule(s.schedule_id)?.watch && isNothingNew(reply);
   }
 
   /** @param {string} id */
   deleteSchedule(id) {
     if (!this.store.deleteSchedule(id)) throw fail('No such schedule', 404);
+    fs.rmSync(watchFile(this.store.dir, id), { force: true });
     return { ok: true };
   }
 
-  /** Starts a schedule's session now, as its time would. @param {string} id */
-  runSchedule(id) {
+  /** Starts a schedule's session now, as its time would; for a watch, with what changed on its page.
+   * @param {string} id @param {{added?: string}} [o] */
+  runSchedule(id, o = {}) {
     const sch = this.store.getSchedule(id);
     if (!sch) throw fail('No such schedule', 404);
     const s = this.createSession({ projectId: sch.project_id, title: sch.title, mode: sch.mode || undefined, providerId: sch.provider_id || undefined, modelId: sch.model_id || undefined, effort: sch.effort || undefined });
-    this.runtime.emit('session', this.store.updateSession(s.id, { schedule_id: sch.id }));
+    this.runtime.emit('session', this.store.updateSession(s.id, { schedule_id: sch.id, budget: this.spendingStore.settings().run_cap }));
     this.store.updateSchedule(id, { last_run_at: new Date().toISOString() });
-    this.send(s.id, sch.prompt);
+    // A schedule that keeps one board: the version before this run is kept, and the run is told where the board is.
+    const project = this.store.getProject(sch.project_id);
+    if (sch.keep_board && project) snapshotBoard(project.path, sch.title);
+    let prompt = sch.watch ? watchPrompt(sch.prompt, sch.watch.url, o.added ?? '') : sch.prompt;
+    if (sch.keep_board && project) prompt += `\n\n${BOARD_NOTE(project.path, sch.title)}`;
+    this.send(s.id, prompt);
     return this.session(s.id);
+  }
+
+  /** A schedule's own page: the schedule, its runs, and the board it keeps. @param {string} id */
+  scheduleDetail(id) {
+    const sch = this.store.getSchedule(id);
+    if (!sch) throw fail('No such schedule', 404);
+    const runs = this.store.sessionsOfSchedule(id);
+    const project = this.store.getProject(sch.project_id);
+    const file = project ? findBoard(project.path, sch.title) : null;
+    return {
+      schedule: scheduleView(sch),
+      runs: runs.map((r) => ({ id: r.id, title: r.title, status: r.status, cost: r.cost, capped: !!r.capped, created_at: r.created_at, archived: !!r.archived_at })),
+      board: file && project ? { session_id: runs[0]?.id ?? null, path: file, name: path.basename(file), title: boardTitle(file, sch.title), new: newCount(file), history: boardHistory(project.path, sch.title) } : null,
+    };
   }
 
   /** The Research project: a folder in the projects folder for research and reports, made on first use. */
@@ -1139,7 +1191,168 @@ export class Service extends EventEmitter {
     return this.addProject({ path: dir, name: 'Research', init: true });
   }
 
+  // -- Spending ----------------------------------------------------------------------
+
+  get spendingStore() {
+    return (this.#spending ??= new Spending(this.store.dir));
+  }
+  /** @type {Spending|undefined} */
+  #spending;
+  /** @type {Recipes|undefined} */
+  #recipes;
+
+  spending() {
+    const { spent, runs } = this.store.unattendedSince(startOfDay());
+    return { ...this.spendingStore.settings(), today: Math.round(spent * 100) / 100, runs_today: runs };
+  }
+
+  /** @param {{daily_cap?:unknown, run_cap?:unknown, paused?:unknown}} o */
+  setSpending(o) {
+    this.spendingStore.set(o);
+    return this.spending();
+  }
+
+  // -- recipes ------------------------------------------------------------------
+
+  get recipesStore() {
+    return (this.#recipes ??= new Recipes(this.store.dir));
+  }
+
+  recipes() {
+    return this.recipesStore.list();
+  }
+
+  /** @param {Record<string, any>} o @param {boolean} [partial] */
+  #recipeFields(o, partial = false) {
+    /** @type {Record<string, any>} */
+    const row = {};
+    if (!partial || o.title !== undefined) {
+      if (!String(o.title || '').trim()) throw fail('A recipe needs a name');
+      row.title = String(o.title).trim();
+    }
+    if (!partial || o.prompt !== undefined) {
+      if (!String(o.prompt || '').trim()) throw fail('A recipe needs a prompt');
+      row.prompt = String(o.prompt).trim();
+    }
+    if (!partial || o.projectId !== undefined) row.project_id = o.projectId ? this.project(o.projectId).id : null;
+    return row;
+  }
+
+  /** @param {Record<string, any>} o */
+  addRecipe(o) {
+    return this.recipesStore.add(/** @type {any} */ (this.#recipeFields(o)));
+  }
+
+  /** @param {string} id @param {Record<string, any>} o */
+  updateRecipe(id, o) {
+    const r = this.recipesStore.update(id, this.#recipeFields(o, true));
+    if (!r) throw fail('No such recipe', 404);
+    return r;
+  }
+
+  /** @param {string} id */
+  deleteRecipe(id) {
+    if (!this.recipesStore.remove(id)) throw fail('No such recipe', 404);
+    return { ok: true };
+  }
+
+  /** Whether an unattended run may start now, and if not why. */
+  unattended() {
+    const s = this.spendingStore.settings();
+    if (s.paused) return { ok: false, paused: true, reason: 'Unattended runs are paused' };
+    if (this.store.unattendedSince(startOfDay()).spent >= s.daily_cap) return { ok: false, paused: false, reason: `Today's $${s.daily_cap} cap is reached` };
+    return { ok: true, paused: false, reason: null };
+  }
+
+  /** A run that stopped at its cap: go on with another run's worth, or leave it there. @param {string} id @param {unknown} action */
+  budget(id, action) {
+    const s = this.session(id);
+    if (action === 'stop') {
+      const u = this.store.updateSession(id, { capped: false });
+      this.runtime.emit('session', u);
+      return u;
+    }
+    if (action !== 'more') throw fail('More or stop');
+    if (!s.capped) throw fail('It has not stopped at its cap', 409);
+    // A query's budget is set when it starts: close it, so the next message starts one with a fresh cap.
+    this.runtime.close(id);
+    this.runtime.emit('session', this.store.updateSession(id, { capped: false }));
+    this.send(id, 'Continue where you left off.');
+    return this.session(id);
+  }
+
+  // -- About me and the rules -------------------------------------------------------
+
+  about() {
+    return this.runtime.about.get((/** @type {string} */ id) => this.store.getSession(id));
+  }
+
+  /** @param {{text?: unknown, include?: unknown}} o */
+  saveAbout(o) {
+    if (o.text !== undefined) {
+      if (typeof o.text !== 'string') throw fail('About me is text');
+      this.runtime.about.write(o.text);
+    }
+    if (o.include !== undefined) this.runtime.about.include(!!o.include);
+    return this.about();
+  }
+
+  /** @param {unknown} action */
+  aboutDraft(action) {
+    this.runtime.about.draft(action);
+    return this.about();
+  }
+
+  aboutUndo() {
+    this.runtime.about.undo();
+    return this.about();
+  }
+
+  /** A session in Research that turns a CV into a draft; the app attaches the CV and sends the prompt. */
+  aboutFromCv() {
+    const project = this.research();
+    const session = this.createSession({ projectId: project.id, title: 'About me from your CV', mode: 'acceptEdits' });
+    return { session, prompt: this.runtime.about.cvPrompt() };
+  }
+
+  rules() {
+    return this.runtime.rules.list();
+  }
+
+  browserStatus() {
+    return this.runtime.browser.status();
+  }
+
+  /** @param {unknown} site */
+  async signOut(site) {
+    if (typeof site !== 'string' || !site) throw fail('Which site?');
+    await this.runtime.browser.signOut(site);
+    return this.runtime.browser.status();
+  }
+
+  /** Can reach: what Bench can use beyond its own folders. */
+  async reach() {
+    const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json');
+    /** @type {string[]} */
+    let apps = [];
+    try {
+      apps = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')).mcpServers || {}).sort();
+    } catch {}
+    return {
+      server: [{ key: 'server', name: 'Files, shell and the web', detail: 'Always' }],
+      accounts: [{ key: 'github', name: 'GitHub', detail: (await g.ghReady()) ? 'Connected' : 'Not connected' }, ...apps.map((n) => ({ key: `app:${n}`, name: n, detail: 'Connected app' }))],
+      browser: await this.runtime.browser.status(),
+      devices: [],
+    };
+  }
+
+  /** @param {unknown} key @param {unknown} value */
+  setRule(key, value) {
+    return this.runtime.rules.set(key, value);
+  }
+
   shutdown() {
+    this.runtime.browser.stop();
     this.scheduler.stop();
     this.resumer.shutdown();
     this.runtime.shutdown();

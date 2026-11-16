@@ -86,6 +86,9 @@ import ai.bench.app.data.Block
 import ai.bench.app.data.blocks
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.draw.shadow
 import ai.bench.app.ui.Card
 import ai.bench.app.ui.NavRow
@@ -117,7 +120,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}, onResume: () -> Unit = {}) {
+fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> Unit = {}, onTerminal: () -> Unit = {}, onResume: () -> Unit = {}, onKeepWatching: (ai.bench.app.data.SchedulePrefill) -> Unit = {}, onOpen: (String) -> Unit = {}) {
+    // When you last looked, read before this visit marks it seen: "Since you looked" starts there.
+    val lookedAt = remember(vm.sessionId) { vm.store.state.value.sessions.firstOrNull { it.id == vm.sessionId }?.takeIf { it.unseen }?.seen_at }
+    var recentOpen by remember { mutableStateOf(false) }
     var providers by remember { mutableStateOf<List<ai.bench.app.data.ProviderInfo>>(emptyList()) }
     var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { providers = vm.providers() }
@@ -133,6 +139,7 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     val loading by vm.loading.collectAsState()
     val hasOlder by vm.hasOlder.collectAsState()
     val suggestion by vm.suggestion.collectAsState()
+    var savingRecipe by remember { mutableStateOf(false) }
     val attachments by vm.attachments.collectAsState()
     val busy by vm.busyApprovals.collectAsState()
     val thinking by vm.thinking.collectAsState()
@@ -233,6 +240,11 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bench.colors.bg),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                modifier = Modifier.pointerInput(Unit) {
+                    // Swipe down on the header: the Recent sheet, to jump without going Home.
+                    var pulled = 0f
+                    detectVerticalDragGestures(onDragStart = { pulled = 0f }) { _, dy -> pulled += dy; if (pulled > 60f) { recentOpen = true; pulled = -10_000f } }
+                },
                 title = {
                     val st = session?.status ?: "idle"
                     val waiting = approvals.isNotEmpty() || st == "waiting"
@@ -257,6 +269,25 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
         retry = { t -> scope.launch { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); stick = true; list.scrollToItem(0); vm.send(t) } },
     )) { WithFiles(files) {
         Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
+            // In a call: listening, how freely it speaks, and Stop.
+            val meeting by vm.store.meeting.collectAsState()
+            LaunchedEffect(vm.sessionId) { vm.store.loadMeeting() }
+            meeting?.takeIf { it.session_id == vm.sessionId }?.let { m -> CallBar(m, vm.store) }
+            var since by remember(vm.sessionId) { mutableStateOf<String?>(null) }
+            LaunchedEffect(loading, lookedAt) { if (!loading && lookedAt != null && since == null) since = vm.sinceYouLooked(lookedAt) }
+            since?.let { line ->
+                Row(
+                    Modifier.padding(horizontal = Space.lg, vertical = Space.xs).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Bench.colors.surface1).clickable { since = null }.padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Text(
+                        androidx.compose.ui.text.buildAnnotatedString {
+                            withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.SemiBold, color = Bench.colors.text)) { append("Since you looked: ") }
+                            append(line)
+                        },
+                        fontSize = 14.sp, lineHeight = 20.sp, color = Bench.colors.muted,
+                    )
+                }
+            }
             Box(Modifier.weight(1f)) {
                 LazyColumn(
                     state = list,
@@ -329,6 +360,14 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
                         }
                     }
                 }
+            } else if (!session?.next_steps.isNullOrEmpty() && !running && approvals.isEmpty() && draft.isEmpty()) {
+                // What the reply offered to do next ("Then: …"): a tap puts it in the composer.
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    session?.next_steps.orEmpty().forEach { step ->
+                        Text(step, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.background(Bench.colors.surface1, RoundedCornerShape(18.dp)).clickable { draft = step }.padding(horizontal = 14.dp, vertical = 9.dp))
+                    }
+                }
             } else if (suggestion.isNotBlank() && !running && approvals.isEmpty() && draft.isEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp)) {
                     Text(suggestion, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -348,8 +387,10 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
             }
 
             val pending = approvals.firstOrNull()
+            var takingOver by remember { mutableStateOf(false) }
             if (pending != null) {
-                ApprovalSheet(pending, cwd, onAnswer = { vm.answer(pending.id, it) }, busy = pending.id in busy, waiting = approvals.size)
+                ApprovalSheet(pending, cwd, onAnswer = { vm.answer(pending.id, it) }, busy = pending.id in busy, waiting = approvals.size, onTakeOver = { takingOver = true })
+                if (takingOver) ai.bench.app.ui.BrowserView(vm.api) { takingOver = false }
             } else Composer(
                 model = session?.let { modelLine(it, providers) } ?: "",
                 onModel = { picking = true },
@@ -383,8 +424,15 @@ fun SessionScreen(vm: SessionViewModel, onBack: () -> Unit, onTask: (String) -> 
     } } }
 
     if (menu) session?.let { ses ->
-        SessionSheet(ses, providers, vm, onDismiss = { menu = false }, onRename = { menu = false; renaming = true }, onTask = onTask, onResume = { menu = false; onResume() }, onDeleted = onBack)
+        SessionSheet(ses, providers, vm, onDismiss = { menu = false }, onRename = { menu = false; renaming = true }, onTask = onTask, onResume = { menu = false; onResume() }, onDeleted = onBack,
+            onRecipe = { menu = false; savingRecipe = true },
+            onKeepWatching = { menu = false; onKeepWatching(ai.bench.app.data.SchedulePrefill(ses.title, firstPrompt(rows), ses.project_id)) })
     }
+    if (savingRecipe) session?.let { ses ->
+        ai.bench.app.ui.SaveRecipeSheet(vm.store, ses.title, firstPrompt(rows), ses.project_id, onDismiss = { savingRecipe = false }) { savingRecipe = false }
+    }
+
+    if (recentOpen) RecentSheet(vm.store, vm.sessionId, onDismiss = { recentOpen = false }) { recentOpen = false; onOpen(it) }
 
     if (picking) session?.let { ses ->
         ModelSheet(ses, providers, onDismiss = { picking = false }) { vm.configure(it) }
@@ -528,6 +576,10 @@ private fun Composer(
     }
 }
 
+/** The session's first message: what a recipe or a schedule made from it repeats. */
+private fun firstPrompt(rows: List<ai.bench.app.data.Row>): String =
+    rows.firstNotNullOfOrNull { (it as? ai.bench.app.data.Row.User)?.text?.takeIf { t -> t.isNotBlank() } }.orEmpty()
+
 /** The list's keys in drawing order (newest first), for finding a remembered item again. */
 private fun listKeys(bl: List<Block>, streaming: Boolean): List<String> =
     (if (streaming) listOf("stream") else emptyList()) + bl.asReversed().map { it.key }
@@ -538,6 +590,7 @@ private fun listKeys(bl: List<Block>, streaming: Boolean): List<String> =
 private fun SessionSheet(
     s: ai.bench.app.data.Session, providers: List<ai.bench.app.data.ProviderInfo>, vm: SessionViewModel,
     onDismiss: () -> Unit, onRename: () -> Unit, onTask: (String) -> Unit, onResume: () -> Unit, onDeleted: () -> Unit,
+    onRecipe: () -> Unit = {}, onKeepWatching: () -> Unit = {},
 ) {
     val c = Bench.colors
     var mode by remember { mutableStateOf(false) }
@@ -567,6 +620,11 @@ private fun SessionSheet(
                 SwitchRow("Keep on Home", "Stays on Home after you've looked at it", s.pinned) { vm.setPinned(it) }
                 if (s.pause != null) NavRow("Resume now", labelColor = c.accent, chevron = false) { vm.resumeNow(); onDismiss() }
             }
+            // Doing it again: with new details each time, or on its own.
+            Card {
+                NavRow("Save as a recipe", null, "Run it again with new details") { onRecipe() }
+                if (s.schedule_id == null && s.project_id != null) NavRow("Keep watching", null, "Run it again on a schedule, on one board") { onKeepWatching() }
+            }
             val usage = s.model_usage?.entries?.mapNotNull { (k, v) -> (v as? kotlinx.serialization.json.JsonObject)?.get("cost")?.let { k to (it.toString().toDoubleOrNull() ?: 0.0) } }.orEmpty().sortedByDescending { it.second }
             Card {
                 NavRow("Spend", ai.bench.app.data.Format.cost(s.cost), "${s.input_tokens + s.output_tokens} tokens", chevron = false)
@@ -583,4 +641,95 @@ private fun SessionSheet(
     }
     if (mode) PickDialog("Permission mode", Mode.entries.map { it.wire to it.label }, s.permission_mode, onDismiss = { mode = false }) { vm.setMode(it) }
     if (deleting) Confirm("Delete this session?", "Its conversation is removed from Bench. This can't be undone.", "Delete", onDismiss = { deleting = false }) { vm.delete { onDismiss(); onDeleted() } }
+}
+
+/** Recent: the things you looked at, newest first, to jump between without going Home. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecentSheet(store: ai.bench.app.data.BenchStore, current: String, onDismiss: () -> Unit, onOpen: (String) -> Unit) {
+    val c = Bench.colors
+    val recent by store.recent.collectAsState()
+    val st by store.state.collectAsState()
+    val reports by store.reports.collectAsState()
+    val list = recent.filter { it != current }.mapNotNull { id -> st.sessions.firstOrNull { it.id == id } }.take(8)
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface2, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { Box(Modifier.padding(top = 12.dp, bottom = 8.dp).size(36.dp, 4.dp).background(c.surface3, RoundedCornerShape(2.dp))) }) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 16.dp)) {
+            Text("Recent", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text("Swipe down on any header to open this", fontSize = 13.5.sp, color = c.muted, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
+            if (list.isEmpty()) Text("Nothing else yet.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(vertical = 12.dp))
+            list.forEachIndexed { i, s ->
+                val waiting = st.approvals.any { it.session_id == s.id } || s.status == "waiting"
+                val made = reports.firstOrNull { it.session_id == s.id }
+                val (line, tone) = when {
+                    waiting -> "Waiting for you" to c.warn
+                    s.status == "running" -> "Working" to c.muted
+                    s.status == "error" -> "Stopped with an error" to c.bad
+                    made != null && !made.seen -> "Ready · ${made.kind}" to c.accent
+                    made != null -> made.kind.replaceFirstChar { it.uppercase() } to c.muted
+                    else -> statusLabel(s.status) to c.muted
+                }
+                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.surface3))
+                Row(Modifier.fillMaxWidth().clickable { onOpen(s.id) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(s.title, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(line, fontSize = 13.sp, color = tone, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(ai.bench.app.data.Format.ago(s.updated_at), fontSize = 13.5.sp, color = c.muted)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The call bar: the session is in a call. A one-on-one (only you in the call) hears you and
+ * talks back freely; otherwise it speaks as your rule says. The voice is chosen here too.
+ */
+@Composable
+private fun CallBar(m: ai.bench.app.data.MeetingState, store: ai.bench.app.data.BenchStore) {
+    val c = Bench.colors
+    val scope = rememberCoroutineScope()
+    var picking by remember { mutableStateOf<String?>(null) }
+    val words = mapOf("ask" to "Asks before each line", "some" to "Small talk on its own", "allow" to "Speaks freely")
+    fun set(body: kotlinx.serialization.json.JsonObject) = scope.launch { runCatching { store.api.setMeeting(body) }.onSuccess { store.setMeeting(it) } }
+    val voice = m.voices.firstOrNull { it.id == m.voice }?.name ?: "Voice"
+    Column(
+        Modifier.padding(horizontal = Space.lg, vertical = Space.xs).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surface1).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(8.dp).background(c.bad, androidx.compose.foundation.shape.CircleShape))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    when { m.presenting -> if (m.trusted) "One-on-one · presenting" else "In a call · presenting"; m.trusted -> "One-on-one call"; m.ready.listen -> "In a call · listening"; else -> "In a call · can't hear it" },
+                    fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                )
+                (m.audio_problem?.let { "Its voice isn't reaching the call: $it" } ?: m.error)?.let { Text(it, fontSize = 12.5.sp, color = c.bad, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            }
+            androidx.compose.material3.TextButton(onClick = { scope.launch { runCatching { store.api.stopMeeting() }.onSuccess { store.setMeeting(it) } } }) { Text("Stop", color = c.muted) }
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CallChip("One-on-one", on = m.trusted) { set(kotlinx.serialization.json.buildJsonObject { put("trusted", !m.trusted) }) }
+            if (!m.trusted) CallChip(words[m.speech] ?: m.speech) { picking = "speech" }
+            if (m.ready.voice == "kokoro" && m.voices.isNotEmpty()) CallChip("Voice · $voice") { picking = "voice" }
+        }
+    }
+    when (picking) {
+        "speech" -> ai.bench.app.ui.PickDialog("In the call", words.entries.map { it.key to it.value }, m.speech, onDismiss = { picking = null }) { v ->
+            picking = null; set(kotlinx.serialization.json.buildJsonObject { put("speech", v) })
+        }
+        "voice" -> ai.bench.app.ui.PickDialog("Voice", m.voices.map { it.id.toString() to "${it.name} · ${it.detail}" }, m.voice.toString(), onDismiss = { picking = null }) { v ->
+            picking = null; set(kotlinx.serialization.json.buildJsonObject { put("voice", v.toInt()) })
+        }
+    }
+}
+
+@Composable
+private fun CallChip(text: String, on: Boolean = false, onClick: () -> Unit) {
+    val c = Bench.colors
+    Text(
+        text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (on) c.onAccent else c.text,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) c.accent else c.surface3).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
+    )
 }

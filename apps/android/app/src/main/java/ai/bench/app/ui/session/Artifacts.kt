@@ -166,7 +166,7 @@ private val CODE = setOf("kt", "kts", "java", "swift", "js", "mjs", "cjs", "ts",
 private val LANG = mapOf("kt" to "kotlin", "kts" to "kotlin", "js" to "javascript", "mjs" to "javascript", "cjs" to "javascript", "jsx" to "javascript", "ts" to "typescript", "tsx" to "typescript", "py" to "python", "rb" to "ruby", "rs" to "rust", "h" to "c", "cs" to "csharp", "sh" to "shell", "bash" to "shell", "zsh" to "shell", "yml" to "yaml")
 
 @Composable
-fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
+fun FileViewer(files: SessionFiles, f: FileInfo, top: (@Composable () -> Unit)? = null, bottom: (@Composable () -> Unit)? = null, onDismiss: () -> Unit) {
     val c = Bench.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -191,6 +191,7 @@ fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
                 if ((markdown || page) && bytes != null) ai.bench.app.ui.Segmented(listOf("rendered" to (if (page) "Page" else "Rendered"), "source" to "Source"), if (source) "source" else "rendered", { source = it == "source" }, Modifier.width(176.dp), height = 36.dp)
                 TextButton(onClick = { scope.launch { handOff(context, files, f, share = true) } }) { Text("Share") }
             }
+            top?.invoke()
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val b = bytes
                 when {
@@ -215,16 +216,23 @@ fun FileViewer(files: SessionFiles, f: FileInfo, onDismiss: () -> Unit) {
                     )
                 }
             }
+            bottom?.invoke()
         }
         }
     }
 }
 
 /**
- * A page a session made, live: its script runs, its state stays (localStorage), but it reaches
- * no network and no files. Its colours come from the app's theme through the CSS variables the
- * reports note names. Links open outside, in the browser or the email app.
+ * A page a session made, live: its script runs, its state stays (localStorage), and it reaches
+ * no files. From the network it gets only what a page is built from: scripts, styles and fonts
+ * from the common CDNs (a chart library, say), and pictures (a listing's photos). Anything else,
+ * a fetch to some API included, is refused. Its colours come from the app's theme through the
+ * CSS variables the reports note names. Links open outside, in the browser or the email app.
  */
+/** Where a page may load scripts, styles and fonts from. */
+private val PAGE_CDNS = setOf("cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "cdn.tailwindcss.com", "code.jquery.com", "esm.sh", "fonts.googleapis.com", "fonts.gstatic.com")
+private val PICTURES = setOf("png", "jpg", "jpeg", "webp", "gif", "svg", "avif")
+
 @android.annotation.SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun HtmlPage(html: String, key: String) {
@@ -247,10 +255,17 @@ fun HtmlPage(html: String, key: String) {
                 setBackgroundColor(c.bg.toArgb())
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
-                settings.blockNetworkLoads = true
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 webViewClient = object : android.webkit.WebViewClient() {
+                    override fun shouldInterceptRequest(view: android.webkit.WebView, req: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? {
+                        val u = req.url
+                        val host = u.host.orEmpty()
+                        if (host.endsWith(".pages.bench.invalid")) return null
+                        val picture = req.method == "GET" && (req.requestHeaders["Accept"].orEmpty().startsWith("image/") || u.path.orEmpty().substringAfterLast('.').lowercase() in PICTURES)
+                        if (u.scheme == "https" && req.method == "GET" && (host in PAGE_CDNS || picture)) return null
+                        return android.webkit.WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
+                    }
                     override fun shouldOverrideUrlLoading(view: android.webkit.WebView, req: android.webkit.WebResourceRequest): Boolean {
                         val u = req.url
                         if (u.host?.endsWith(".pages.bench.invalid") == true) return false

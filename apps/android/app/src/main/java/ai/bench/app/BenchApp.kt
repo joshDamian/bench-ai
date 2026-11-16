@@ -45,6 +45,9 @@ class BenchApp : Application() {
     /** The widget or a tile asked for a new session. */
     val requestNew = MutableStateFlow(false)
 
+    /** A notification asked to watch the hidden screen. */
+    val requestWatch = MutableStateFlow(false)
+
     var foreground = false
         private set
 
@@ -64,6 +67,7 @@ class BenchApp : Application() {
             override fun onStart(owner: LifecycleOwner) {
                 foreground = true
                 _store.value?.reconnectNow()
+                ai.bench.app.phone.PhoneLink.reconnectNow()
             }
 
             override fun onStop(owner: LifecycleOwner) {
@@ -78,8 +82,10 @@ class BenchApp : Application() {
         val store = config?.let { BenchStore(BenchApi(it), appScope) }
         _store.value = store
         _loaded.value = true
-        store ?: return
+        if (store == null) { ai.bench.app.phone.PhoneLink.stop(); return }
         store.start()
+        // This phone's own link, for what it shares with Bench (the This phone screen).
+        ai.bench.app.phone.PhoneLink.start(this, store.api, appScope)
         // While the process lives, an approval that arrives with the app in the background
         // is a notification, so a phone in a pocket still hears that Claude is waiting.
         val prefs = getSharedPreferences("alerts", 0)

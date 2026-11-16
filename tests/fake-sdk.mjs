@@ -16,6 +16,7 @@
 //   "new kinds"            sends what a session has no use for yet: a failed hook's warning,
 //                          a message type nothing knows, and session_writes_lost after the result
 //   "refuse <reason>"      ends the turn as a refused start-up, with that startup_failure_reason
+//   "...[quiet]..."        replies "Nothing new.", as a watch's run that found nothing does
 //   anything else          replies "echo: <text>"
 //
 // Every turn reasons first, in a thinking block of its own, before the reply - a real
@@ -76,7 +77,7 @@ export function fakeQuery({ prompt, options }) {
       const text = typeof content === 'string' ? content : content.filter((b) => b.type === 'text').map((b) => b.text).join(' ');
       const id = `msg_${Math.random().toString(36).slice(2)}`;
       emit({ type: 'stream_event', parent_tool_use_id: null, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'thinking about it' } } });
-      let reply = `echo: ${text}`;
+      let reply = text.includes('[quiet]') ? 'Nothing new.' : `echo: ${text}`;
       let isError = false;
       let suggestion = '';
       if (fakeLimit.on || text === 'limit') {
@@ -157,6 +158,7 @@ export function fakeQuery({ prompt, options }) {
           ...(text === 'delegate' ? { 'claude-haiku-4-5-20251001': { inputTokens: 200, outputTokens: 50, cacheReadInputTokens: 100, cacheCreationInputTokens: 0, costUSD: 0.002 } } : {}),
         },
         queued_turn_count: 0,
+        result: isError ? undefined : reply,
         errors: isError ? ['it failed'] : [],
       });
       if (text === 'new kinds') emit({ type: 'system', subtype: 'session_writes_lost', error_code: 'ENOSPC', lost: ['transcript'], transcript_session_ids: [sessionId], session_id: sessionId });

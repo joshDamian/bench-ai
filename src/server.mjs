@@ -243,7 +243,8 @@ svc.runtime.on('approval', (a) => {
 svc.runtime.on('suggestion', ({ session_id, text }) => text && broadcast({ type: 'suggestion', session_id, text }, session_id));
 svc.runtime.on('commands', ({ session_id, commands }) => broadcast({ type: 'commands', session_id, commands }, session_id));
 svc.runtime.on('approval-done', (a) => broadcast({ type: 'approval-done', ...a }));
-svc.runtime.on('turn-done', ({ session, ok, limited }) => {
+svc.runtime.on('turn-done', ({ session, ok, limited, reply }) => {
+  if (session && svc.quietRun(session, reply)) return;
   if (session && limited) {
     const until = session.pause?.until ? new Date(session.pause.until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }) : null;
     pushAll({ title: 'Paused at the usage limit', body: `${session.title}${until ? ` — until ${until}` : ''}`, url: sessionUrl(session), tag: `turn-${session.id}`, sessionId: session.id }, 'error').catch(() => {});
@@ -811,8 +812,26 @@ route('GET', '/api/schedules', () => svc.schedules());
 route('POST', '/api/schedules', ({ body }) => svc.addSchedule(body));
 route('PATCH', '/api/schedules/:id', ({ params, body }) => svc.updateSchedule(params[0], body));
 route('DELETE', '/api/schedules/:id', ({ params }) => svc.deleteSchedule(params[0]));
+route('GET', '/api/schedules/:id', ({ params }) => svc.scheduleDetail(params[0]));
 route('POST', '/api/schedules/:id/run', ({ params }) => svc.runSchedule(params[0]));
 route('POST', '/api/research', () => svc.research());
+route('GET', '/api/about', () => svc.about());
+route('PUT', '/api/about', ({ body }) => svc.saveAbout(body));
+route('POST', '/api/about/draft', ({ body }) => svc.aboutDraft(body.action));
+route('POST', '/api/about/undo', () => svc.aboutUndo());
+route('POST', '/api/about/from-cv', () => svc.aboutFromCv());
+route('GET', '/api/recipes', () => svc.recipes());
+route('POST', '/api/recipes', ({ body }) => svc.addRecipe(body));
+route('PATCH', '/api/recipes/:id', ({ params, body }) => svc.updateRecipe(params[0], body));
+route('DELETE', '/api/recipes/:id', ({ params }) => svc.deleteRecipe(params[0]));
+route('GET', '/api/spending', () => svc.spending());
+route('PUT', '/api/spending', ({ body }) => svc.setSpending(body));
+route('POST', '/api/sessions/:id/budget', ({ params, body }) => svc.budget(params[0], body.action));
+route('GET', '/api/rules', () => svc.rules());
+route('GET', '/api/reach', () => svc.reach());
+route('GET', '/api/browser', () => svc.browserStatus());
+route('POST', '/api/browser/sign-out', ({ body }) => svc.signOut(body.site));
+route('PUT', '/api/rules', ({ body }) => svc.setRule(body.key, body.value));
 // Archiving or deleting a session ends the shells opened beside it; closing a task, its own.
 route('POST', '/api/sessions/:id/archive', async ({ params, body }) => {
   const r = await svc.archiveSession(params[0], body.archived !== false);
@@ -1058,6 +1077,13 @@ server.on('upgrade', (req, socket, head) => {
         }
       });
       client.send(JSON.stringify({ type: 'hello', sessions: svc.sessions(), approvals: svc.runtime.pending() }));
+    });
+  }
+
+  // The take-over view: the server's browser, streamed to the person, their input sent back.
+  if (u.pathname === '/api/browser/view') {
+    return wss.handleUpgrade(req, socket, head, (ws) => {
+      svc.runtime.browser.view(ws).catch(() => ws.close(1011, 'The browser could not be reached'));
     });
   }
 

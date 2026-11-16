@@ -27,6 +27,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
@@ -97,11 +98,12 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
 
     val back by nav.currentBackStackEntryAsState()
     val route = back?.destination?.route
-    val tabs = listOf("home", "projects", "settings")
+    val tabs = listOf("home", "research", "projects", "settings")
     var newSession by remember { mutableStateOf(false) }
     var addProject by remember { mutableStateOf(false) }
     var newMenu by remember { mutableStateOf(false) }
     var research by remember { mutableStateOf(false) }
+    var researchAsk by remember { mutableStateOf("") }
     val askedNew by BenchApp.instance.requestNew.collectAsState()
     LaunchedEffect(askedNew) { if (askedNew) { newSession = true; BenchApp.instance.requestNew.value = false } }
     // Tablets and unfolded foldables: Home stays docked on the left, what you open shows beside it.
@@ -118,7 +120,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
     if (wide) {
         Box(Modifier.width(380.dp).fillMaxHeight()) {
-            HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
+            HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") }, onActivity = { nav.navigate("activity") }, selected = (back?.arguments?.getString("id")).takeIf { route == "session/{id}" })
         }
         androidx.compose.material3.VerticalDivider(color = Bench.colors.line)
     }
@@ -134,17 +136,36 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
         ) {
             composable("home") {
                 if (wide) EmptyDetail() else androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
-                    HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") })
+                    HomeScreen(store, onOpen = open, onNew = { newMenu = true }, onSearch = { nav.navigate("sessions") }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") }, onActivity = { nav.navigate("activity") })
                 }
+            }
+            composable("research") {
+                ResearchScreen(store, onOpen = open, onResearch = { researchAsk = it; research = true }, onSchedules = { nav.navigate("schedules") }, onSchedule = { nav.navigate("schedule/$it") }, onAbout = { nav.navigate("about") }, onKeep = { store.schedulePrefill = it; nav.navigate("schedule/new") })
             }
             composable("sessions") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }) }
             composable("projects") { ProjectsScreen(store, onOpen = { nav.navigate("project/$it") }, onAdd = { addProject = true }, onAsk = { nav.navigate("ask") }) }
             composable("ask") { SessionsScreen(store, onOpen = open, onBack = { nav.popBackStack() }, askOnly = true) }
             composable("settings") { SettingsScreen(store, onOpen = { nav.navigate(it) }) }
+            composable("about") { AboutScreen(store, onBack = { nav.popBackStack() }, onOpen = open, onRules = { nav.navigate("rules") }) }
+            composable("rules") { RulesScreen(store, onBack = { nav.popBackStack() }) }
+            composable("reach") { CanReachScreen(store, onBack = { nav.popBackStack() }, onBrowser = { nav.navigate("browser") }, onDevice = { nav.navigate("device/$it") }, onPhone = { nav.navigate("phone") }) }
+            composable("phone") { PhoneScreen(store, onBack = { nav.popBackStack() }) }
+            composable("device/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { e ->
+                DeviceScreen(store, e.arguments?.getString("id") ?: "", onBack = { nav.popBackStack() })
+            }
+            composable("browser") { BrowserScreen(store, onBack = { nav.popBackStack() }) }
+            composable("housekeeping") { HousekeepingScreen(store, onBack = { nav.popBackStack() }, onArchive = { nav.navigate("archive") }) }
+            composable("archive") { ArchiveScreen(store, onBack = { nav.popBackStack() }) }
+            composable("activity") { ActivityScreen(store, onBack = { nav.popBackStack() }, onOpen = open) }
+            composable("spending") { SpendingScreen(store, onBack = { nav.popBackStack() }) }
             composable("schedules") { SchedulesScreen(store, onBack = { nav.popBackStack() }, onEdit = { nav.navigate("schedule/${it ?: "new"}") }) }
             composable("schedule/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { e ->
                 val id = e.arguments?.getString("id")?.takeIf { it != "new" }
-                ScheduleScreen(store, id, onBack = { nav.popBackStack() }, onOpen = { nav.popBackStack(); open(it) })
+                if (id == null) ScheduleScreen(store, null, onBack = { nav.popBackStack() }, onOpen = { nav.popBackStack(); open(it) })
+                else SchedulePage(store, id, onBack = { nav.popBackStack() }, onEdit = { nav.navigate("schedule/$id/edit") }, onOpen = open)
+            }
+            composable("schedule/{id}/edit", arguments = listOf(navArgument("id") { type = NavType.StringType })) { e ->
+                ScheduleScreen(store, e.arguments?.getString("id"), onBack = { nav.popBackStack() }, onOpen = { nav.popBackStack(); open(it) })
             }
             composable("devices") { DevicesScreen(store, onBack = { nav.popBackStack() }) }
             composable("dashboard") { DashboardScreen(store, onBack = { nav.popBackStack() }) }
@@ -158,7 +179,8 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
                 val id = entry.arguments?.getString("id") ?: return@composable
                 val vm: SessionViewModel = viewModel(key = "session-$id", factory = factory { SessionViewModel(id, store) })
                 androidx.compose.runtime.CompositionLocalProvider(LocalNavScope provides this) {
-                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") }, onResume = { nav.navigate("shell/claude/$id") })
+                SessionScreen(vm, onBack = { nav.popBackStack() }, onTask = { nav.navigate("task/$it") }, onTerminal = { nav.navigate("terminal/$id") }, onResume = { nav.navigate("shell/claude/$id") },
+                    onKeepWatching = { store.schedulePrefill = it; nav.navigate("schedule/new") }, onOpen = { nav.popBackStack(); open(it) })
                 }
             }
             composable("terminal/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
@@ -202,17 +224,31 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
     }
     }
 
-    if (newMenu) NewMenu(onDismiss = { newMenu = false }) { pick ->
+    val recipes by store.recipes.collectAsState()
+    var recipe by remember { mutableStateOf<ai.bench.app.data.Recipe?>(null) }
+    if (newMenu) NewMenu(onDismiss = { newMenu = false }, recipes = recipes, onRecipe = { newMenu = false; recipe = it }) { pick ->
         newMenu = false
         when (pick) {
             "session" -> newSession = true
-            "research" -> research = true
+            "research" -> { researchAsk = ""; research = true }
             "schedule" -> nav.navigate("schedule/new")
             "project" -> addProject = true
         }
     }
-    if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) })
-    if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true)
+    recipe?.let { r -> RunRecipeSheet(store, r, onDismiss = { recipe = null }) { recipe = null; open(it) } }
+    if (newSession) NewSessionSheet(store, onDismiss = { newSession = false }, onCreated = { newSession = false; open(it) }, onSchedule = { newSession = false; store.schedulePrefill = it; nav.navigate("schedule/new") })
+    if (research) NewSessionSheet(store, onDismiss = { research = false }, onCreated = { research = false; open(it) }, research = true, initial = researchAsk)
+    // The hidden screen, live, when a notification or an approval asks to watch it.
+    val watching by BenchApp.instance.requestWatch.collectAsState()
+    if (watching) androidx.compose.ui.window.Dialog(
+        onDismissRequest = { BenchApp.instance.requestWatch.value = false },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) { PhoneWatch(store) { BenchApp.instance.requestWatch.value = false } }
+    // What a session asks this phone to share, decided here.
+    val phoneAsks by ai.bench.app.phone.PhoneLink.asks.collectAsState()
+    var laterAsks by remember { mutableStateOf(setOf<String>()) }
+    // Swiped away: it waits in its notification instead.
+    phoneAsks.firstOrNull { it.id !in laterAsks }?.let { a -> PhoneAskSheet(store, a) { laterAsks = laterAsks + a.id } }
     if (addProject) AddProjectSheet(store, onDismiss = { addProject = false }, onAdded = { addProject = false; nav.navigate("project/$it") })
 }
 
@@ -246,6 +282,7 @@ fun BenchNav(active: String, onPick: (String) -> Unit) {
     NavigationBar(containerColor = c.bg, tonalElevation = 0.dp) {
         listOf(
             Triple("home", "Home", Icons.Outlined.Home),
+            Triple("research", "Research", Icons.AutoMirrored.Outlined.ManageSearch),
             Triple("projects", "Projects", Icons.Outlined.Folder),
             Triple("settings", "Settings", Icons.Outlined.Settings),
         ).forEach { (id, label, icon) ->

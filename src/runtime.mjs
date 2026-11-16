@@ -11,11 +11,14 @@ import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import { cleanEnv, providerEnv, invocationId, priceUsage } from './providers.mjs';
 import { env as benchEnv } from './env.mjs';
 import { Notes } from './notes.mjs';
+import { Rules } from './rules.mjs';
+import { About } from './about.mjs';
+import { Browser, BROWSER_NOTE } from './browser.mjs';
 import { runCheck, CHECK_TIMEOUT_MS } from './check.mjs';
 import { workingTree } from './git.mjs';
 import { benchApproval } from './tools.mjs';
 import { askApproval, ASK_TOOLS, ASK_BRIEF } from './ask.mjs';
-import { REPORTS_NOTE, reportsDir } from './reports.mjs';
+import { REPORTS_NOTE, reportsDir, thenSteps } from './reports.mjs';
 import { resolveRouting, subagents, ROUTING_NOTE } from './routing.mjs';
 import { parseLimit, limitFromEvent } from './limits.mjs';
 import { snapshot, appeared } from './artifacts.mjs';
@@ -414,6 +417,27 @@ export class Runtime extends EventEmitter {
     return (this.notesStore ??= new Notes(this.store.dir));
   }
 
+  /** What Bench may do, asks about, and never does. */
+  get rules() {
+    return (this.#rules ??= new Rules(this.store.dir));
+  }
+  /** @type {Rules|undefined} */
+  #rules;
+
+  /** The browser sessions can use. */
+  get browser() {
+    return (this.#browser ??= new Browser(this.store.dir));
+  }
+  /** @type {Browser|undefined} */
+  #browser;
+
+  /** Who the person is: a note every session reads. */
+  get about() {
+    return (this.#about ??= new About(this.store.dir, this.notes));
+  }
+  /** @type {About|undefined} */
+  #about;
+
   /** Where a session's attached files are kept. It is opened to the session, so reading them asks nothing. @param {string} id */
   attachmentsDir(id) {
     return path.join(this.store.dir, 'attachments', id);
@@ -610,10 +634,13 @@ export class Runtime extends EventEmitter {
       TEMP: scratch,
       CLAUDE_AGENT_SDK_CLIENT_APP: 'bench',
     };
+    // The browser, for project sessions, when Chromium is installed: started now so its tools find it.
+    const browserMcp = ask ? null : this.browser.mcp();
+    if (browserMcp) this.browser.ensure().catch(() => false);
     const attach = attachNote(this.attachmentsDir(s.id));
     const notes = ask ? null : this.notes.brief(project?.path);
     const reports = reportsDir(this.attachmentsDir(s.id));
-    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, REPORTS_NOTE(reports), notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
+    const instructions = (ask ? [userInstructions(), ASK_BRIEF, attach] : [userInstructions(), scratchNote(scratch), attach, REPORTS_NOTE(reports), this.about.note(), this.rules.note(), browserMcp ? BROWSER_NOTE : null, notes, routed ? ROUTING_NOTE : null, this.#taskBrief(s)]).filter(Boolean).join('\n\n') || null;
     const memory = project && path.resolve(project.path) !== path.resolve(s.cwd) ? memoryDir(project.path) : null;
     fs.mkdirSync(this.attachmentsDir(s.id), { recursive: true });
     const live = new Live(s.id);
@@ -640,19 +667,23 @@ export class Runtime extends EventEmitter {
       canUseTool: (tool, input, opts) => this.#ask(s.id, tool, input, opts),
       // Bench's own tools, acting on this session's task and project. In-process: no
       // port, nothing to log in to, nothing exposed.
-      ...(this.mcp ? { mcpServers: { bench: this.mcp(s.id) } } : {}),
+      ...(this.mcp || browserMcp ? { mcpServers: { ...(this.mcp ? { bench: this.mcp(s.id) } : {}), ...(browserMcp ? { browser: browserMcp } : {}) } } : {}),
+      // Browsing is not asked about step by step; the rules still stop what leaves the box.
+      ...(browserMcp ? { allowedTools: ['mcp__browser'] } : {}),
       // A task session may not stop on a failing check: Bench runs it, and a failure goes
       // back to the model as the reason it has to keep going. A reviewer only reads and
       // reports, so the check does not hold it.
       hooks: {
         ...(s.task_id && s.purpose !== 'review' ? { Stop: [{ hooks: [(input, _id, { signal }) => this.#onStop(s.id, /** @type {any} */ (input), signal)], timeout: CHECK_TIMEOUT_MS / 1000 + 60 }] } : {}),
         // What each tool call leaves in /tmp, recorded against this session; see artifacts.mjs.
-        PreToolUse: [{ hooks: [async (input) => this.#beforeTool(/** @type {any} */ (input))] }],
+        PreToolUse: [{ hooks: [async (input) => this.#beforeTool(s.id, /** @type {any} */ (input))] }],
         PostToolUse: [{ hooks: [async (input) => this.#afterTool(s.id, /** @type {any} */ (input))] }],
         PostToolUseFailure: [{ hooks: [async (input) => this.#afterTool(s.id, /** @type {any} */ (input))] }],
       },
       ...(model ? { model: invocationId(model) } : {}),
       ...(s.effort ? { effort: /** @type {any} */ (s.effort) } : {}),
+      // An unattended run stops at its cap; Claude Code ends the query with error_max_budget_usd.
+      ...(s.budget ? { maxBudgetUsd: s.budget } : {}),
       ...(s.claude_session_id ? { resume: s.claude_session_id } : {}),
       ...(instructions ? { systemPrompt: { type: 'preset', preset: 'claude_code', append: instructions } } : {}),
       ...(memory ? { settings: { autoMemoryDirectory: memory } } : {}),
@@ -802,8 +833,11 @@ export class Runtime extends EventEmitter {
         input_tokens: Math.max(s.input_tokens, input),
         output_tokens: Math.max(s.output_tokens, output),
         ...(Object.keys(byModel).length ? { model_usage: byModel } : {}),
-        ...(m.is_error && m.subtype !== 'error_during_execution' ? { error: (m.errors || []).join('\n').slice(0, 2000) || null } : {}),
+        ...(m.is_error && m.subtype !== 'error_during_execution' && m.subtype !== 'error_max_budget_usd' ? { error: (m.errors || []).join('\n').slice(0, 2000) || null } : {}),
+        ...(m.subtype === 'error_max_budget_usd' ? { capped: true } : {}),
+        ...(m.subtype === 'success' ? { next_steps: thenSteps(m.result) } : {}),
       });
+      if (m.subtype === 'error_max_budget_usd') this.#event(id, 'notice', { text: `Stopped at its $${s.budget} cap.` });
       live.writeUp = false;
       // The usage limit ended this turn. Said before turn-done, so whatever pauses the session
       // has done it by the time a loop decides what the turn's end means.
@@ -811,7 +845,7 @@ export class Runtime extends EventEmitter {
       if (limit) this.emit('limit', { session_id: id, message: limit.message, until: live.limitAt || limit.resetsAt });
       live.limit = null;
       live.limitAt = null;
-      if (live.turns === 0) this.emit('turn-done', { session: this.store.getSession(id), ok: !m.is_error, limited: !!limit });
+      if (live.turns === 0) this.emit('turn-done', { session: this.store.getSession(id), ok: !m.is_error, limited: !!limit, reply: m.subtype === 'success' ? m.result ?? null : null });
       return;
     }
     if (m.type === 'prompt_suggestion') this.emit('suggestion', { session_id: id, text: m.suggestion || m.text || '' });
@@ -944,14 +978,25 @@ export class Runtime extends EventEmitter {
 
   // -- what tools leave behind --------------------------------------------------------
 
-  /** /tmp as it was when a tool call started, by tool_use_id. @param {{tool_use_id?:string}} input */
-  #beforeTool(input) {
+  /** Before each tool call: the Never list, About me's undo, and /tmp as it was. @param {string} id @param {{tool_use_id?:string, tool_name?:string, tool_input?:any}} input */
+  #beforeTool(id, input) {
+    // The person's Never list: stopped here, before the tool runs, in every permission mode.
+    const rule = this.rules.decide(input.tool_name || '', input.tool_input);
+    // Asks first: put to the person even in a mode that would let it run.
+    if (rule?.value === 'ask') return { hookSpecificOutput: { hookEventName: /** @type {const} */ ('PreToolUse'), permissionDecision: /** @type {const} */ ('ask'), permissionDecisionReason: `Asks first: ${rule.label.toLowerCase()}` } };
+    const never = rule?.value === 'never' ? rule : null;
+    if (never) {
+      this.notice(id, `Stopped before it could ${never.label.toLowerCase()}: that is on your Never list.`);
+      return { hookSpecificOutput: { hookEventName: /** @type {const} */ ('PreToolUse'), permissionDecision: /** @type {const} */ ('deny'), permissionDecisionReason: `Blocked by the person's Never list: ${never.label.toLowerCase()}. Do not try another way. Prepare it for the person to finish instead (an email as a drafts file in the reports folder).` } };
+    }
+    if (this.about.touches(input.tool_name || '', input.tool_input)) this.about.before();
     if (input.tool_use_id) this.tmpBefore.set(input.tool_use_id, snapshot());
     return {};
   }
 
-  /** Records what appeared in /tmp during the call. @param {string} id @param {{tool_use_id?:string, tool_name?:string}} input */
+  /** Records what appeared in /tmp during the call. @param {string} id @param {{tool_use_id?:string, tool_name?:string, tool_input?:any}} input */
   #afterTool(id, input) {
+    if (this.about.touches(input.tool_name || '', input.tool_input)) this.about.after(id);
     const before = input.tool_use_id ? this.tmpBefore.get(input.tool_use_id) : undefined;
     if (!before || !input.tool_use_id) return {};
     this.tmpBefore.delete(input.tool_use_id);

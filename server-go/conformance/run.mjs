@@ -35,7 +35,7 @@ function makeRepo(dir) {
 }
 
 async function start(kind, root, port) {
-  const env = { ...process.env, BENCH_ROOT: root, PORT: String(port), BENCH_CLAUDE_BIN: fake, BENCH_PROJECTS_DIR: path.join(root, 'projects'), BENCH_TMP_ROOTS: path.join(root, 'tmp') };
+  const env = { ...process.env, BENCH_CHROMIUM: '/nonexistent', BENCH_ROOT: root, PORT: String(port), BENCH_CLAUDE_BIN: fake, BENCH_PROJECTS_DIR: path.join(root, 'projects'), BENCH_TMP_ROOTS: path.join(root, 'tmp') };
   fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
   const child = kind === 'node'
     ? spawn(process.execPath, [path.join(repoRoot, 'src', 'cli.mjs'), 'serve'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -63,6 +63,8 @@ function normaliser(root, repo, home) {
     return map.get(v);
   };
   const VOLATILE = new Set(['push', 'key', 'created_at', 'updated_at', 'archived_at', 'last_seen_at', 'merged_at', 'check_at', 'started_at', 'ended_at', 'mtime', 'at', 'uptimeMs', 'startedAt', 'pid', 'ms', 'duration_ms', 'expiresIn', 'code_hash', 'qr', 'code', 'removed_at', 'size', 'loadavg', 'memFree', 'diskFree', 'until', 'seen_at', 'next_run_at', 'last_run_at', 'modified', 'sent_at']);
+  // What only the Go server gives (Node is no longer developed): left out of the comparison.
+  const GO_ONLY = new Set(['gist', 'preview']);
   const str = (s) => {
     s = s.split(root).join('<root>').split(repo).join('<repo>').split(home).join('<home>');
     for (const m of s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || []) tag(ids, m, 'id');
@@ -80,7 +82,7 @@ function normaliser(root, repo, home) {
     if (key && VOLATILE.has(key) && v !== null && v !== undefined) return `<${key}>`;
     if (typeof v === 'string') return str(v);
     if (Array.isArray(v)) return v.map((x) => walk(x));
-    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [str(k), walk(x, k)]));
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([k]) => !GO_ONLY.has(k)).map(([k, x]) => [str(k), walk(x, k)]));
     return v;
   };
   return walk;
@@ -214,6 +216,12 @@ async function scenario(srv, repo, root) {
   await step('session model', () => api('PATCH', `/api/sessions/${s1.id}`, { modelId: 'anthropic:claude-sonnet-5' }));
   await step('session model: wrong provider', () => api('PATCH', `/api/sessions/${s1.id}`, { modelId: 'deepseek:deepseek-flash' }));
   await step('session limit', () => api('POST', `/api/sessions/${s1.id}/limit`, { autoResume: false }));
+  await step('then: a reply offers next steps', async () => {
+    const r = await api('POST', `/api/sessions/${s1.id}/messages`, { text: 'done\nThen: Draft cold emails for the top 3' });
+    await until(async () => (await api('GET', `/api/sessions/${s1.id}`)).body.session.status === 'idle');
+    return r;
+  });
+  await step('then: the session holds them', async () => (await api('GET', `/api/sessions/${s1.id}`)).body.session.next_steps);
   await step('send nothing', () => api('POST', `/api/sessions/${s1.id}/messages`, { text: '  ' }));
   await step('upload', () => fetch(`${srv.base}/api/sessions/${s1.id}/uploads?name=report.txt&type=text/plain`, { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: 'hello file' }).then(async (r) => ({ status: r.status, body: await r.json() })));
   await step('upload: wrong type', () => fetch(`${srv.base}/api/sessions/${s1.id}/uploads?name=x`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: 'x' }).then(async (r) => ({ status: r.status, body: await r.json() })));
@@ -313,10 +321,72 @@ async function scenario(srv, repo, root) {
   if (!ran?.id) console.error('schedule run gave', JSON.stringify(ran).slice(0, 300));
   if (ran?.id) await until(async () => (await api('GET', `/api/sessions/${ran.id}`)).body.session.status === 'idle');
   if (ran?.id) await step('scheduled session', () => api('GET', `/api/sessions/${ran.id}`));
+  await step('schedule detail', () => api('GET', `/api/schedules/${sch.id}`));
+  await step('schedule detail: unknown', () => api('GET', '/api/schedules/nope'));
+  // A schedule that keeps one board.
+  const board = (await step('schedule: keep a board', () => api('POST', '/api/schedules', { title: 'Job board', projectId: project.id, prompt: 'find roles', days: [2], time: '09:00', tz: 'UTC', keepBoard: true }))).body;
+  if (board?.id) {
+    fs.mkdirSync(path.join(repo, 'boards'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'boards', 'job-board.md'), '# Remote roles\n\nUpdated today\n\n- Acme backend · New\n- Beta API · New\n- Gamma infra\n');
+    fs.utimesSync(path.join(repo, 'boards', 'job-board.md'), new Date('2026-01-02T00:00:00Z'), new Date('2026-01-02T00:00:00Z'));
+    const r1 = (await step('board run', () => api('POST', `/api/schedules/${board.id}/run`, {}))).body;
+    if (r1?.id) await until(async () => (await api('GET', `/api/sessions/${r1.id}`)).body.session.status === 'idle');
+    await step('board in reports', async () => { const r = await api('GET', '/api/reports'); return { status: r.status, body: r.body.filter((x) => x.kind === 'board') }; });
+    await step('board detail', () => api('GET', `/api/schedules/${board.id}`));
+    await step('board: turn off', () => api('PATCH', `/api/schedules/${board.id}`, { keepBoard: false }));
+    await step('board: delete', () => api('DELETE', `/api/schedules/${board.id}`));
+  }
+  // Recipes: saved prompts with blanks.
+  await step('recipes: none', () => api('GET', '/api/recipes'));
+  await step('recipe: no name', () => api('POST', '/api/recipes', { title: ' ', prompt: 'x' }));
+  await step('recipe: unknown project', () => api('POST', '/api/recipes', { title: 'x', prompt: 'x', projectId: 'nope' }));
+  const recipe = (await step('recipe add', () => api('POST', '/api/recipes', { title: 'Job hunt', prompt: 'Find 5 remote {role} jobs in {region}, {role} only', projectId: project.id }))).body;
+  await step('recipe edit', () => api('PATCH', `/api/recipes/${recipe.id}`, { title: 'Jobs', projectId: null }));
+  await step('recipe edit: unknown', () => api('PATCH', '/api/recipes/nope', { title: 'x' }));
+  await step('recipes', () => api('GET', '/api/recipes'));
+  await step('recipe delete', () => api('DELETE', `/api/recipes/${recipe.id}`));
+  await step('recipe delete: again', () => api('DELETE', `/api/recipes/${recipe.id}`));
+  // A watch: a schedule that runs when a page changes, with no days or time.
+  await step('watch: bad address', () => api('POST', '/api/schedules', { title: 'Roles', projectId: project.id, prompt: 'tell me', watch: { url: 'jobs page' } }));
+  await step('watch: bad hours', () => api('POST', '/api/schedules', { title: 'Roles', projectId: project.id, prompt: 'tell me', watch: { url: 'https://example.com/jobs', everyHours: 0 } }));
+  const watch = (await step('watch add', () => api('POST', '/api/schedules', { title: 'Lagos roles', projectId: project.id, prompt: 'Tell me when a role in Lagos is posted', watch: { url: 'https://example.com/jobs' } }))).body;
+  await step('watch: every 2 hours', () => api('PATCH', `/api/schedules/${watch.id}`, { watch: { url: 'https://example.com/jobs', everyHours: 2 } }));
+  await step('watch: back to a time, missing it', () => api('PATCH', `/api/schedules/${watch.id}`, { watch: null, time: 'soon' }));
+  await step('watch: back to a time', () => api('PATCH', `/api/schedules/${watch.id}`, { watch: null, days: [1], time: '08:00' }));
+  await step('watch: delete', () => api('DELETE', `/api/schedules/${watch.id}`));
   await step('schedule delete', () => api('DELETE', `/api/schedules/${sch.id}`));
   await step('schedule delete: again', () => api('DELETE', `/api/schedules/${sch.id}`));
   await step('research project', () => api('POST', '/api/research', {}));
   await step('research project: again', () => api('POST', '/api/research', {}));
+
+  // About me and the rules.
+  await step('about: none yet', () => api('GET', '/api/about'));
+  await step('about: include before written', () => api('PUT', '/api/about', { include: true }));
+  await step('about: not text', () => api('PUT', '/api/about', { text: 5 }));
+  await step('about: write', () => api('PUT', '/api/about', { text: '# About me\n\n## Who you are\n\nJosh\n' }));
+  await step('about: switch off', () => api('PUT', '/api/about', { include: false }));
+  await step('about: no draft', () => api('POST', '/api/about/draft', { action: 'save' }));
+  await step('about: nothing to undo', () => api('POST', '/api/about/undo', {}));
+  await step('about: from a cv', () => api('POST', '/api/about/from-cv', {}));
+  await step('rules', () => api('GET', '/api/rules'));
+  await step('can reach', () => api('GET', '/api/reach'));
+  await step('browser', () => api('GET', '/api/browser'));
+  await step('browser: sign out of nothing', () => api('POST', '/api/browser/sign-out', {}));
+  await step('browser: sign out', () => api('POST', '/api/browser/sign-out', { site: 'example.com' }));
+  await step('rules: set', () => api('PUT', '/api/rules', { key: 'send-email', value: 'ask' }));
+  await step('rules: bad value', () => api('PUT', '/api/rules', { key: 'pay', value: 'maybe' }));
+  await step('rules: no such rule', () => api('PUT', '/api/rules', { key: 'fly', value: 'never' }));
+
+  // Spending: caps for unattended runs.
+  await step('spending', () => api('GET', '/api/spending'));
+  await step('spending: set', () => api('PUT', '/api/spending', { daily_cap: 7.555, run_cap: '3' }));
+  await step('spending: zero', () => api('PUT', '/api/spending', { daily_cap: 0 }));
+  await step('spending: not a number', () => api('PUT', '/api/spending', { run_cap: 'x' }));
+  await step('spending: pause', () => api('PUT', '/api/spending', { paused: true }));
+  await step('budget: not capped', () => api('POST', `/api/sessions/${s1.id}/budget`, { action: 'more' }));
+  await step('budget: bad action', () => api('POST', `/api/sessions/${s1.id}/budget`, { action: 'x' }));
+  await step('budget: stop', () => api('POST', `/api/sessions/${s1.id}/budget`, { action: 'stop' }));
+  await step('budget: no session', () => api('POST', '/api/sessions/nope/budget', { action: 'stop' }));
 
   return out;
 }

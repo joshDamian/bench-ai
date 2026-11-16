@@ -66,6 +66,8 @@ class BenchApi(val config: ServerConfig) {
     suspend fun get(path: String) = call(request(path).get().build())
     suspend fun post(path: String, body: JsonElement = JsonObject(emptyMap())) =
         call(request(path).post(body.toString().toRequestBody(jsonType)).build())
+    suspend fun put(path: String, body: JsonElement) =
+        call(request(path).put(body.toString().toRequestBody(jsonType)).build())
     suspend fun patch(path: String, body: JsonElement) =
         call(request(path).patch(body.toString().toRequestBody(jsonType)).build())
     suspend fun seen(id: String) = runCatching { post("/api/sessions/${enc(id)}/seen") }
@@ -76,10 +78,53 @@ class BenchApi(val config: ServerConfig) {
         put("index", kotlinx.serialization.json.JsonPrimitive(index)); put("sent", kotlinx.serialization.json.JsonPrimitive(sent))
     })
     suspend fun schedules(): List<Schedule> = get("/api/schedules").lossy()
+    suspend fun activity(): ActivityFeed = get("/api/activity").decode()
+    suspend fun seenActivity() = post("/api/activity/seen")
+    suspend fun brief(): Boolean = (get("/api/brief").decode<JsonObject>()["morning_brief"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+    suspend fun setBrief(on: Boolean) = put("/api/brief", buildJsonObject { put("morning_brief", on) })
+    suspend fun undoActivity(id: Long) = post("/api/activity/$id/undo")
+    suspend fun housekeeping(): Housekeeping = get("/api/housekeeping").decode()
+    suspend fun setHousekeeping(key: String, on: Boolean): Housekeeping = put("/api/housekeeping", buildJsonObject { put(key, on) }).decode()
+    suspend fun archived(): ArchiveList = get("/api/archive").decode()
+    suspend fun restore(kind: String, id: String) = post("/api/archive/restore", buildJsonObject { put("kind", kind); put("id", id) })
+    suspend fun emptyArchive() = delete("/api/archive")
+    suspend fun deleteSchedule(id: String, runs: Boolean) = delete("/api/schedules/${enc(id)}${if (runs) "?runs=1" else ""}")
+    suspend fun recipes(): List<Recipe> = get("/api/recipes").lossy()
+    suspend fun saveRecipe(id: String?, body: JsonObject): Recipe = (if (id == null) post("/api/recipes", body) else patch("/api/recipes/${enc(id)}", body)).decode()
+    suspend fun deleteRecipe(id: String) = delete("/api/recipes/${enc(id)}")
     suspend fun saveSchedule(id: String?, body: JsonObject): Schedule = (if (id == null) post("/api/schedules", body) else patch("/api/schedules/${enc(id)}", body)).decode()
+    suspend fun schedule(id: String): ScheduleDetail = get("/api/schedules/${enc(id)}").decode()
     suspend fun deleteSchedule(id: String) = delete("/api/schedules/${enc(id)}")
     suspend fun runSchedule(id: String): Session = post("/api/schedules/${enc(id)}/run").decode()
     suspend fun research(): Project = post("/api/research").decode()
+    suspend fun about(): About = get("/api/about").decode()
+    suspend fun saveAbout(text: String? = null, include: Boolean? = null): About = put("/api/about", buildJsonObject {
+        text?.let { put("text", it) }; include?.let { put("include", it) }
+    }).decode()
+    suspend fun aboutDraft(action: String): About = post("/api/about/draft", buildJsonObject { put("action", action) }).decode()
+    suspend fun aboutUndo(): About = post("/api/about/undo").decode()
+    /** A session that turns a CV into a draft: attach the CV to it and send the prompt. */
+    suspend fun aboutFromCv(): Pair<Session, String> = post("/api/about/from-cv").let { r -> r["session"].decode<Session>() to (r["prompt"].str() ?: "") }
+    suspend fun rules(): List<Rule> = get("/api/rules").lossy()
+    suspend fun reach(): Reach = get("/api/reach").decode()
+    suspend fun meeting(): MeetingState = get("/api/meeting").decode()
+    suspend fun setMeetingSpeech(v: String): MeetingState = put("/api/meeting", buildJsonObject { put("speech", v) }).decode()
+    suspend fun setMeeting(body: JsonObject): MeetingState = put("/api/meeting", body).decode()
+    suspend fun stopMeeting(): MeetingState = post("/api/meeting/stop").decode()
+    suspend fun linkedDevices(): List<LinkedDevice> = get("/api/linked-devices").lossy()
+    suspend fun askDevice(id: String, kind: String, path: String, access: String): DeviceAsk =
+        post("/api/linked-devices/${enc(id)}/ask", buildJsonObject { put("kind", kind); put("path", path); put("access", access) }).decode()
+    suspend fun cancelDeviceAsk(id: String) = delete("/api/linked-devices/asks/${enc(id)}")
+    suspend fun forgetDevice(id: String) = delete("/api/linked-devices/${enc(id)}")
+    suspend fun browser(): BrowserStatus = get("/api/browser").decode()
+    suspend fun signOut(site: String): BrowserStatus = post("/api/browser/sign-out", buildJsonObject { put("site", site) }).decode()
+    suspend fun spending(): Spending = get("/api/spending").decode()
+    suspend fun setSpending(dailyCap: Double? = null, runCap: Double? = null, paused: Boolean? = null): Spending = put("/api/spending", buildJsonObject {
+        dailyCap?.let { put("daily_cap", it) }; runCap?.let { put("run_cap", it) }; paused?.let { put("paused", it) }
+    }).decode()
+    /** A run stopped at its cap: "more" goes on with another run's worth, "stop" leaves it there. */
+    suspend fun budget(id: String, action: String): Session = post("/api/sessions/${enc(id)}/budget", buildJsonObject { put("action", action) }).decode()
+    suspend fun setRule(key: String, value: String): List<Rule> = put("/api/rules", buildJsonObject { put("key", key); put("value", value) }).lossy()
     suspend fun delete(path: String) = call(request(path).delete().build())
 
     /** A shape this client cannot read is a BenchError the screen shows, never a crash. */

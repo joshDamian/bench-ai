@@ -141,6 +141,18 @@ export class Store {
     }
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'pinned')) this.db.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER');
     if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'schedule_id')) this.db.exec('ALTER TABLE sessions ADD COLUMN schedule_id TEXT');
+    // budget: the most one query of an unattended run may spend; capped: it stopped there.
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'budget')) this.db.exec('ALTER TABLE sessions ADD COLUMN budget REAL');
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'capped')) this.db.exec('ALTER TABLE sessions ADD COLUMN capped INTEGER');
+    // next_steps: the "Then: …" steps a session's last reply offered, as JSON.
+    if (!this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'next_steps')) this.db.exec('ALTER TABLE sessions ADD COLUMN next_steps TEXT');
+    // keep_board: the schedule keeps one board up to date instead of a report per run.
+    if (!this.db.prepare('PRAGMA table_info(schedules)').all().some((c) => c.name === 'keep_board')) this.db.exec('ALTER TABLE schedules ADD COLUMN keep_board INTEGER');
+    // watch: a page the schedule runs on when it changes, as JSON {url, every_hours}, instead of
+    // days and a time; watch_hash: the page's text when last seen; checked_at: when that was.
+    for (const col of ['watch', 'watch_hash', 'checked_at']) {
+      if (!this.db.prepare('PRAGMA table_info(schedules)').all().some((c) => c.name === col)) this.db.exec(`ALTER TABLE schedules ADD COLUMN ${col} TEXT`);
+    }
     // routing: a project's or a task's own subagent models, as JSON, over the person's default.
     if (!this.db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE projects ADD COLUMN routing TEXT');
     if (!this.db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'routing')) this.db.exec('ALTER TABLE tasks ADD COLUMN routing TEXT');
@@ -448,7 +460,13 @@ export class Store {
   /** A session row, with its JSON columns read back. @param {any} r @returns {Session|undefined} */
   #session(r) {
     if (!r) return r;
-    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume, pinned: !!r.pinned };
+    return { ...r, pause: r.pause ? JSON.parse(r.pause) : null, model_usage: r.model_usage ? JSON.parse(r.model_usage) : null, auto_resume: r.auto_resume == null ? null : !!r.auto_resume, pinned: !!r.pinned, capped: !!r.capped, next_steps: r.next_steps ? JSON.parse(r.next_steps) : null };
+  }
+
+  /** What unattended runs (the ones a schedule started) have spent since a moment. @param {string} since */
+  unattendedSince(since) {
+    const r = /** @type {any} */ (this.db.prepare('SELECT COALESCE(SUM(cost),0) AS spent, COUNT(*) AS runs FROM sessions WHERE schedule_id IS NOT NULL AND created_at >= ?').get(since));
+    return { spent: Number(r.spent) || 0, runs: Number(r.runs) || 0 };
   }
 
   /** Marks a session looked at, without counting as a change to it. @param {string} id @returns {Session|undefined} */
@@ -468,7 +486,8 @@ export class Store {
   /** @param {any} r */
   #schedule(r) {
     if (!r) return r;
-    return { ...r, enabled: !!r.enabled };
+    const { watch_hash, ...rest } = r;
+    return { ...rest, enabled: !!r.enabled, keep_board: !!r.keep_board, watch: r.watch ? JSON.parse(r.watch) : null };
   }
 
   /** @returns {any[]} */
@@ -484,8 +503,8 @@ export class Store {
   /** @param {Record<string, any>} o */
   addSchedule(o) {
     const id = crypto.randomUUID();
-    this.db.prepare('INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
-      .run(id, o.title, o.project_id, o.prompt, o.days, o.time, o.tz, o.mode ?? null, o.model_id ?? null, o.provider_id ?? null, o.effort ?? null, o.enabled === false ? 0 : 1, now());
+    this.db.prepare('INSERT INTO schedules(id,title,project_id,prompt,days,time,tz,mode,model_id,provider_id,effort,enabled,created_at,keep_board,watch) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, o.title, o.project_id, o.prompt, o.days, o.time, o.tz, o.mode ?? null, o.model_id ?? null, o.provider_id ?? null, o.effort ?? null, o.enabled === false ? 0 : 1, now(), o.keep_board ? 1 : 0, o.watch ? JSON.stringify(o.watch) : null);
     return this.getSchedule(id);
   }
 
@@ -493,8 +512,20 @@ export class Store {
   updateSchedule(id, patch) {
     const row = { ...patch };
     if (row.enabled !== undefined) row.enabled = row.enabled ? 1 : 0;
+    if (row.keep_board !== undefined) row.keep_board = row.keep_board ? 1 : 0;
+    if (row.watch !== undefined) row.watch = row.watch ? JSON.stringify(row.watch) : null;
     this.#patch('schedules', id, row);
     return this.getSchedule(id);
+  }
+
+  /** The page text a watch last saw, by its hash. @param {string} id @returns {string|null} */
+  watchHash(id) {
+    return this.#one('SELECT watch_hash FROM schedules WHERE id=?', id)?.watch_hash ?? null;
+  }
+
+  /** The runs a schedule started, newest first. @param {string} id */
+  sessionsOfSchedule(id) {
+    return this.#all('SELECT * FROM sessions WHERE schedule_id=? ORDER BY created_at DESC LIMIT 20', id).map((r) => /** @type {Session} */ (this.#session(r)));
   }
 
   /** @param {string} id */
@@ -522,8 +553,9 @@ export class Store {
   updateSession(id, patch) {
     /** @type {Record<string, any>} */
     const row = { ...patch, updated_at: now() };
-    for (const k of /** @type {const} */ (['pause', 'model_usage'])) if (row[k] !== undefined) row[k] = row[k] === null ? null : JSON.stringify(row[k]);
+    for (const k of /** @type {const} */ (['pause', 'model_usage', 'next_steps'])) if (row[k] !== undefined) row[k] = row[k] === null ? null : JSON.stringify(row[k]);
     if (row.auto_resume !== undefined) row.auto_resume = row.auto_resume === null ? null : row.auto_resume ? 1 : 0;
+    if (row.capped !== undefined) row.capped = row.capped ? 1 : 0;
     this.#patch('sessions', id, row);
     return /** @type {Session} */ (this.getSession(id));
   }
