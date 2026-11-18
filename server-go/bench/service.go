@@ -94,18 +94,19 @@ type Host struct {
 
 type Service struct {
 	Emitter
-	Root     string
-	Store    *Store
-	Runtime  *Runtime
-	Notifier func(payload *Obj) int
-	Host     *Host
-	Loop     *Loop
-	Resumer  *Resumer
+	Root      string
+	Store     *Store
+	Runtime   *Runtime
+	Notifier  func(payload *Obj) int
+	Host      *Host
+	Loop      *Loop
+	Resumer   *Resumer
 	Scheduler *Scheduler
 
 	mu       sync.Mutex
 	spending *Spending
 	devices  *Devices
+	jobs     *Jobs
 	meeting  *Meeting
 }
 
@@ -136,6 +137,7 @@ func NewService(root string) (*Service, error) {
 		}
 		return n
 	}
+	s.Runtime.CheckRemote = s.remoteCheck
 	s.Runtime.ShareRule = func(tool string, in *Obj) string {
 		if r := s.Meeting().Rule(tool, in); r != "" {
 			return r

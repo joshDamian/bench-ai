@@ -229,14 +229,17 @@ type heldApproval struct {
 
 type Runtime struct {
 	Emitter
-	Store        *Store
-	idle         time.Duration
-	mcp          func(sessionID string) *MCPServer
+	Store *Store
+	idle  time.Duration
+	mcp   func(sessionID string) *MCPServer
 	// DevicesNote and ShareRule come from the service: what linked devices share (devices.go).
 	DevicesNote func() string
 	ShareRule   func(tool string, in *Obj) string
+	// CheckRemote, when set by the service, offers to run a task's check on a linked device.
+	// A nil result with no error means the server runs it here.
+	CheckRemote func(ctx context.Context, t *Obj, command, worktree string) (*CheckResult, error)
 	// Answered is told each approval's answer (a meeting line said no to speaks another).
-	Answered func(approval *Obj, allowed bool)
+	Answered     func(approval *Obj, allowed bool)
 	mu           sync.Mutex
 	startMu      sync.Mutex
 	live         map[string]*live
@@ -470,9 +473,11 @@ func (r *Runtime) Notes() *Notes {
 	return r.notes
 }
 
-func (r *Runtime) AttachmentsDir(id string) string { return filepath.Join(r.Store.Dir, "attachments", id) }
-func (r *Runtime) ScratchDir(id string) string     { return filepath.Join(r.Store.Dir, "scratch", id) }
-func (r *Runtime) DropScratch(id string)           { os.RemoveAll(r.ScratchDir(id)) }
+func (r *Runtime) AttachmentsDir(id string) string {
+	return filepath.Join(r.Store.Dir, "attachments", id)
+}
+func (r *Runtime) ScratchDir(id string) string { return filepath.Join(r.Store.Dir, "scratch", id) }
+func (r *Runtime) DropScratch(id string)       { os.RemoveAll(r.ScratchDir(id)) }
 
 func (r *Runtime) SweepScratch() {
 	ents, err := os.ReadDir(filepath.Join(r.Store.Dir, "scratch"))
@@ -821,15 +826,15 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		priced = model
 	}
 	o := ProcOptions{
-		Cwd:               s.Str("cwd"),
-		Env:               env,
-		PermissionMode:    s.Str("permission_mode"),
-		SkipPermissions:   true,
-		PartialMessages:   true,
-		PromptSuggestions: true,
-		Effort:            s.Str("effort"),
-		MaxBudgetUsd:      s.Num("budget"),
-		Resume:            s.Str("claude_session_id"),
+		Cwd:                s.Str("cwd"),
+		Env:                env,
+		PermissionMode:     s.Str("permission_mode"),
+		SkipPermissions:    true,
+		PartialMessages:    true,
+		PromptSuggestions:  true,
+		Effort:             s.Str("effort"),
+		MaxBudgetUsd:       s.Num("budget"),
+		Resume:             s.Str("claude_session_id"),
 		AppendSystemPrompt: instructions,
 		OnStderr: func(line string) {
 			if regexp.MustCompile(`(?i)error`).MatchString(line) {
@@ -1619,7 +1624,16 @@ func (r *Runtime) Check(ctx context.Context, taskID, sessionID string, force boo
 	}()
 	r.taskUpdate(taskID, O("check_status", "running"))
 	started()
-	res := RunCheck(ctx, t.Str("check_command"), t.Str("worktree"), CleanEnv(), 0)
+	var res CheckResult
+	ran := false
+	if r.CheckRemote != nil {
+		if remote, rerr := r.CheckRemote(ctx, t, t.Str("check_command"), t.Str("worktree")); rerr == nil && remote != nil {
+			res, ran = *remote, true
+		}
+	}
+	if !ran {
+		res = RunCheck(ctx, t.Str("check_command"), t.Str("worktree"), CleanEnv(), 0)
+	}
 	if ctx.Err() != nil {
 		r.taskUpdate(taskID, O("check_status", nil, "check_tree", nil))
 		return nil
