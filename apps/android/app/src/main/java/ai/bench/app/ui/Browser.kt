@@ -92,6 +92,11 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
     DisposableEffect(Unit) {
         val wsUrl = api.config.baseUrl.replaceFirst(Regex("^http"), "ws") + "/api/browser/view"
         val ws = api.http.newWebSocket(api.request("/api/browser/view").url(wsUrl).build(), object : WebSocketListener() {
+            // Frames come as binary JPEG: a still taken when the page settles is the
+            // screen's resolution, the frames while it moves are smaller and quick.
+            override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {
+                BitmapFactory.decodeByteArray(bytes.toByteArray(), 0, bytes.size)?.let { frame = it.asImageBitmap() }
+            }
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val m = runCatching { ai.bench.app.data.BenchJson.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
                 when ((m["type"] as? JsonPrimitive)?.content) {
@@ -126,7 +131,7 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
     }
     // Pages lay out at this view's size while you are in control, as on a phone.
     LaunchedEffect(box, socket.value) {
-        if (box != IntSize.Zero) send("size") { put("width", box.width / density); put("height", box.height / density) }
+        if (box != IntSize.Zero) send("size") { put("width", box.width / density); put("height", box.height / density); put("binaryFrames", true) }
     }
     Dialog(onDismissRequest = onDone, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Column(Modifier.fillMaxSize().background(c.bg).imePadding()) {
@@ -177,10 +182,10 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
                         }
                     }
                     .pointerInput(Unit) {
-                        var acc = 0f
-                        detectVerticalDragGestures(onDragEnd = { acc = 0f }) { _, dy ->
-                            acc += dy
-                            if (kotlin.math.abs(acc) > 40f) { send("scroll") { put("dy", -acc / box.height.coerceAtLeast(1)) }; acc = 0f }
+                        // Every drag event goes on as it comes: sending in 40 px steps made
+                        // the page move in visible jumps, each a whole round trip behind.
+                        detectVerticalDragGestures { _, dy ->
+                            if (dy != 0f) send("scroll") { put("dy", -dy / box.height.coerceAtLeast(1)) }
                         }
                     },
                 contentAlignment = Alignment.TopCenter,

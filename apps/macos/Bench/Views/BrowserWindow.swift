@@ -64,7 +64,13 @@ final class BrowserLink {
                 case .failure:
                     if self.closed == nil { self.closed = "The browser couldn’t be reached. Is the server on the Go version?" }
                 case .success(let m):
-                    if case .string(let s) = m { self.handle(s) }
+                    switch m {
+                    case .string(let s): self.handle(s)
+                    // A frame is binary JPEG: a still taken when the page settles is the
+                    // screen's resolution, the frames while it moves are smaller and quick.
+                    case .data(let d): if !d.isEmpty { self.frame = NSImage(data: d) }
+                    @unknown default: break
+                    }
                     self.receive(t)
                 }
             }
@@ -101,7 +107,9 @@ final class BrowserLink {
     /// The window's page area, in points: pages lay out at its width.
     func size(_ s: CGSize) {
         lastSize = s
-        send(["type": "size", "width": Int(s.width), "height": Int(s.height)])
+        // binaryFrames: this app reads JPEG frames as binary. An older app that doesn't say
+        // so keeps the base64 text frames it knows.
+        send(["type": "size", "width": Int(s.width), "height": Int(s.height), "binaryFrames": true])
     }
 }
 
@@ -221,6 +229,7 @@ struct BrowserSurface: NSViewRepresentable {
         var link: BrowserLink?
         var image: NSImage?
         private var wheel: CGFloat = 0
+        private var wheelFlushPending = false
         override var acceptsFirstResponder: Bool { true }
         override var isFlipped: Bool { true }
 
@@ -244,11 +253,19 @@ struct BrowserSurface: NSViewRepresentable {
         }
 
         override func scrollWheel(with e: NSEvent) {
+            // Trackpad events arrive far faster than the page can be streamed. Gather them
+            // and send at most one a frame, so scrolling is continuous instead of moving in
+            // 24-point steps, each a round trip behind the hand.
             wheel += e.scrollingDeltaY
-            guard abs(wheel) > 24, bounds.height > 0 else { return }
-            let dy = -wheel / bounds.height
-            wheel = 0
-            MainActor.assumeIsolated { link?.send(["type": "scroll", "dy": Double(dy)]) }
+            guard !wheelFlushPending, bounds.height > 0 else { return }
+            wheelFlushPending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0) { [weak self] in
+                guard let self else { return }
+                self.wheelFlushPending = false
+                let dy = -self.wheel / self.bounds.height
+                self.wheel = 0
+                if abs(dy) > 0.0005 { MainActor.assumeIsolated { self.link?.send(["type": "scroll", "dy": Double(dy)]) } }
+            }
         }
 
         override func keyDown(with e: NSEvent) {

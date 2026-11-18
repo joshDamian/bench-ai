@@ -6,6 +6,7 @@ package bench
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -512,19 +513,80 @@ type viewPage struct {
 	id     string
 	conn   *websocket.Conn
 	cancel context.CancelFunc
-	mu     sync.Mutex
+	wmu    sync.Mutex // one writer at a time on the connection
+	pmu    sync.Mutex // guards next and pending
 	next   int
+	// pending is the calls waiting for a reply, by message id.
+	pending map[int]chan map[string]any
 }
 
 func (p *viewPage) send(ctx context.Context, method string, params map[string]any) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.pmu.Lock()
+	p.next++
+	n := p.next
+	p.pmu.Unlock()
+	p.write(ctx, n, method, params, nil)
+}
+
+// write sends one DevTools message; a call's reply channel rides along, so a failed write
+// does not leave the call waiting.
+func (p *viewPage) write(ctx context.Context, n int, method string, params map[string]any, reply chan map[string]any) {
 	if params == nil {
 		params = map[string]any{}
 	}
+	msg, _ := json.Marshal(map[string]any{"id": n, "method": method, "params": params})
+	p.wmu.Lock()
+	err := p.conn.Write(ctx, websocket.MessageText, msg)
+	p.wmu.Unlock()
+	if err != nil && reply != nil {
+		p.deliver(n, nil)
+	}
+}
+
+// call sends a DevTools method and waits for its result. A still needs one: only
+// Page.captureScreenshot draws at the screen's resolution.
+func (p *viewPage) call(ctx context.Context, method string, params map[string]any) (map[string]any, error) {
+	reply := make(chan map[string]any, 1)
+	p.pmu.Lock()
 	p.next++
-	msg, _ := json.Marshal(map[string]any{"id": p.next, "method": method, "params": params})
-	p.conn.Write(ctx, websocket.MessageText, msg)
+	n := p.next
+	p.pending[n] = reply
+	p.pmu.Unlock()
+	p.write(ctx, n, method, params, reply)
+	select {
+	case res := <-reply:
+		if res == nil {
+			return nil, fmt.Errorf("the browser closed")
+		}
+		return res, nil
+	case <-ctx.Done():
+		p.pmu.Lock()
+		delete(p.pending, n)
+		p.pmu.Unlock()
+		return nil, ctx.Err()
+	}
+}
+
+// deliver hands a reply to the call waiting for it, once.
+func (p *viewPage) deliver(n int, res map[string]any) {
+	p.pmu.Lock()
+	reply := p.pending[n]
+	delete(p.pending, n)
+	p.pmu.Unlock()
+	if reply != nil {
+		reply <- res
+	}
+}
+
+// failPending releases every call still waiting, when the connection goes.
+func (p *viewPage) failPending() {
+	p.pmu.Lock()
+	waiting := p.pending
+	p.pending = map[int]chan map[string]any{}
+	p.pmu.Unlock()
+	for _, reply := range waiting {
+		reply <- nil
+	}
 }
 
 // close puts the tab back as the sessions use it, and lets go of it.
@@ -535,6 +597,7 @@ func (p *viewPage) close() {
 	p.send(cctx, "Emulation.clearDeviceMetricsOverride", nil)
 	p.cancel()
 	p.conn.Close(websocket.StatusNormalClosure, "")
+	p.failPending()
 }
 
 // View streams the browser to a person and their input back: the take-over view. It shows
@@ -552,7 +615,7 @@ func (b *Browser) View(client *websocket.Conn) {
 		client.Close(websocket.StatusInternalError, "The browser couldn't start")
 		return
 	}
-	client.SetReadLimit(1 << 20)
+	client.SetReadLimit(32 << 20)
 	var cmu sync.Mutex
 	toClient := func(v any) {
 		cmu.Lock()
@@ -560,11 +623,119 @@ func (b *Browser) View(client *websocket.Conn) {
 		msg, _ := json.Marshal(v)
 		client.Write(ctx, websocket.MessageText, msg)
 	}
-	var mu sync.Mutex // guards cur, width, height, vw, vh
+	// Frames are binary JPEG and have a writer of their own with room for one: when the
+	// link is slower than the page, a newer frame replaces the one not yet sent instead of
+	// queueing behind it. Queueing is what makes a scroll arrive a second late. Text
+	// messages (tabs, URL, errors) take the direct way.
+	frames := make(chan []byte, 1)
+	sendFrame := func(jpeg []byte) {
+		select {
+		case frames <- jpeg:
+			return
+		default:
+		}
+		select {
+		case <-frames:
+		default:
+		}
+		select {
+		case frames <- jpeg:
+		default:
+		}
+	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case jpeg := <-frames:
+				cmu.Lock()
+				err := client.Write(ctx, websocket.MessageBinary, jpeg)
+				cmu.Unlock()
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
+	var mu sync.Mutex // guards cur, width, height, vw, vh, inputGen, stillBusy, binaryFrames
 	var cur *viewPage
 	width, height := 1280.0, 900.0
 	vw, vh := 0.0, 0.0
+	inputGen := int64(0)
+	stillBusy := false
+	// A client that says it reads binary frames gets them; an older app, and the Node
+	// server's text frames, keep working.
+	binaryFrames := false
 	current := func() *viewPage { mu.Lock(); defer mu.Unlock(); return cur }
+	binary := func() bool { mu.Lock(); defer mu.Unlock(); return binaryFrames }
+	// A frame drawn to a client: binary to one that asked for it, which is a third smaller
+	// and needs no base64 decoding on the phone; the JSON text frame to an older app.
+	sendJPEG := func(b64 string, jpeg []byte) {
+		if binary() {
+			sendFrame(jpeg)
+			return
+		}
+		toClient(map[string]any{"type": "frame", "data": b64})
+	}
+
+	// A still is the page at the screen's resolution. The screencast always draws at CSS
+	// pixels (it ignores deviceScaleFactor), so a phone or Retina screen stretches it 2x;
+	// captureScreenshot does not. Taken once input settles, and sent like any frame.
+	var stillTimer *time.Timer
+	var lastStillAt time.Time
+	var lastStillGen int64
+	var scheduleStill func(*viewPage)
+	var captureStill func(*viewPage, int64)
+	captureStill = func(p *viewPage, gen int64) {
+		mu.Lock()
+		if stillBusy || cur != p || inputGen != gen {
+			mu.Unlock()
+			return
+		}
+		stillBusy = true
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			stillBusy = false
+			again := cur == p && inputGen != gen
+			mu.Unlock()
+			// Input came in while this one was drawing: it is stale, and the newer
+			// position needs its own still.
+			if again {
+				scheduleStill(p)
+			}
+		}()
+		cctx, ccancel := context.WithTimeout(ctx, 5*time.Second)
+		defer ccancel()
+		res, err := p.call(cctx, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 88})
+		if err != nil {
+			return
+		}
+		s, _ := res["data"].(string)
+		jpeg, err := base64.StdEncoding.DecodeString(s)
+		if err != nil || len(jpeg) == 0 {
+			return
+		}
+		mu.Lock()
+		fresh := cur == p && inputGen == gen
+		if fresh {
+			lastStillAt, lastStillGen = time.Now(), gen
+		}
+		mu.Unlock()
+		if fresh {
+			sendJPEG(s, jpeg)
+		}
+	}
+	scheduleStill = func(p *viewPage) {
+		mu.Lock()
+		gen := inputGen
+		if stillTimer != nil {
+			stillTimer.Stop()
+		}
+		stillTimer = time.AfterFunc(150*time.Millisecond, func() { captureStill(p, gen) })
+		mu.Unlock()
+	}
 
 	attach := func(t browserTab) bool {
 		pctx, pcancel := context.WithCancel(ctx)
@@ -574,7 +745,7 @@ func (b *Browser) View(client *websocket.Conn) {
 			return false
 		}
 		conn.SetReadLimit(32 << 20)
-		p := &viewPage{id: t.id, conn: conn, cancel: pcancel, next: 100}
+		p := &viewPage{id: t.id, conn: conn, cancel: pcancel, next: 100, pending: map[int]chan map[string]any{}}
 		mu.Lock()
 		old := cur
 		cur = p
@@ -589,16 +760,24 @@ func (b *Browser) View(client *websocket.Conn) {
 		if w > 0 {
 			p.send(pctx, "Emulation.setDeviceMetricsOverride", map[string]any{"width": int(w), "height": int(h), "deviceScaleFactor": 2, "mobile": false})
 		}
-		p.send(pctx, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 85, "maxWidth": 1600, "maxHeight": 2400, "everyNthFrame": 1})
+		p.send(pctx, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 65, "maxWidth": 2560, "maxHeight": 3200, "everyNthFrame": 1})
 		toClient(map[string]any{"type": "url", "url": t.url, "title": t.title})
+		scheduleStill(p)
 		go func() {
 			for {
 				_, data, err := conn.Read(pctx)
 				if err != nil {
+					p.failPending()
 					return
 				}
 				var m map[string]any
 				if json.Unmarshal(data, &m) != nil {
+					continue
+				}
+				// A reply to a call (a still), not an event.
+				if id, ok := m["id"].(float64); ok {
+					res, _ := m["result"].(map[string]any)
+					p.deliver(int(id), res)
 					continue
 				}
 				pm, _ := m["params"].(map[string]any)
@@ -613,8 +792,19 @@ func (b *Browser) View(client *websocket.Conn) {
 					}
 					mu.Lock()
 					width, height = fw, fh
+					// A frame drawn just before the still can land just after it, and
+					// would replace the sharp picture with the soft one. Those belong to
+					// the motion that just ended; drop them. Real motion later still shows.
+					skip := time.Since(lastStillAt) < 300*time.Millisecond && inputGen == lastStillGen
 					mu.Unlock()
-					toClient(map[string]any{"type": "frame", "data": pm["data"], "width": fw, "height": fh})
+					if skip {
+						continue
+					}
+					if s, ok := pm["data"].(string); ok {
+						if jpeg, err := base64.StdEncoding.DecodeString(s); err == nil {
+							sendJPEG(s, jpeg)
+						}
+					}
 				case "Page.frameNavigated":
 					if f, ok := pm["frame"].(map[string]any); ok && f["parentId"] == nil && current() == p {
 						toClient(map[string]any{"type": "url", "url": f["url"]})
@@ -724,6 +914,13 @@ func (b *Browser) View(client *websocket.Conn) {
 		case "back":
 			send("Runtime.evaluate", map[string]any{"expression": "history.back()"})
 		case "size":
+			// The app says it can read binary frames: JPEG as they are, no base64. Apps
+			// that don't (an older build against a newer server) keep text frames.
+			if bf, ok := m["binaryFrames"].(bool); ok && bf {
+				mu.Lock()
+				binaryFrames = true
+				mu.Unlock()
+			}
 			// The phone's view, in its CSS pixels: pages lay out at its width. Not as a phone
 			// (mobile: false): a desktop browser claiming to be a phone looks like a bot.
 			nw, _ := m["width"].(float64)
@@ -751,6 +948,17 @@ func (b *Browser) View(client *websocket.Conn) {
 			if b.putJSON("/json/new?about:blank", &t) == nil {
 				// The follower shows it as it appears.
 				_ = t
+			}
+		}
+		// Once the person settles, the stream shows the page sharply again. A size is
+		// not input, but it does redraw the page, and it comes as the view opens.
+		switch m["type"] {
+		case "tap", "scroll", "text", "key", "back", "go", "tab", "new_tab", "size":
+			mu.Lock()
+			inputGen++
+			mu.Unlock()
+			if p != nil {
+				scheduleStill(p)
 			}
 		}
 	}
