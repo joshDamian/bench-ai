@@ -161,7 +161,12 @@ After=network.target
 
 [Service]
 ExecStart=$RELEASE/bench-go serve
-Restart=on-failure
+Restart=always
+RestartSec=2
+# A session's Chromium or a test can be the kernel's pick when memory runs short.
+# That must not take the whole server down with it: keep running, and only come
+# back from a restart when the server itself died.
+OOMPolicy=continue
 Environment="BENCH_ROOT=$DATA"
 Environment="PORT=$PORT"
 Environment="BENCH_APP_ROOT=$RELEASE"

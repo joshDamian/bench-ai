@@ -182,10 +182,23 @@ fun BrowserView(api: BenchApi, onDone: () -> Unit) {
                         }
                     }
                     .pointerInput(Unit) {
-                        // Every drag event goes on as it comes: sending in 40 px steps made
-                        // the page move in visible jumps, each a whole round trip behind.
-                        detectVerticalDragGestures { _, dy ->
-                            if (dy != 0f) send("scroll") { put("dy", -dy / box.height.coerceAtLeast(1)) }
+                        // Drag events come far faster than a page can be streamed; each one
+                        // was a round trip behind the hand. Gather them and send at most one
+                        // a frame, so scrolling is continuous instead of queueing.
+                        var pending = 0f
+                        var lastSent = 0L
+                        fun flush() {
+                            if (pending == 0f || box.height == 0) return
+                            send("scroll") { put("dy", -pending / box.height) }
+                            pending = 0f
+                            lastSent = System.nanoTime()
+                        }
+                        detectVerticalDragGestures(
+                            onDragEnd = { flush() },
+                            onDragCancel = { pending = 0f },
+                        ) { _, dy ->
+                            pending += dy
+                            if (System.nanoTime() - lastSent >= 16_000_000L) flush()
                         }
                     },
                 contentAlignment = Alignment.TopCenter,

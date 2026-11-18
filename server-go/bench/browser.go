@@ -682,9 +682,21 @@ func (b *Browser) View(client *websocket.Conn) {
 	// A still is the page at the screen's resolution. The screencast always draws at CSS
 	// pixels (it ignores deviceScaleFactor), so a phone or Retina screen stretches it 2x;
 	// captureScreenshot does not. Taken once input settles, and sent like any frame.
+	//
+	// The capture costs the page a frame or three, and the screencast shares this connection,
+	// so it must happen only when the person has really stopped: a short lull inside a drag
+	// used to start one, the next delta made it stale, and it was thrown away - the page
+	// paid the freeze and got nothing. Now a stale capture is not retried; the input that
+	// made it stale has already scheduled the next one.
 	var stillTimer *time.Timer
-	var lastStillAt time.Time
-	var lastStillGen int64
+	var stillCutoff float64 // screencast frames captured before this are older than the still
+	var stillGen int64 = -1
+	var stillAt time.Time // when the sharp still last went to the client
+	// Frames while the page moves are capped: a screencast redraw can come at 60 a second,
+	// and a phone's uplink carries about 25 of these a second before it queues, which turns
+	// smooth scrolling into a slideshow lagging behind the hand.
+	const frameGap = 40 * time.Millisecond
+	var lastSoft time.Time
 	var scheduleStill func(*viewPage)
 	var captureStill func(*viewPage, int64)
 	captureStill = func(p *viewPage, gen int64) {
@@ -698,17 +710,12 @@ func (b *Browser) View(client *websocket.Conn) {
 		defer func() {
 			mu.Lock()
 			stillBusy = false
-			again := cur == p && inputGen != gen
 			mu.Unlock()
-			// Input came in while this one was drawing: it is stale, and the newer
-			// position needs its own still.
-			if again {
-				scheduleStill(p)
-			}
 		}()
+		started := time.Now()
 		cctx, ccancel := context.WithTimeout(ctx, 5*time.Second)
 		defer ccancel()
-		res, err := p.call(cctx, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 88})
+		res, err := p.call(cctx, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 82, "optimizeForSpeed": true})
 		if err != nil {
 			return
 		}
@@ -720,7 +727,9 @@ func (b *Browser) View(client *websocket.Conn) {
 		mu.Lock()
 		fresh := cur == p && inputGen == gen
 		if fresh {
-			lastStillAt, lastStillGen = time.Now(), gen
+			stillCutoff = float64(started.UnixNano()) / 1e9
+			stillGen = gen
+			stillAt = time.Now()
 		}
 		mu.Unlock()
 		if fresh {
@@ -733,7 +742,9 @@ func (b *Browser) View(client *websocket.Conn) {
 		if stillTimer != nil {
 			stillTimer.Stop()
 		}
-		stillTimer = time.AfterFunc(150*time.Millisecond, func() { captureStill(p, gen) })
+		// Long enough that a pause between two flicks of a scroll, or between words, is not
+		// mistaken for stopping.
+		stillTimer = time.AfterFunc(320*time.Millisecond, func() { captureStill(p, gen) })
 		mu.Unlock()
 	}
 
@@ -760,7 +771,7 @@ func (b *Browser) View(client *websocket.Conn) {
 		if w > 0 {
 			p.send(pctx, "Emulation.setDeviceMetricsOverride", map[string]any{"width": int(w), "height": int(h), "deviceScaleFactor": 2, "mobile": false})
 		}
-		p.send(pctx, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 65, "maxWidth": 2560, "maxHeight": 3200, "everyNthFrame": 1})
+		p.send(pctx, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 55, "maxWidth": 2560, "maxHeight": 3200, "everyNthFrame": 1})
 		toClient(map[string]any{"type": "url", "url": t.url, "title": t.title})
 		scheduleStill(p)
 		go func() {
@@ -792,12 +803,24 @@ func (b *Browser) View(client *websocket.Conn) {
 					}
 					mu.Lock()
 					width, height = fw, fh
-					// A frame drawn just before the still can land just after it, and
-					// would replace the sharp picture with the soft one. Those belong to
-					// the motion that just ended; drop them. Real motion later still shows.
-					skip := time.Since(lastStillAt) < 300*time.Millisecond && inputGen == lastStillGen
+					cutoff := stillCutoff
+					// A frame captured before the still was taken would replace the sharp
+					// picture with a soft one from the motion that just ended. The frame's
+					// own timestamp says; a timeout is only a guess at the same thing.
+					ts, _ := meta["timestamp"].(float64)
+					stale := ts > 0 && ts < cutoff
+					// Nothing has moved since the sharp still: this redraw is the very page it
+					// already shows, only softer. Drawing it would take the sharpness away a
+					// moment after it arrived. A page that changes on its own gets its turn
+					// back after a second, so loading and video still show.
+					hold := inputGen == stillGen && time.Since(stillAt) < 1200*time.Millisecond
+					// And while it does move, no faster than the link can carry.
+					send := !stale && !hold && time.Since(lastSoft) >= frameGap
+					if send {
+						lastSoft = time.Now()
+					}
 					mu.Unlock()
-					if skip {
+					if !send {
 						continue
 					}
 					if s, ok := pm["data"].(string); ok {
@@ -808,6 +831,11 @@ func (b *Browser) View(client *websocket.Conn) {
 				case "Page.frameNavigated":
 					if f, ok := pm["frame"].(map[string]any); ok && f["parentId"] == nil && current() == p {
 						toClient(map[string]any{"type": "url", "url": f["url"]})
+					}
+				case "Page.loadEventFired":
+					// A page that loaded on its own still deserves to settle sharp.
+					if current() == p {
+						scheduleStill(p)
 					}
 				}
 			}
