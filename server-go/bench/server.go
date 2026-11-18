@@ -107,6 +107,7 @@ type ctxt struct {
 type authInfo struct {
 	local  bool
 	device *Obj
+	worker *Obj
 }
 
 type route struct {
@@ -207,8 +208,15 @@ func (s *Server) who(r *http.Request) *authInfo {
 	if d := s.Svc.Store.DeviceByToken(t); d != nil {
 		return &authInfo{device: d}
 	}
+	if w := s.Svc.Store.WorkerByToken(t); w != nil {
+		return &authInfo{worker: w}
+	}
 	return nil
 }
+
+// person is true for a signed-in person (signed in on localhost or paired), not a worker.
+// Enrolling and revoking workers is a person's decision.
+func person(a *authInfo) bool { return a != nil && a.worker == nil }
 
 func sameOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
@@ -467,6 +475,7 @@ func (s *Server) wire() {
 		}
 		go s.pushAll(O("title", title, "body", ss.Str("title"), "url", SessionPath(ss), "tag", "turn-"+ss.Str("id"), "sessionId", ss.Str("id")), kind)
 	})
+	s.Svc.On("workers", func(any) { s.broadcast(O("type", "workers"), "") })
 	s.Svc.On("task", func(t any) { s.broadcast(O("type", "task", "task", t), "") })
 	s.Svc.On("git", func(p any) { s.broadcast(O("type", "git", "project_id", p), "") })
 	s.Svc.On("devices", func(any) { s.broadcast(O("type", "devices"), "") })
@@ -1429,6 +1438,11 @@ func (s *Server) routesInit() {
 	s.route("POST", "/api/linked-devices/:id/ask", func(c *ctxt) (any, error) { return svc.Devices().Ask(c.params[0], c.body, "") })
 	s.route("DELETE", "/api/linked-devices/asks/:id", func(c *ctxt) (any, error) { return svc.Devices().CancelAsk(c.params[0]) })
 	s.route("GET", "/api/jobs", func(c *ctxt) (any, error) { return svc.Jobs().Recent(), nil })
+	s.route("GET", "/api/jobs/queue", func(c *ctxt) (any, error) {
+		st.ExpireQueuedJobs() // a worker that stopped answering gives its job back
+		return O("depth", st.JobQueueDepth(), "jobs", st.QueuedJobs(0)), nil
+	})
+	s.route("POST", "/api/jobs/:id/cancel", func(c *ctxt) (any, error) { return svc.Jobs().CancelJob(c.params[0]) })
 	s.route("GET", "/api/jobs/:id/tree", func(c *ctxt) (any, error) {
 		gz, hash, ok := svc.Jobs().Tree(c.params[0])
 		if !ok {
@@ -1500,6 +1514,19 @@ func (s *Server) routesInit() {
 	s.route("GET", "/api/doctor", func(c *ctxt) (any, error) { return svc.Doctor(), nil })
 	s.route("GET", "/api/devices", func(c *ctxt) (any, error) { return st.ListDevices(), nil })
 	s.route("DELETE", "/api/devices/:id", func(c *ctxt) (any, error) { return O("ok", st.RevokeDevice(c.params[0])), nil })
+	s.route("GET", "/api/workers", func(c *ctxt) (any, error) { return svc.Workers().List(), nil })
+	s.route("POST", "/api/workers", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person enrols a worker", 403)
+		}
+		return svc.Workers().Enrol(c.body, requestBase(c.r))
+	})
+	s.route("DELETE", "/api/workers/:id", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person revokes a worker", 403)
+		}
+		return svc.Workers().Revoke(c.params[0])
+	})
 	s.route("POST", "/api/pairing", func(c *ctxt) (any, error) {
 		p, err := s.newPairing()
 		if err != nil {
@@ -1939,6 +1966,15 @@ func (s *Server) receiveUpload(w http.ResponseWriter, r *http.Request, u *url.UR
 	writeJSON(w, r, out, 200)
 }
 
+// requestBase is the URL a worker uses to reach this server, from the request that enrolled it.
+func requestBase(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" || regexp.MustCompile(`\.ts\.net(:\d+)?$`).MatchString(r.Host) {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
 func ownHosts() []string {
 	host, _ := os.Hostname()
 	seen := map[string]bool{}
@@ -2142,6 +2178,26 @@ func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.Svc.Devices().Link(ws)
+	case "/api/workers/link":
+		// A compute worker: its hello, then jobs. The token is the worker's whole credential.
+		// A worker on this same machine counts as local, so its row comes from the token.
+		auth := s.who(r)
+		row := (*Obj)(nil)
+		if auth != nil {
+			row = auth.worker
+		}
+		if row == nil {
+			row = s.Svc.Store.WorkerByToken(presentedToken(r))
+		}
+		if row == nil {
+			refuse(w, "401 Unauthorized")
+			return
+		}
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
+		if err != nil {
+			return
+		}
+		s.Svc.Workers().Link(ws, row)
 	case "/api/browser/view":
 		// The take-over view: the server's browser, streamed to the person, their input sent back.
 		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})

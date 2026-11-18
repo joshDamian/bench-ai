@@ -32,10 +32,25 @@ type JobSpec struct {
 	Kind    string
 	Args    *Obj
 	Timeout time.Duration
+	// Requires limits which worker may take the job: labels, a platform, cpus, memMb.
+	Requires *Obj
+	// Sticky names the only worker the job may run on, for work that depends on something
+	// already there, such as a service.
+	Sticky string
 	// Fallback runs the same work on the server. Run calls it when no device can take the
 	// job, when the link drops, when the job times out, or when the device says it failed.
 	Fallback func(context.Context, *JobSpec) (*JobResult, error)
 }
+
+const (
+	// jobLease is how long a claim on a job survives without a heartbeat, so a worker that
+	// stops answering gives the job back.
+	jobLease = 60 * time.Second
+	// jobHeartbeat renews a lease while the job runs.
+	jobHeartbeat = 15 * time.Second
+	// jobAttempts is how many different workers try a failed job before the server does it.
+	jobAttempts = 2
+)
 
 // JobResult is what a job produced, wherever it ran.
 type JobResult struct {
@@ -100,7 +115,9 @@ func (s *Service) Jobs() *Jobs {
 	return s.jobs
 }
 
-// Run does the work on a device when one is free, else on the server.
+// Run does the work on the first worker that can take it, else a linked device, else the
+// server. The job is written to the durable queue first, so a restart or a lost worker leaves
+// a record and a waiting job, not a gap.
 func (j *Jobs) Run(ctx context.Context, spec *JobSpec) (*JobResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -114,12 +131,20 @@ func (j *Jobs) Run(ctx context.Context, spec *JobSpec) (*JobResult, error) {
 	if spec.Args == nil {
 		spec.Args = O()
 	}
+	if !inList(JobKinds, spec.Kind) {
+		return nil, fmt.Errorf("No job kind %q", spec.Kind)
+	}
+	id := NewID()
+	j.svc.Store.AddQueuedJob(id, spec.Kind, spec.Args, spec.Requires, spec.Sticky)
+	j.svc.Store.ExpireQueuedJobs()
 	local := func(err error) (*JobResult, error) {
 		if spec.Fallback == nil {
+			j.closeQueue(id, "failed", nil, err.Error())
 			return nil, err
 		}
 		r, ferr := spec.Fallback(ctx, spec)
 		if ferr != nil {
+			j.closeQueue(id, "failed", nil, ferr.Error())
 			return nil, ferr
 		}
 		if r == nil {
@@ -127,23 +152,64 @@ func (j *Jobs) Run(ctx context.Context, spec *JobSpec) (*JobResult, error) {
 		}
 		r.RanOn = "server"
 		r.Device = ""
-		j.record("", spec.Kind, "server", "", r.OK, r.Ms, "")
+		j.record(id, spec.Kind, "server", "", r.OK, r.Ms, "")
+		j.closeQueue(id, "done", r, "")
 		return r, nil
 	}
-	if !inList(JobKinds, spec.Kind) {
-		return nil, fmt.Errorf("No job kind %q", spec.Kind)
+
+	// Workers first: they are the pool, and the queue makes them safe to lose.
+	exclude := map[string]bool{}
+	var lastErr error
+	for tries := 0; tries < jobAttempts; tries++ {
+		wk := j.svc.Workers().Pick(spec.Kind, spec.Requires, spec.Sticky, exclude)
+		if wk == nil {
+			break
+		}
+		r, claimed, err := j.runOnWorker(ctx, id, wk, spec)
+		if ctx.Err() != nil {
+			j.svc.Store.CancelQueuedJob(id)
+			return nil, ctx.Err()
+		}
+		if r != nil {
+			return r, nil
+		}
+		if j.cancelled(id) {
+			return nil, fmt.Errorf("The job was cancelled")
+		}
+		if err != nil {
+			lastErr = err
+			j.emit(wk.Str("id"), id, spec.Kind, "failed", wk.Str("name"), err.Error())
+		}
+		// Do not hand the same work to the worker that just failed it.
+		exclude[wk.Str("id")] = true
+		if !claimed {
+			tries--
+		}
+		if spec.Sticky != "" {
+			break
+		}
 	}
+	if j.cancelled(id) {
+		return nil, fmt.Errorf("The job was cancelled")
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("No worker took the %s job", spec.Kind)
+	}
+
+	// A linked device, such as the Mac app, still takes its kinds.
 	dv, addr := j.svc.Devices().Pick(spec.Kind, "")
 	if dv == nil {
-		return local(fmt.Errorf("No linked device offers %s jobs; it ran on the server", spec.Kind))
+		j.emit("", id, spec.Kind, "fallback", "server", lastErr.Error()+"; it ran on the server")
+		return local(fmt.Errorf("%s; it ran on the server", lastErr))
 	}
-	id := j.nextID()
+	j.svc.Store.MarkQueuedElsewhere(id, "device", dv.Str("id"))
 	j.emit(dv.Str("id"), id, spec.Kind, "running", dv.Str("name"), "Started on "+dv.Str("name"))
 	m, name, err := j.svc.Devices().Job(ctx, dv.Str("id"), id, spec.Kind, spec.Args, spec.Timeout, func(text string) {
 		j.emit(dv.Str("id"), id, spec.Kind, "progress", dv.Str("name"), text)
 	})
 	if err != nil {
 		if ctx.Err() != nil {
+			j.svc.Store.CancelQueuedJob(id)
 			return nil, ctx.Err()
 		}
 		j.emit(dv.Str("id"), id, spec.Kind, "failed", dv.Str("name"), err.Error())
@@ -175,13 +241,110 @@ func (j *Jobs) Run(ctx context.Context, spec *JobSpec) (*JobResult, error) {
 		j.emit(dv.Str("id"), id, spec.Kind, "failed", name, cause)
 		r2, ferr := local(fmt.Errorf("%s", cause))
 		if ferr != nil {
+			j.closeQueue(id, "failed", nil, cause)
 			return nil, ferr
 		}
 		return r2, nil
 	}
 	j.record(id, spec.Kind, "mac", name, true, r.Ms, "")
+	j.closeQueue(id, "done", r, "")
 	j.emit(dv.Str("id"), id, spec.Kind, "done", name, "Finished on "+name)
 	return r, nil
+}
+
+// runOnWorker claims the queued job for one worker and runs it. It returns the result when the
+// job finishes, nil when it failed or another worker claimed it first, and whether it claimed.
+func (j *Jobs) runOnWorker(ctx context.Context, id string, wk *Obj, spec *JobSpec) (*JobResult, bool, error) {
+	workerID := wk.Str("id")
+	name := wk.Str("name")
+	if name == "" {
+		name = "the worker"
+	}
+	if !j.svc.Store.ClaimQueuedJob(id, workerID, jobLease) {
+		return nil, false, nil
+	}
+	stop := make(chan struct{})
+	go func() {
+		t := time.NewTicker(jobHeartbeat)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				j.svc.Store.MarkQueuedJobRunning(id, workerID)
+				if !j.svc.Store.RenewQueuedJob(id, workerID, jobLease) {
+					return
+				}
+			}
+		}
+	}()
+	defer close(stop)
+	j.emit(workerID, id, spec.Kind, "running", name, "Started on "+name)
+	m, got, err := j.svc.Workers().Job(ctx, workerID, id, spec.Kind, spec.Args, spec.Timeout, func(text string) {
+		j.emit(workerID, id, spec.Kind, "progress", name, text)
+	})
+	if err != nil {
+		if ctx.Err() == nil {
+			j.svc.Store.RequeueQueuedJob(id, err.Error())
+		}
+		return nil, true, err
+	}
+	r := &JobResult{
+		ID: id, OK: truthy(m.Get("ok")), Text: m.Str("text"), Image: m.Str("image"),
+		Exit: int(m.Num("exit")), Port: int(m.Num("port")), Ms: int64(m.Num("ranMs")),
+		RanOn: "worker", Device: got, DeviceID: workerID, Files: arr(m.Get("files")),
+	}
+	if !r.OK {
+		cause := m.Str("error")
+		if cause == "" {
+			cause = got + " could not finish the job"
+		}
+		j.svc.Store.RequeueQueuedJob(id, cause)
+		return nil, true, fmt.Errorf("%s", cause)
+	}
+	j.svc.Store.FinishQueuedJob(id, workerID, "done", O("ran_on", "worker", "device", got, "exit", r.Exit, "ms", r.Ms, "text", tailText(r.Text)), "")
+	j.record(id, spec.Kind, "worker", got, true, r.Ms, "")
+	j.emit(workerID, id, spec.Kind, "done", got, "Finished on "+got)
+	return r, true, nil
+}
+
+// cancelled says whether a job was stopped from the queue.
+func (j *Jobs) cancelled(id string) bool {
+	row := j.svc.Store.QueuedJob(id)
+	return row != nil && row.Str("state") == "cancelled"
+}
+
+// tailText keeps the end of a long output for the queue view.
+func tailText(s string) string {
+	if len(s) <= 4000 {
+		return s
+	}
+	return s[len(s)-4000:]
+}
+
+// closeQueue records where a job ended when it did not run on a worker.
+func (j *Jobs) closeQueue(id, state string, r *JobResult, errText string) {
+	var res *Obj
+	if r != nil {
+		res = O("ran_on", r.RanOn, "device", r.Device, "ok", r.OK, "exit", r.Exit, "ms", r.Ms, "text", tailText(r.Text))
+	}
+	j.svc.Store.CloseQueuedJob(id, state, res, errText)
+}
+
+// CancelJob cancels a job in the queue and asks its worker to stop.
+func (j *Jobs) CancelJob(id string) (*Obj, error) {
+	row := j.svc.Store.QueuedJob(id)
+	if row == nil {
+		return nil, fail("No such job", 404)
+	}
+	j.svc.Store.CancelQueuedJob(id)
+	if wid := row.Str("worker_id"); wid != "" {
+		j.svc.Workers().CancelJob(wid, id)
+		j.svc.Devices().CancelJob(wid, id)
+	}
+	j.emit(row.Str("worker_id"), id, row.Str("kind"), "cancelled", "", "Cancelled")
+	return O("ok", true), nil
 }
 
 func (j *Jobs) nextID() string {
@@ -253,7 +416,7 @@ func (s *Service) remoteCheck(ctx context.Context, t *Obj, command, worktree str
 		Kind: "check", Timeout: CheckTimeout + time.Minute,
 		Args: O("command", command, "treeId", treeID, "treeHash", hash, "treeUrl", "/api/jobs/"+treeID+"/tree"),
 	})
-	if err != nil || r == nil || r.RanOn != "mac" {
+	if err != nil || r == nil || r.RanOn == "server" {
 		return nil, nil
 	}
 	return &CheckResult{OK: r.OK, Code: float64(r.Exit), Output: "(ran on " + r.Device + ")\n" + r.Text, Ms: float64(r.Ms)}, nil

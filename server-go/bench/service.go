@@ -106,6 +106,7 @@ type Service struct {
 	mu       sync.Mutex
 	spending *Spending
 	devices  *Devices
+	workers  *Workers
 	jobs     *Jobs
 	meeting  *Meeting
 }

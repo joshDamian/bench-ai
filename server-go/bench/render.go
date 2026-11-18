@@ -26,7 +26,7 @@ func (s *Service) RendererAvailable() bool {
 		return true
 	}
 	dv, _ := s.Devices().Pick("render", "")
-	return dv != nil
+	return dv != nil || s.Workers().Pick("render", nil, "", nil) != nil
 }
 
 // Render draws a page and keeps the file, returning its path. A device does the work when
