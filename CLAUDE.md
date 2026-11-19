@@ -11,3 +11,5 @@ UI changes: before you finish, run `/bench:verify-ui` and show its before and af
 <!-- /bench:design-check -->
 
 The server is Go, in `server-go/`. `src/` is the old Node server: no longer run or developed, kept only because the `bench` command-line tool (`src/cli.mjs`) still uses it. Change server behaviour in `server-go/` only; conformance (`node server-go/conformance/run.mjs`) checks bench-go against `server-go/conformance/expected.json`.
+
+The worker pool: `bench_exec` runs one command on a worker in the pool and says which worker did, and `bench_render` draws pages on one. Send bounded work that needs no checkout of this server (a machine fact, an installed tool, a build in a fresh folder) to `bench_exec` instead of running it here. `GET /api/workers` lists the workers and their labels.

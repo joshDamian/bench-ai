@@ -1581,7 +1581,64 @@ func BenchServer(svc *Service, sessionID string) *MCPServer {
 			return "Drew the page to " + full, nil
 		})
 	}
+	// The pool: a command on a worker, for bounded work that does not need this checkout.
+	// Offered only once a worker is enrolled, so the model is never told of a pool that is
+	// not there; the call itself says so when no worker can take the job right now.
+	if len(svc.Store.ListWorkers()) > 0 {
+		tools["bench_exec"] = toolFn(func(ctx context.Context, a *Obj) (string, error) {
+			argv, command := strList(a.Get("argv")), a.Str("command")
+			if len(argv) == 0 && command == "" {
+				return "", noText("Give bench_exec a command, or an argv list.")
+			}
+			if len(argv) > 0 && command != "" {
+				return "", noText("Give bench_exec a command or an argv list, not both.")
+			}
+			secs := a.Num("timeout_s")
+			if secs <= 0 {
+				secs = 120
+			}
+			if secs > JobLimit.Seconds() {
+				secs = JobLimit.Seconds()
+			}
+			spec := &JobSpec{Kind: "exec", Timeout: time.Duration(secs * float64(time.Second))}
+			if command != "" {
+				spec.Args = O("command", command)
+			} else {
+				spec.Args = O("argv", argv)
+			}
+			if labels := arr(a.Get("labels")); len(labels) > 0 {
+				spec.Requires = O("labels", labels)
+			}
+			if want := a.Str("worker"); want != "" {
+				row := findWorker(svc, want)
+				if row == nil {
+					return "", noText(fmt.Sprintf("There is no worker called %q. The workers are: %s.", want, workerNames(svc)))
+				}
+				spec.Sticky = row.Str("id")
+			}
+			r, err := svc.Jobs().Run(ctx, spec)
+			if err != nil {
+				return "", noText("No worker ran it: " + err.Error())
+			}
+			out := r.Text
+			if out == "" {
+				out = "(no output)"
+			}
+			return fmt.Sprintf("Ran on %s, a worker, exit %d, in %d ms.\n%s", r.Device, r.Exit, r.Ms,
+				quoted("the end of the output", textTail(out, checkTail))), nil
+		})
+	}
+
 	mcp := newMCP("bench", tools)
+	if _, ok := tools["bench_exec"]; ok {
+		// The SDK config lists the names a session may call, so it gains the same tool.
+		cfg := mcp.Config.Clone()
+		names := append([]any{}, arr(cfg.Get("tools"))...)
+		cfg.Set("tools", append(names, O("name", "bench_exec")))
+		mcp.Config = cfg
+	} else {
+		mcp.Manifest = withoutTool(mcp.Manifest, "bench_exec")
+	}
 	if !svc.RendererAvailable() {
 		// The schema lists every tool the server may offer; this one is left out where no
 		// machine can draw a page, so the model is never told of a tool that cannot work.
@@ -1599,6 +1656,25 @@ func withoutTool(manifest *Obj, name string) *Obj {
 		}
 	}
 	return O("initializeResult", manifest.Get("initializeResult"), "toolsListResult", O("tools", kept))
+}
+
+// findWorker matches a worker by id or by name, so a tool or a person can name one.
+func findWorker(svc *Service, what string) *Obj {
+	for _, row := range svc.Store.ListWorkers() {
+		if row.Str("id") == what || strings.EqualFold(row.Str("name"), what) {
+			return row
+		}
+	}
+	return nil
+}
+
+// workerNames lists the enrolled workers as "name (id)", for a caller that named none.
+func workerNames(svc *Service) string {
+	names := []string{}
+	for _, row := range svc.Store.ListWorkers() {
+		names = append(names, fmt.Sprintf("%s (%s)", row.Str("name"), row.Str("id")))
+	}
+	return strings.Join(names, ", ")
 }
 
 func waitReport(ctx context.Context, svc *Service, target, a *Obj, me string) (string, error) {

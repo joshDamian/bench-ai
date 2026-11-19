@@ -1534,10 +1534,11 @@ func (s *Server) routesInit() {
 		}
 		timeout := time.Duration(c.body.Num("timeoutSec")) * time.Second
 		r, err := svc.Jobs().Run(c.r.Context(), &JobSpec{
-			Kind:    c.body.Str("kind"),
-			Args:    c.body.ObjAt("args"),
-			Sticky:  c.body.Str("sticky"),
-			Timeout: timeout,
+			Kind:     c.body.Str("kind"),
+			Args:     c.body.ObjAt("args"),
+			Requires: c.body.ObjAt("requires"),
+			Sticky:   c.body.Str("sticky"),
+			Timeout:  timeout,
 		})
 		if err != nil {
 			return nil, err
