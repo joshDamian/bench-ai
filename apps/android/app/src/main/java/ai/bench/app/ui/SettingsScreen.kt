@@ -94,11 +94,13 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
 
     var serverInfo by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
     var deviceCount by remember { mutableStateOf<Int?>(null) }
+    var workerCount by remember { mutableStateOf<Int?>(null) }
     var confirmRestart by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<kotlinx.serialization.json.JsonElement?>(null) }
     LaunchedEffect(Unit) {
         serverInfo = runCatching { store.api.get("/api/server/status") }.getOrNull()
         deviceCount = runCatching { store.api.get("/api/devices").let { (it as? kotlinx.serialization.json.JsonArray)?.size } }.getOrNull()
+        workerCount = runCatching { store.api.get("/api/workers").let { (it as? kotlinx.serialization.json.JsonArray)?.size } }.getOrNull()
         update = runCatching { store.api.get("/api/server/update") }.getOrNull()
     }
     val uptime = (serverInfo["uptimeMs"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()?.let { ms ->
@@ -157,6 +159,7 @@ fun SettingsScreen(store: BenchStore, onOpen: (String) -> Unit = {}) {
                         scope.launch { runCatching { store.api.post("/api/server/update") } }
                     }
                     NavRow("Paired devices", deviceCount?.toString()) { onOpen("devices") }
+                    NavRow("Workers", workerCount?.toString()) { onOpen("workers") }
                     NavRow("Dashboard", "Memory, CPU, spend") { onOpen("dashboard") }
                     NavRow("Projects folder", defaults["projectsDir"].str()?.replace(Regex("^/(home|Users)/[^/]+"), "~")) { page = "dir" }
                     NavRow("Diagnostics") { onOpen("diagnostics") }

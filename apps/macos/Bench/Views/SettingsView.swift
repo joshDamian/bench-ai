@@ -6,7 +6,7 @@ import SwiftUI
 /// Settings style, each a page of grouped rows.
 struct SettingsView: View {
     enum Section: String, CaseIterable, Identifiable {
-        case server, reach, shared, spending, rules, about, housekeeping, models, subagents, limit, devices, notifications, appearance, shortcuts
+        case server, reach, shared, spending, rules, about, housekeeping, models, subagents, limit, devices, workers, notifications, appearance, shortcuts
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -21,6 +21,7 @@ struct SettingsView: View {
             case .subagents: "Subagents"
             case .limit: "Usage limit"
             case .devices: "Devices"
+            case .workers: "Workers"
             case .notifications: "Notifications"
             case .appearance: "Appearance"
             case .shortcuts: "Shortcuts"
@@ -39,6 +40,7 @@ struct SettingsView: View {
             case .subagents: "point.3.connected.trianglepath.dotted"
             case .limit: "gauge.with.dots.needle.67percent"
             case .devices: "laptopcomputer.and.iphone"
+            case .workers: "network"
             case .notifications: "bell.badge"
             case .appearance: "circle.lefthalf.filled"
             case .shortcuts: "command"
@@ -54,6 +56,7 @@ struct SettingsView: View {
             case .shared: .green
             case .subagents: .purple
             case .limit: .orange
+            case .workers: .mint
             case .notifications: .red
             default: .gray
             }
@@ -116,6 +119,7 @@ struct SettingsView: View {
                             case .subagents: SubagentsPage(store: store)
                             case .limit: LimitPage(store: store)
                             case .devices: DevicesPage(store: store)
+                            case .workers: WorkersPage(store: store)
                             case .notifications: NotificationsPage()
                             case .appearance: AppearancePage()
                             case .shortcuts: ShortcutsPage()
@@ -518,6 +522,167 @@ private struct DevicesPage: View {
         f.message = Data(s.utf8)
         guard let out = f.outputImage, let cg = CIContext().createCGImage(out, from: out.extent) else { return nil }
         return NSImage(cgImage: cg, size: NSSize(width: out.extent.width, height: out.extent.height))
+    }
+}
+
+// MARK: Workers
+
+/// The pool's other machines. Each is a node process the server sends work to, not the
+/// Bench app; a worker holds no durable state, so revoking one only loses its token.
+private struct WorkersPage: View {
+    @Environment(\.theme) private var theme
+    let store: BenchStore
+    @State private var workers: [JSONValue] = []
+    @State private var services: [JSONValue] = []
+    @State private var revoking: JSONValue?
+    @State private var name = ""
+    @State private var command: String?
+    @State private var failed: String?
+    @State private var busy = false
+
+    var body: some View {
+        GroupLabel("Machines")
+        Group2 {
+            if workers.isEmpty {
+                GroupRow(title: "No other machines yet", sub: "Enrol one to run checks, renders and simulators there.", first: true, muted: true) { EmptyView() }
+            }
+            ForEach(Array(workers.enumerated()), id: \.offset) { i, w in
+                GroupRow(title: w["name"].string ?? "Worker", sub: hint(w), first: i == 0) {
+                    HStack(spacing: Space.sm) {
+                        HStack(spacing: 6) {
+                            Circle().fill(w["online"].bool ? theme.colors.good : theme.colors.muted).frame(width: 7, height: 7)
+                            Text(w["online"].bool ? "Online" : "Offline").font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+                        }
+                        Button("Revoke…") { revoking = w }.buttonStyle(TonalButton(danger: true, height: 24))
+                    }
+                }
+            }
+        }
+        if !services.isEmpty {
+            GroupLabel("Services")
+            Group2 {
+                ForEach(Array(services.enumerated()), id: \.offset) { i, s in
+                    GroupRow(title: s["detail"]["device"].string ?? s["id"].string ?? "Service", sub: serviceLine(s), first: i == 0) {
+                        Button("Stop") { stop(s) }.buttonStyle(TonalButton(height: 24))
+                    }
+                }
+            }
+        }
+        GroupLabel("Enrol a worker")
+        VStack(alignment: .leading, spacing: Space.sm) {
+            Text("Get bench-worker on the machine, then run this command there. It joins this server and takes jobs while it is online, then reconnects by itself.")
+                .font(.system(size: 12)).foregroundStyle(theme.colors.muted).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Space.sm) {
+                TextField("", text: $name, prompt: Text("Name this machine"))
+                    .textFieldStyle(.roundedBorder).frame(maxWidth: 260)
+                    .onSubmit { enrol() }
+                Button(busy ? "Enrolling…" : "Enrol") { enrol() }
+                    .buttonStyle(TonalButton(height: 26))
+                    .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if let command {
+                HStack(alignment: .top, spacing: Space.sm) {
+                    Text(command).font(.system(size: 11.5, design: .monospaced)).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                    }
+                    .buttonStyle(TonalButton(height: 24))
+                }
+                .padding(10)
+                .background(theme.colors.fill(0.06), in: RoundedRectangle(cornerRadius: theme.radiusSm))
+                Text("The token in it is shown once. If it is lost, revoke the worker and enrol another.")
+                    .font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+            }
+            if let failed {
+                Text(failed).font(.system(size: 12)).foregroundStyle(theme.colors.bad)
+            }
+        }
+        .padding(.top, Space.sm)
+        Text("A worker holds no durable state. If it goes away mid-job, the server runs the job itself.")
+            .font(.system(size: 12)).foregroundStyle(theme.colors.muted)
+        .task { await follow() }
+        .confirmationDialog("Revoke \(revoking?["name"].string ?? "this worker")?", isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } })) {
+            Button("Revoke", role: .destructive) {
+                let id = revoking?["id"].string ?? ""
+                Task { _ = try? await store.api.call("/api/workers/\(BenchAPI.enc(id))", method: "DELETE"); await load() }
+            }
+        } message: { Text("Its token stops working at once. Enrol the machine again to bring it back.") }
+    }
+
+    /// Workers and the services they hold change as links come and go, so the page reads
+    /// them again while it is open. A settings page is the only place that needs this.
+    private func follow() async {
+        while !Task.isCancelled {
+            await load()
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+    }
+
+    private func load() async {
+        if let d = try? await store.api.call("/api/workers"), let v = try? JSONDecoder().decode(JSONValue.self, from: d) {
+            workers = v.array
+        }
+        if let d = try? await store.api.call("/api/services"), let v = try? JSONDecoder().decode(JSONValue.self, from: d) {
+            services = v.array
+        }
+    }
+
+    private func enrol() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !busy else { return }
+        busy = true
+        failed = nil
+        Task {
+            defer { busy = false }
+            do {
+                let d = try await store.api.call("/api/workers", method: "POST", body: ["name": trimmed])
+                let v = try JSONDecoder().decode(JSONValue.self, from: d)
+                command = v["command"].string
+                name = ""
+                await load()
+            } catch {
+                failed = "The server did not enrol the machine. Try again."
+            }
+        }
+    }
+
+    private func stop(_ s: JSONValue) {
+        let id = s["id"].string ?? ""
+        Task {
+            _ = try? await store.api.call("/api/services/\(BenchAPI.enc(id))/stop", method: "POST", body: [:])
+            await load()
+        }
+    }
+
+    private func hint(_ w: JSONValue) -> String {
+        guard w["online"].bool else {
+            let ago = Format.ago(w["last_seen"].string)
+            return ago.isEmpty ? "Never linked" : "Last seen \(ago) ago"
+        }
+        let platform = w["platform"].string ?? ""
+        let machine = platform.isEmpty ? "Machine" : "\(platform) machine"
+        let cores = Int(w["resources"]["cpus"].number ?? 0)
+        let slots = Int(w["slots"].number ?? 0)
+        let kinds = w["kinds"].array.compactMap { $0.string }.joined(separator: ", ")
+        var parts = [cores > 0 ? "\(machine) with \(cores) cores" : machine]
+        if slots > 0 { parts.append("taking \(slots) job\(slots == 1 ? "" : "s") at a time") }
+        if !kinds.isEmpty { parts.append("runs \(kinds)") }
+        return parts.joined(separator: ", ") + "."
+    }
+
+    private func serviceLine(_ s: JSONValue) -> String {
+        let kind = s["kind"].string ?? "service"
+        return "Held for \(elapsed(s)), started by a \(kind) job."
+    }
+
+    private func elapsed(_ s: JSONValue) -> String {
+        let secs = Int(s["held_s"].number ?? 0)
+        if secs < 60 { return "\(secs)s" }
+        if secs < 3600 { return "\(secs / 60)m" }
+        return "\(secs / 3600)h \((secs % 3600) / 60)m"
     }
 }
 

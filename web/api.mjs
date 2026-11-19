@@ -199,6 +199,11 @@ export const api = {
   doctor: () => get('/api/doctor'),
   devices: () => get('/api/devices'),
   revokeDevice: (/** @type {string} */ id) => del(`/api/devices/${id}`),
+  workers: () => get('/api/workers'),
+  enrolWorker: (/** @type {{name:string, labels?:string[], slots?:number, platform?:string}} */ b) => post('/api/workers', b),
+  revokeWorker: (/** @type {string} */ id) => del(`/api/workers/${id}`),
+  services: () => get('/api/services'),
+  stopService: (/** @type {string} */ id) => post(`/api/services/${enc(id)}/stop`),
   pairing: () => post('/api/pairing'),
   pair: (/** @type {string} */ code, /** @type {string} */ name) => post('/api/pair', { code, name }),
   pushKey: () => get('/api/push/key'),
@@ -380,8 +385,18 @@ export function watchSession(sessionId, fn) {
   };
 }
 
-/** Asks the service worker to take down a notification it is showing, by tag. @param {string} tag */
-export function closeNotification(tag) {
+/**
+ * The worker pool: a machine linking, dropping, or a service starting or stopping. A group
+ * subscribes while it is on screen and reads the lists again when the server says so.
+ * @param {() => void} fn
+ */
+const workerWatchers = new Set();
+export function watchWorkers(fn) {
+  workerWatchers.add(fn);
+  return () => workerWatchers.delete(fn);
+}
+
+/** Asks the service worker to take down a notification it is showing, by tag. @param {string} tag */export function closeNotification(tag) {
   navigator.serviceWorker?.ready
     .then((r) => r.active?.postMessage({ type: 'close-notification', tag }))
     .catch(() => {
@@ -409,6 +424,7 @@ function onMessage(m) {
     closeNotification(`approval-${m.id}`);
   }
   else if (m.type === 'git') bumpGit(m.project_id);
+  else if (m.type === 'workers') for (const fn of workerWatchers) fn();
   else if (m.type === 'event') for (const fn of watchers.get(m.event.session_id) || []) fn(m);
   else if (m.type === 'delta' || m.type === 'suggestion' || m.type === 'commands') for (const fn of watchers.get(m.session_id) || []) fn(m);
 }

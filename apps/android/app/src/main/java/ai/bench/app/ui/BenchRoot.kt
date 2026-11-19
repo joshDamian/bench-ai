@@ -168,6 +168,7 @@ private fun Signed(store: BenchStore, openSession: MutableStateFlow<String?>) {
                 ScheduleScreen(store, e.arguments?.getString("id"), onBack = { nav.popBackStack() }, onOpen = { nav.popBackStack(); open(it) })
             }
             composable("devices") { DevicesScreen(store, onBack = { nav.popBackStack() }) }
+            composable("workers") { WorkersScreen(store, onBack = { nav.popBackStack() }) }
             composable("dashboard") { DashboardScreen(store, onBack = { nav.popBackStack() }) }
             composable("diagnostics") { DiagnosticsScreen(store, onBack = { nav.popBackStack() }) }
             composable("notifications") { NotificationsScreen(onBack = { nav.popBackStack() }) }
