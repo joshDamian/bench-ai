@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
@@ -28,18 +30,25 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -57,6 +66,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,7 +80,21 @@ import ai.bench.app.data.obj
 import ai.bench.app.data.str
 import ai.bench.app.ui.theme.Bench
 import ai.bench.app.ui.theme.Mono
+import ai.bench.app.ui.theme.Space
+import ai.bench.app.ui.theme.Type
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
@@ -80,7 +104,10 @@ import java.io.File
 
 /** What the server says a path in the transcript is (POST /api/sessions/:id/files/stat). */
 data class FileInfo(val asked: String, val path: String, val name: String, val mime: String, val size: Long, val open: Boolean, val kind: String, val artifact: Boolean) {
-    val viewable get() = open && kind in setOf("image", "pdf", "text")
+    /** Audio or video, which the viewer streams and plays. */
+    val media get() = kind == "media"
+    val audio get() = media && mime.startsWith("audio/")
+    val viewable get() = media || (open && kind in setOf("image", "pdf", "text"))
     val meta get() = (if (name.contains('.')) name.substringAfterLast('.') else kind).uppercase() + " · " + when {
         size < 1024 -> "$size B"; size < 1024 * 1024 -> "${size / 1024} KB"; else -> "%.1f MB".format(size / 1024.0 / 1024.0)
     }
@@ -106,6 +133,9 @@ class SessionFiles(val api: BenchApi, val sessionId: String) {
     }
 
     fun artifactsIn(text: String): List<FileInfo> = paths(text).mapNotNull { known[it] }.filter { it.artifact }.distinctBy { it.path }
+
+    /** Where the player reads the file from: the server streams it, and can seek within it. */
+    fun url(f: FileInfo): String = api.config.baseUrl + "/api/sessions/${BenchApi.enc(sessionId)}/files?path=${BenchApi.enc(f.path)}"
 
     suspend fun bytes(f: FileInfo): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
@@ -137,12 +167,26 @@ fun ArtifactCards(text: String) {
                 Modifier.fillMaxWidth().background(c.surface1, RoundedCornerShape(18.dp)).clickable { view(f) }.padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(Icons.Default.Description, null, tint = c.accent, modifier = Modifier.size(22.dp))
+                Icon(
+                    when {
+                        f.media && f.audio -> Icons.Default.Audiotrack
+                        f.media -> Icons.Default.Movie
+                        else -> Icons.Default.Description
+                    },
+                    null, tint = c.accent, modifier = Modifier.size(22.dp),
+                )
                 Column(Modifier.weight(1f)) {
                     Text(f.name, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(f.meta, fontSize = 12.5.sp, color = c.muted)
                 }
-                Text(if (f.viewable) "View" else "Open", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = c.accent)
+                Text(
+                    when {
+                        f.media -> "Play"
+                        f.viewable -> "View"
+                        else -> "Open"
+                    },
+                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = c.accent,
+                )
             }
         }
     }
@@ -172,7 +216,8 @@ fun FileViewer(files: SessionFiles, f: FileInfo, top: (@Composable () -> Unit)? 
     val scope = rememberCoroutineScope()
     var bytes by remember(f.path) { mutableStateOf<ByteArray?>(null) }
     var failed by remember(f.path) { mutableStateOf(false) }
-    LaunchedEffect(f.path) { if (f.viewable) { bytes = files.bytes(f); failed = bytes == null } }
+    // Media streams through the player: it is never read into memory as one block.
+    LaunchedEffect(f.path) { if (f.viewable && !f.media) { bytes = files.bytes(f); failed = bytes == null } }
     // Markdown opens rendered, at reading width; the toggle shows its source.
     val ext = f.name.substringAfterLast('.', "").lowercase()
     val markdown = ext in setOf("md", "markdown", "mdx")
@@ -200,6 +245,7 @@ fun FileViewer(files: SessionFiles, f: FileInfo, top: (@Composable () -> Unit)? 
                         ai.bench.app.ui.BigButton("Open with…", primary = true, height = 52.dp, fill = false) { scope.launch { handOff(context, files, f, share = false) } }
                     }
                     failed -> Text("This file couldn't be read. It may have been removed.", fontSize = 15.sp, color = c.muted, modifier = Modifier.padding(32.dp))
+                    f.media -> MediaPreview(files, f)
                     b == null -> CircularProgressIndicator()
                     f.kind == "image" -> ZoomImage(b)
                     f.kind == "pdf" -> PdfPages(context, b, f.name)
@@ -220,6 +266,183 @@ fun FileViewer(files: SessionFiles, f: FileInfo, top: (@Composable () -> Unit)? 
         }
         }
     }
+}
+
+/**
+ * Audio and video play in the viewer itself: the server streams the file, so a long video
+ * starts at once and seeking costs only the bytes it skips. The transport is ours, in the
+ * app's own colours, for both.
+ */
+// The authenticated data source and PlayerView's shutter are marked unstable in Media3;
+// this is the one place that uses them.
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun MediaPreview(files: SessionFiles, f: FileInfo) {
+    val c = Bench.colors
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val video = !f.audio
+    val headers = remember(f.path) {
+        files.api.config.token?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap()
+    }
+    val player = remember(f.path) {
+        val source = DefaultHttpDataSource.Factory()
+            .setUserAgent("Bench Android")
+            .setDefaultRequestProperties(headers)
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(source))
+            .build()
+    }
+    var playing by remember(player) { mutableStateOf(false) }
+    var buffering by remember(player) { mutableStateOf(true) }
+    var duration by remember(player) { mutableStateOf(0L) }
+    var position by remember(player) { mutableStateOf(0L) }
+    var scrubbing by remember(player) { mutableStateOf(false) }
+    var broken by remember(player) { mutableStateOf(false) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+            override fun onPlaybackStateChanged(state: Int) { buffering = state == Player.STATE_BUFFERING }
+            override fun onPlayerError(error: PlaybackException) { broken = true; buffering = false }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+    // Start it, then follow it. The listener above is already attached when this runs.
+    LaunchedEffect(player) {
+        player.setAudioAttributes(
+            AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_UNKNOWN).build(),
+            true,
+        )
+        player.setMediaItem(MediaItem.fromUri(files.url(f)))
+        player.prepare()
+        player.playWhenReady = true
+        // The bar follows the player, except while a finger is on it. Reading the state here too
+        // covers what happened before the listener was attached (a very short file can be ready).
+        while (true) {
+            if (!scrubbing) {
+                position = player.currentPosition.coerceAtLeast(0)
+                duration = player.duration.coerceAtLeast(0)
+            }
+            playing = player.isPlaying
+            buffering = player.playbackState == Player.STATE_BUFFERING
+            if (player.playerError != null) broken = true
+            delay(250)
+        }
+    }
+    fun toggle() {
+        if (player.playbackState == Player.STATE_ENDED) player.seekTo(0L)
+        if (player.isPlaying) player.pause() else player.play()
+    }
+    val controls: @Composable () -> Unit = {
+        MediaControls(
+            playing = playing, position = position, duration = duration, buffering = buffering, enabled = !broken,
+            onToggle = { toggle() },
+            onSeek = { position = it; scrubbing = true },
+            onSeekFinished = { scrubbing = false; player.seekTo(position) },
+        )
+    }
+    when {
+        broken -> Column(
+            Modifier.fillMaxSize().padding(Space.xxl),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+        ) {
+            Text("This ${if (video) "video" else "audio"} can't be played here.", fontSize = Type.md, color = c.muted, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(Space.lg))
+            ai.bench.app.ui.BigButton("Open with…", primary = true, height = 52.dp, fill = false) { scope.launch { handOff(context, files, f, share = false) } }
+        }
+        video -> Column(Modifier.fillMaxSize().padding(horizontal = Space.lg, vertical = Space.md), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+            Box(
+                Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(Bench.spec.radius.dp)).background(c.surfaceSunken),
+                contentAlignment = Alignment.Center,
+            ) {
+                androidx.compose.ui.viewinterop.AndroidView(
+                    modifier = Modifier.fillMaxSize().clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                    ) { toggle() },
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            this.player = player
+                        }
+                    },
+                    update = { it.player = player },
+                )
+                if (buffering) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.5.dp)
+            }
+            controls()
+        }
+        else -> Column(
+            Modifier.fillMaxSize().padding(horizontal = Space.xl, vertical = Space.xl),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+        ) {
+            Box(Modifier.size(112.dp).clip(CircleShape).background(c.surface1), contentAlignment = Alignment.Center) {
+                if (buffering && !playing) CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 2.5.dp)
+                else Icon(Icons.Default.Audiotrack, null, tint = c.accent, modifier = Modifier.size(44.dp))
+            }
+            Spacer(Modifier.height(Space.xl))
+            Text(f.name, fontSize = Type.lg, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+            Text(f.meta, fontSize = Type.sm, color = c.muted, modifier = Modifier.padding(top = Space.xs))
+            Spacer(Modifier.height(Space.xxl))
+            controls()
+        }
+    }
+}
+
+/** Play or pause, seek, and the two times: the same for audio and for video. */
+@Composable
+private fun MediaControls(
+    playing: Boolean,
+    position: Long,
+    duration: Long,
+    buffering: Boolean,
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onSeekFinished: () -> Unit,
+) {
+    val c = Bench.colors
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        Slider(
+            value = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
+            onValueChange = { onSeek((duration * it).toLong()) },
+            onValueChangeFinished = onSeekFinished,
+            enabled = enabled && duration > 0,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+            IconButton(
+                onClick = onToggle,
+                enabled = enabled,
+                modifier = Modifier.size(52.dp).clip(CircleShape).background(if (enabled) c.accent else c.surface2),
+            ) {
+                if (buffering && !playing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.muted)
+                else Icon(
+                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    if (playing) "Pause" else "Play",
+                    tint = if (enabled) c.onAccent else c.muted,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            Text(clock(position), fontFamily = Mono, fontSize = Type.sm, color = c.muted)
+            Spacer(Modifier.weight(1f))
+            Text(clock(duration, unknown = duration <= 0), fontFamily = Mono, fontSize = Type.sm, color = c.muted)
+        }
+    }
+}
+
+private fun clock(ms: Long, unknown: Boolean = false): String {
+    if (unknown || ms < 0) return "--:--"
+    val s = ms / 1000
+    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+    else "%d:%02d".format(s / 60, s % 60)
 }
 
 /**

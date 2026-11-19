@@ -84,6 +84,9 @@ dependencies {
     implementation(libs.zxing.embedded)
     implementation(libs.markdown.m3)
     implementation(libs.markdown.code)
+    // Audio and video in the artifact viewer: streaming, seeking, buffering.
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
     implementation(libs.hiddenapibypass)
