@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -242,20 +243,37 @@ func (c *Conn) runRender(ctx context.Context, r *request) (map[string]any, error
 	}
 	defer os.RemoveAll(dir)
 	out := filepath.Join(dir, "page."+format)
-	args := []string{"--headless=new", "--disable-gpu", "--hide-scrollbars", "--disable-dev-shm-usage",
-		"--user-data-dir=" + filepath.Join(dir, "profile"), "--virtual-time-budget=5000",
-		"--window-size=" + strconv.Itoa(width) + "," + strconv.Itoa(height)}
-	if format == "pdf" {
-		args = append(args, "--no-pdf-header-footer", "--print-to-pdf="+out)
-	} else {
-		args = append(args, "--screenshot="+out)
+	build := func(noSandbox bool) []string {
+		args := []string{"--headless=new", "--disable-gpu", "--hide-scrollbars", "--disable-dev-shm-usage",
+			"--user-data-dir=" + filepath.Join(dir, "profile"), "--virtual-time-budget=5000",
+			"--window-size=" + strconv.Itoa(width) + "," + strconv.Itoa(height)}
+		if noSandbox {
+			args = append(args, "--no-sandbox")
+		}
+		if format == "pdf" {
+			args = append(args, "--no-pdf-header-footer", "--print-to-pdf="+out)
+		} else {
+			args = append(args, "--screenshot="+out)
+		}
+		return append(args, pageURL)
 	}
-	args = append(args, pageURL)
-	cmd := exec.CommandContext(ctx, chrome, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("the render failed: %v %.300s", err, stderr.String())
+	run := func(noSandbox bool) error {
+		cmd := exec.CommandContext(ctx, chrome, build(noSandbox)...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("the render failed: %v %.300s", err, stderr.String())
+		}
+		return nil
+	}
+	err = run(os.Getuid() == 0)
+	// A machine whose kernel does not give Chrome a sandbox still draws: Playwright runs
+	// this way, and the page comes from the server, not from a stranger.
+	if err != nil && strings.Contains(err.Error(), "No usable sandbox") {
+		err = run(true)
+	}
+	if err != nil {
+		return nil, err
 	}
 	data, err := os.ReadFile(out)
 	if err != nil || len(data) == 0 {
@@ -274,6 +292,29 @@ func findChrome() string {
 		"/Applications/Chromium.app/Contents/MacOS/Chromium"} {
 		if _, err := os.Stat(p); err == nil {
 			return p
+		}
+	}
+	// A machine that runs Playwright already has a browser; Bench uses it rather than none.
+	cache := os.Getenv("PLAYWRIGHT_BROWSERS_PATH")
+	if cache == "" {
+		cache = filepath.Join(os.Getenv("HOME"), ".cache", "ms-playwright")
+	}
+	entries, _ := os.ReadDir(cache)
+	dirs := []string{}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "chromium-") {
+			if _, err := strconv.Atoi(strings.TrimPrefix(e.Name(), "chromium-")); err == nil {
+				dirs = append(dirs, e.Name())
+			}
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(dirs)))
+	for _, d := range dirs {
+		for _, sub := range []string{"chrome-linux64/chrome", "chrome-linux/chrome", "chrome-mac/Chromium.app/Contents/MacOS/Chromium"} {
+			p := filepath.Join(cache, d, sub)
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
 		}
 	}
 	return ""

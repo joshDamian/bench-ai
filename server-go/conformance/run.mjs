@@ -40,6 +40,14 @@ function makeRepo(dir) {
 async function start(kind, root, port) {
   const env = { ...process.env, BENCH_CHROMIUM: '/nonexistent', BENCH_ROOT: root, PORT: String(port), BENCH_CLAUDE_BIN: fake, BENCH_PROJECTS_DIR: path.join(root, 'projects'), BENCH_TMP_ROOTS: path.join(root, 'tmp') };
   fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
+  // A shell that runs Bench as a service exports this; the scenario starts an unsupervised
+  // server, and the restart step checks that it says so.
+  delete env.BENCH_SERVICE;
+  delete env.AI_CODE_SERVICE;
+  // Whose GitHub sign-in the developer has is not the scenario's answer: it sees none.
+  delete env.GH_TOKEN;
+  delete env.GITHUB_TOKEN;
+  env.GH_CONFIG_DIR = path.join(root, 'gh');
   const child = spawn(goBin, ['serve'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   child.stdout.on('data', (d) => (log += d));

@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -116,6 +117,41 @@ func TestCheckRunsOnTheMac(t *testing.T) {
 	}
 	if exists(filepath.Join(task.Str("worktree"), "local-ran")) {
 		t.Fatal("the check also ran on the server")
+	}
+	if got := svc.Store.GetTask(task.Str("id")); got.Str("check_status") != "passed" {
+		t.Fatalf("status %q", got.Str("check_status"))
+	}
+}
+
+// A worker in the pool takes the check, exactly as the Mac app does.
+func TestCheckRunsOnAWorker(t *testing.T) {
+	svc := testService(t)
+	s := NewServer(svc, AppRoot)
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+	_, fw := workerPair(t, ts, svc, "Builder", nil, 1)
+	task, projectID := checkTask(t, svc, "go test ./...")
+	svc.SetChecksHostPref(projectID, "mac")
+
+	ch := make(chan *CheckResult, 1)
+	go func() { ch <- svc.Runtime.Check(context.Background(), task.Str("id"), "", true) }()
+	job := fw.read()
+	if job.Str("type") != "job" || job.Str("kind") != "check" {
+		t.Fatalf("job %s", ToJSON(job))
+	}
+	args := job.ObjAt("args")
+	if args.Str("command") != "go test ./..." || args.Str("treeHash") == "" {
+		t.Fatalf("args %s", ToJSON(args))
+	}
+	fw.send(O("type", "job_done", "id", job.Str("id"), "ok", true, "text", "all good", "exit", 0, "ranMs", 42))
+	var res *CheckResult
+	select {
+	case res = <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check did not finish")
+	}
+	if res == nil || !res.OK || res.Output != "(ran on Builder)\nall good" {
+		t.Fatalf("result %+v", res)
 	}
 	if got := svc.Store.GetTask(task.Str("id")); got.Str("check_status") != "passed" {
 		t.Fatalf("status %q", got.Str("check_status"))

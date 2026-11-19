@@ -199,6 +199,11 @@ func (j *Jobs) Run(ctx context.Context, spec *JobSpec) (*JobResult, error) {
 	// A linked device, such as the Mac app, still takes its kinds.
 	dv, addr := j.svc.Devices().Pick(spec.Kind, "")
 	if dv == nil {
+		// Without a fallback the server ran nothing, so say only what happened.
+		if spec.Fallback == nil {
+			j.emit("", id, spec.Kind, "failed", "", lastErr.Error())
+			return local(lastErr)
+		}
 		j.emit("", id, spec.Kind, "fallback", "server", lastErr.Error()+"; it ran on the server")
 		return local(fmt.Errorf("%s; it ran on the server", lastErr))
 	}
@@ -213,6 +218,9 @@ func (j *Jobs) Run(ctx context.Context, spec *JobSpec) (*JobResult, error) {
 			return nil, ctx.Err()
 		}
 		j.emit(dv.Str("id"), id, spec.Kind, "failed", dv.Str("name"), err.Error())
+		if spec.Fallback == nil {
+			return local(err)
+		}
 		r, ferr := local(err)
 		if ferr != nil {
 			return nil, fmt.Errorf("%s; the server fallback also failed: %v", err, ferr)
@@ -380,8 +388,8 @@ func (j *Jobs) Tree(id string) ([]byte, string, bool) {
 	return nil, "", false
 }
 
-// ChecksHostPref is where a project's checks run: "mac" when a device should take them,
-// else "server". It is "server" until a project asks for the Mac.
+// ChecksHostPref is where a project's checks run: "mac" when a worker or a linked device
+// should take them, else "server". It is "server" until a project asks for offload.
 func (s *Service) ChecksHostPref(projectID string) string {
 	if s.Store.Setting("project:"+projectID+":checks_host") == "mac" {
 		return "mac"
@@ -397,14 +405,23 @@ func (s *Service) SetChecksHostPref(projectID, on string) {
 	s.Store.SetSetting("project:"+projectID+":checks_host", on)
 }
 
-// remoteCheck runs a task's check on a linked device when the project asks for it and one
-// offers check jobs. A nil result with no error means the server should run it as usual.
+// CanTake says whether a worker or a linked device offers the kind right now, so a caller
+// can skip work nobody would run, such as packing a tree for a check.
+func (s *Service) CanTake(kind string) bool {
+	if dv, _ := s.Devices().Pick(kind, ""); dv != nil {
+		return true
+	}
+	return s.Workers().Pick(kind, nil, "", nil) != nil
+}
+
+// remoteCheck runs a task's check on a worker or a linked device when the project asks for
+// it and one offers check jobs. A nil result with no error means the server should run it.
 func (s *Service) remoteCheck(ctx context.Context, t *Obj, command, worktree string) (*CheckResult, error) {
 	projectID := t.Str("project_id")
 	if projectID == "" || s.ChecksHostPref(projectID) != "mac" {
 		return nil, nil
 	}
-	if dv, _ := s.Devices().Pick("check", ""); dv == nil {
+	if !s.CanTake("check") {
 		return nil, nil
 	}
 	gz, hash, err := PackTree(worktree)
