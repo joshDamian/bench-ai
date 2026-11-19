@@ -43,6 +43,11 @@ const schema = `
   CREATE INDEX IF NOT EXISTS session_events_by_session ON session_events(session_id,id);
   CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT UNIQUE NOT NULL,created_at TEXT NOT NULL,last_seen_at TEXT,revoked_at TEXT);
   CREATE TABLE IF NOT EXISTS pairings(code_hash TEXT PRIMARY KEY,expires_at TEXT NOT NULL,used_at TEXT);
+  CREATE TABLE IF NOT EXISTS workers(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT UNIQUE NOT NULL,platform TEXT NOT NULL DEFAULT '',labels TEXT NOT NULL DEFAULT '[]',slots INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,last_seen_at TEXT,revoked_at TEXT);
+  -- A durable unit of worker work. It is written before dispatch, claimed with a lease, and
+  -- kept after it ends, so a restart loses nothing and the queue can be seen.
+  CREATE TABLE IF NOT EXISTS job_queue(id TEXT PRIMARY KEY,kind TEXT NOT NULL,args TEXT NOT NULL DEFAULT '{}',required TEXT NOT NULL DEFAULT '{}',state TEXT NOT NULL DEFAULT 'queued',worker_id TEXT,lease_until TEXT,attempts INTEGER NOT NULL DEFAULT 0,result TEXT,error TEXT,sticky TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT);
+  CREATE INDEX IF NOT EXISTS job_queue_state ON job_queue(state,created_at);
   CREATE TABLE IF NOT EXISTS task_log(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT NOT NULL,session_id TEXT,decision TEXT NOT NULL,evidence TEXT NOT NULL,created_at TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS task_log_by_task ON task_log(task_id,id);
   CREATE TABLE IF NOT EXISTS artifacts(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,task_id TEXT,project_id TEXT,path TEXT NOT NULL,tool TEXT,
@@ -1105,6 +1110,155 @@ func (s *Store) ListDevices() []*Obj {
 
 func (s *Store) RevokeDevice(id string) bool {
 	return changes(s.exec("UPDATE devices SET revoked_at=? WHERE id=? AND revoked_at IS NULL", isoNow(), id)) == 1
+}
+
+// --- workers ---------------------------------------------------------------------------
+
+// AddWorker enrols a compute worker. The token is returned to the caller once and only its
+// hash is kept. Labels are a JSON list in the row.
+func (s *Store) AddWorker(name, token, platform string, labels []any, slots int) *Obj {
+	if slots < 1 {
+		slots = 1
+	}
+	id := NewID()
+	s.exec("INSERT INTO workers(id,name,token_hash,platform,labels,slots,created_at) VALUES(?,?,?,?,?,?,?)",
+		id, name, Hash(token), platform, ToJSON(labels), slots, isoNow())
+	return s.one("SELECT id,name,platform,labels,slots,created_at,last_seen_at FROM workers WHERE id=?", id)
+}
+
+func (s *Store) WorkerByToken(token string) *Obj {
+	w := s.one("SELECT id,name,platform,labels,slots,last_seen_at FROM workers WHERE token_hash=? AND revoked_at IS NULL", Hash(token))
+	if w == nil {
+		return nil
+	}
+	last, ok := parseISO(w.Str("last_seen_at"))
+	if !ok || time.Since(last) > time.Minute {
+		s.exec("UPDATE workers SET last_seen_at=? WHERE id=?", isoNow(), w.Str("id"))
+	}
+	return w
+}
+
+func (s *Store) ListWorkers() []*Obj {
+	return nonNil(s.all("SELECT id,name,platform,labels,slots,created_at,last_seen_at FROM workers WHERE revoked_at IS NULL ORDER BY created_at"))
+}
+
+func (s *Store) RevokeWorker(id string) bool {
+	return changes(s.exec("UPDATE workers SET revoked_at=? WHERE id=? AND revoked_at IS NULL", isoNow(), id)) == 1
+}
+
+// --- the job queue ---------------------------------------------------------------------
+
+// AddQueuedJob writes a job before any worker is asked to run it.
+func (s *Store) AddQueuedJob(id, kind string, args, required *Obj, sticky string) *Obj {
+	if args == nil {
+		args = O()
+	}
+	if required == nil {
+		required = O()
+	}
+	s.exec("INSERT INTO job_queue(id,kind,args,required,state,sticky,created_at) VALUES(?,?,?,?,?,?,?)",
+		id, kind, ToJSON(args), ToJSON(required), "queued", sticky, isoNow())
+	return s.QueuedJob(id)
+}
+
+// ClaimQueuedJob takes a queued job for one worker, atomically. Only the worker that wins
+// sees true; a job already claimed by another worker stays with it until its lease expires.
+func (s *Store) ClaimQueuedJob(id, workerID string, lease time.Duration) bool {
+	now := time.Now()
+	r := s.exec("UPDATE job_queue SET state='claimed',worker_id=?,lease_until=?,started_at=?,attempts=attempts+1 WHERE id=? AND state='queued'",
+		workerID, isoTime(now.Add(lease)), isoTime(now), id)
+	return changes(r) == 1
+}
+
+// RenewQueuedJob extends a lease. False means the worker lost the job.
+func (s *Store) RenewQueuedJob(id, workerID string, lease time.Duration) bool {
+	r := s.exec("UPDATE job_queue SET lease_until=? WHERE id=? AND worker_id=? AND state IN ('claimed','running')",
+		isoTime(time.Now().Add(lease)), id, workerID)
+	return changes(r) == 1
+}
+
+// MarkQueuedJobRunning is the worker's first progress: the job is under way.
+func (s *Store) MarkQueuedJobRunning(id, workerID string) {
+	s.exec("UPDATE job_queue SET state='running' WHERE id=? AND worker_id=? AND state='claimed'", id, workerID)
+}
+
+// FinishQueuedJob records the end of a job and returns false when another worker owns it.
+func (s *Store) FinishQueuedJob(id, workerID, state string, result *Obj, errText string) bool {
+	var res any
+	if result != nil {
+		res = string(ToJSON(result))
+	}
+	r := s.exec("UPDATE job_queue SET state=?,result=?,error=?,lease_until=NULL,finished_at=? WHERE id=? AND worker_id=? AND state IN ('claimed','running')",
+		state, res, errText, isoNow(), id, workerID)
+	return changes(r) == 1
+}
+
+// MarkQueuedElsewhere records that a linked device, not a worker, is running the job.
+func (s *Store) MarkQueuedElsewhere(id, where, who string) {
+	s.exec("UPDATE job_queue SET state='running',worker_id=?,error=? WHERE id=? AND state='queued'", who, where, id)
+}
+
+// CloseQueuedJob ends a job that did not run on a worker: it ran on a device or the server.
+func (s *Store) CloseQueuedJob(id, state string, result *Obj, errText string) {
+	var res any
+	if result != nil {
+		res = string(ToJSON(result))
+	}
+	s.exec("UPDATE job_queue SET state=?,result=?,error=?,lease_until=NULL,finished_at=? WHERE id=? AND state NOT IN ('done','failed','cancelled')",
+		state, res, errText, isoNow(), id)
+}
+
+// CancelQueuedJob stops a waiting or running job.
+func (s *Store) CancelQueuedJob(id string) bool {
+	r := s.exec("UPDATE job_queue SET state='cancelled',lease_until=NULL,finished_at=? WHERE id=? AND state NOT IN ('done','failed','cancelled')", isoNow(), id)
+	return changes(r) == 1
+}
+
+// RequeueQueuedJob puts a failed job back for another worker and returns how many attempts
+// it has now had.
+func (s *Store) RequeueQueuedJob(id, errText string) int {
+	s.exec("UPDATE job_queue SET state='queued',worker_id=NULL,lease_until=NULL,error=? WHERE id=? AND state IN ('claimed','running')", errText, id)
+	j := s.QueuedJob(id)
+	if j == nil {
+		return 0
+	}
+	return int(j.Num("attempts"))
+}
+
+// ExpireQueuedJobs returns the expired claims to the queue and gives back their ids.
+func (s *Store) ExpireQueuedJobs() []*Obj {
+	now := isoNow()
+	rows := s.all("SELECT id,kind,worker_id FROM job_queue WHERE state IN ('claimed','running') AND lease_until IS NOT NULL AND lease_until<?", now)
+	for _, x := range rows {
+		s.exec("UPDATE job_queue SET state='queued',worker_id=NULL,lease_until=NULL,error='The worker stopped answering' WHERE id=? AND state IN ('claimed','running')", x.Str("id"))
+	}
+	return rows
+}
+
+// QueuedJob is one job by id.
+func (s *Store) QueuedJob(id string) *Obj {
+	return s.one("SELECT id,kind,args,required,state,worker_id,lease_until,attempts,result,error,sticky,created_at,started_at,finished_at FROM job_queue WHERE id=?", id)
+}
+
+// QueuedJobs is the queue as a person sees it: waiting first, then the running, then the recent
+// ends. args and result are left out; the queue is about flow, not payloads.
+func (s *Store) QueuedJobs(limit int) []*Obj {
+	if limit <= 0 {
+		limit = 50
+	}
+	return nonNil(s.all(`SELECT id,kind,state,worker_id,attempts,error,sticky,created_at,started_at,finished_at FROM job_queue
+		WHERE state IN ('queued','claimed','running') OR finished_at>?
+		ORDER BY CASE state WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 WHEN 'running' THEN 2 ELSE 3 END, created_at DESC LIMIT ?`,
+		isoTime(time.Now().Add(-time.Hour)), limit))
+}
+
+// JobQueueDepth counts the jobs waiting for a worker.
+func (s *Store) JobQueueDepth() int {
+	row := s.one("SELECT COUNT(*) AS n FROM job_queue WHERE state='queued'")
+	if row == nil {
+		return 0
+	}
+	return int(row.Num("n"))
 }
 
 // --- push ---------------------------------------------------------------------------

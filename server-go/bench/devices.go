@@ -40,11 +40,19 @@ var ShareKinds = []string{"folder", "app", "screen", "run", "messages", "calenda
 var PhoneKinds = []string{"messages", "calendar", "contacts", "sms", "handover", "use", "notifications"}
 
 type device struct {
-	info    *Obj // id, name, version, shares, last_seen
+	info    *Obj // id, name, version, shares, caps, addr, last_seen
 	conn    *websocket.Conn
 	ctx     context.Context
 	writeMu sync.Mutex
 	waiting map[string]chan *Obj
+	jobs    map[string]*jobWait
+}
+
+// jobWait carries a job's messages until it finishes or the link drops. Progress may be
+// dropped when the reader falls behind; the done message never is.
+type jobWait struct {
+	progress chan string
+	done     chan *Obj
 }
 
 // Devices holds the linked devices: their last known shares on disk, the live link in memory.
@@ -146,7 +154,7 @@ func (d *Devices) List() []*Obj {
 		if kind == "" {
 			kind = "mac"
 		}
-		out = append(out, O("id", id, "name", info.Str("name"), "kind", kind, "version", info.Get("version"), "online", online, "last_seen", info.Get("last_seen"), "shares", shares, "asks", mine))
+		out = append(out, O("id", id, "name", info.Str("name"), "kind", kind, "version", info.Get("version"), "online", online, "last_seen", info.Get("last_seen"), "caps", info.Get("caps"), "shares", shares, "asks", mine))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Str("name") < out[j].Str("name") })
 	return out
@@ -309,6 +317,10 @@ func (d *Devices) Link(ws *websocket.Conn) {
 			close(ch)
 		}
 		dev.waiting = map[string]chan *Obj{}
+		for _, jw := range dev.jobs {
+			close(jw.done)
+		}
+		dev.jobs = map[string]*jobWait{}
 		d.mu.Unlock()
 		d.svc.Emit("devices", nil)
 	}()
@@ -345,14 +357,26 @@ func (d *Devices) Link(ws *websocket.Conn) {
 			if dev != nil && dev.info.Str("kind") != "" {
 				kind = dev.info.Str("kind")
 			}
-			info := O("id", id, "name", name, "kind", kind, "version", msg.Get("version"), "shares", cleanShares(msg.Get("shares")), "last_seen", isoNow())
+			// What it can run for the server, and where the server can reach it. A shares
+			// message may leave both out, so the last hello's values stay.
+			caps := cleanCaps(msg.Get("caps"))
+			addr := strings.TrimSpace(msg.Str("addr"))
+			if dev != nil {
+				if !msg.Has("caps") {
+					caps = arr(dev.info.Get("caps"))
+				}
+				if addr == "" {
+					addr = dev.info.Str("addr")
+				}
+			}
+			info := O("id", id, "name", name, "kind", kind, "version", msg.Get("version"), "caps", caps, "addr", addr, "shares", cleanShares(msg.Get("shares")), "last_seen", isoNow())
 			d.mu.Lock()
 			d.remember(info)
 			if dev == nil {
 				if old := d.live[id]; old != nil {
 					old.conn.Close(websocket.StatusNormalClosure, "Linked again")
 				}
-				dev = &device{conn: ws, ctx: ctx, waiting: map[string]chan *Obj{}}
+				dev = &device{conn: ws, ctx: ctx, waiting: map[string]chan *Obj{}, jobs: map[string]*jobWait{}}
 				d.live[id] = dev
 			}
 			dev.info = info
@@ -382,8 +406,33 @@ func (d *Devices) Link(ws *websocket.Conn) {
 				ch <- msg
 				close(ch)
 			}
+		case "job_progress", "job_done":
+			if dev == nil {
+				continue
+			}
+			d.mu.Lock()
+			jw := dev.jobs[msg.Str("id")]
+			if jw != nil && msg.Str("type") == "job_done" {
+				delete(dev.jobs, msg.Str("id"))
+			}
+			d.mu.Unlock()
+			if jw == nil {
+				continue
+			}
+			if msg.Str("type") == "job_progress" {
+				select {
+				case jw.progress <- msg.Str("text"):
+				default: // the reader is behind; the next line carries the same story
+				}
+				continue
+			}
+			jw.done <- msg
+			close(jw.done)
 		case "answer":
 			// The person decided an ask on the device; its new shares follow in a shares message.
+			if dev == nil {
+				continue
+			}
 			if a := d.dropAsk(msg.Str("id")); a != nil {
 				word := "declined"
 				if truthy(msg.Get("approved")) {
@@ -536,6 +585,104 @@ func (d *Devices) call(ctx context.Context, dv, sh *Obj, tool string, args *Obj)
 	delete(dev.waiting, id)
 	d.mu.Unlock()
 	return nil, fmt.Errorf("%s did not answer in time", dv.Str("name"))
+}
+
+// Pick is the first online device that offers a capability and has a free slot, with the
+// address the server dials to reach it (empty when the device sent none).
+func (d *Devices) Pick(cap string, exclude string) (*Obj, string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, info := range d.known() {
+		id := info.Str("id")
+		if id == exclude {
+			continue
+		}
+		dev := d.live[id]
+		if dev == nil || len(dev.jobs) > 0 {
+			continue
+		}
+		if !hasCap(info.Get("caps"), cap) {
+			continue
+		}
+		return O("id", id, "name", info.Str("name"), "kind", info.Str("kind"), "caps", info.Get("caps"), "online", true), info.Str("addr")
+	}
+	return nil, ""
+}
+
+// jobGrace is how long the server waits past a job's own limit before it stops it. A test
+// may shorten it.
+var jobGrace = 10 * time.Second
+
+// Job sends one job to a device and waits for its done, passing progress lines as they come.
+// The timer is the server's backstop; the device stops itself at the same limit.
+func (d *Devices) Job(ctx context.Context, deviceID, id, kind string, args *Obj, timeout time.Duration, onProgress func(string)) (*Obj, string, error) {
+	d.mu.Lock()
+	dev := d.live[deviceID]
+	if dev == nil {
+		d.mu.Unlock()
+		return nil, "", fmt.Errorf("The device went offline")
+	}
+	name := dev.info.Str("name")
+	if !hasCap(dev.info.Get("caps"), kind) {
+		d.mu.Unlock()
+		return nil, name, fmt.Errorf("%s does not offer %s jobs", name, kind)
+	}
+	if len(dev.jobs) > 0 {
+		d.mu.Unlock()
+		return nil, name, fmt.Errorf("%s is busy with another job", name)
+	}
+	jw := &jobWait{progress: make(chan string, 32), done: make(chan *Obj, 1)}
+	dev.jobs[id] = jw
+	d.mu.Unlock()
+	if err := dev.send(O("type", "job", "id", id, "kind", kind, "args", args, "limits", O("timeoutSec", int(timeout.Seconds())))); err != nil {
+		d.mu.Lock()
+		delete(dev.jobs, id)
+		d.mu.Unlock()
+		return nil, name, fmt.Errorf("%s could not be reached: %v", name, err)
+	}
+	timer := time.NewTimer(timeout + jobGrace)
+	defer timer.Stop()
+	for {
+		select {
+		case text := <-jw.progress:
+			if onProgress != nil {
+				onProgress(text)
+			}
+		case m, ok := <-jw.done:
+			if !ok {
+				return nil, name, fmt.Errorf("%s went offline during the job", name)
+			}
+			return m, name, nil
+		case <-timer.C:
+			d.stopJob(dev, id)
+			return nil, name, fmt.Errorf("%s did not finish the job in time", name)
+		case <-ctx.Done():
+			d.stopJob(dev, id)
+			return nil, name, ctx.Err()
+		}
+	}
+}
+
+// stopJob takes the job off the device and tells it to stop.
+func (d *Devices) stopJob(dev *device, id string) {
+	d.mu.Lock()
+	delete(dev.jobs, id)
+	d.mu.Unlock()
+	dev.send(O("type", "job_cancel", "id", id))
+}
+
+// CancelJob stops a job the server kept running after its done, such as a hosted board.
+func (d *Devices) CancelJob(deviceID, id string) error {
+	d.mu.Lock()
+	dev := d.live[deviceID]
+	if dev != nil {
+		delete(dev.jobs, id)
+	}
+	d.mu.Unlock()
+	if dev == nil {
+		return fmt.Errorf("The device went offline")
+	}
+	return dev.send(O("type", "job_cancel", "id", id))
 }
 
 // Rule is what a mac_* call's share says: "allow", "ask", or "" when it names no known share.

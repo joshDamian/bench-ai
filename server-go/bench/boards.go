@@ -3,6 +3,7 @@ package bench
 // Living results: boards.mjs. A schedule that keeps one board, updated in place each run.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,6 +31,39 @@ func FindBoard(projectPath, title string) string {
 		}
 	}
 	return ""
+}
+
+// BoardBySlug finds a board by the name in its URL, and the type to serve it as. The name
+// may carry ".md" or ".html"; both forms name the same board.
+func BoardBySlug(projectPath, slug string) (full, mime string, err error) {
+	base := slug
+	if ext := filepath.Ext(base); ext == ".md" || ext == ".html" {
+		base = strings.TrimSuffix(base, ext)
+	}
+	name := NoteSlug(base)
+	if name == "" {
+		return "", "", fmt.Errorf("A board needs a name")
+	}
+	for _, ext := range []string{".md", ".html"} {
+		f := filepath.Join(projectPath, "boards", name+ext)
+		if st, e := os.Stat(f); e == nil && !st.IsDir() {
+			if ext == ".md" {
+				return f, "text/plain; charset=utf-8", nil
+			}
+			return f, "text/html; charset=utf-8", nil
+		}
+	}
+	return "", "", fmt.Errorf("No board %q in this project", name)
+}
+
+// BoardSlug is the name a board is served under, from its file.
+func BoardSlug(full string) string {
+	return strings.TrimSuffix(filepath.Base(full), filepath.Ext(full))
+}
+
+// BoardURL is where the server serves a project's board.
+func BoardURL(projectID, slug string) string {
+	return "/api/projects/" + projectID + "/boards/" + slug
 }
 
 func boardHistoryDir(projectPath, title string) string {
@@ -138,7 +172,7 @@ func (s *Service) ScheduleDetail(id string) (*Obj, error) {
 			if len(runs) > 0 {
 				sid = runs[0].Get("id")
 			}
-			board = O("session_id", sid, "path", f, "name", filepath.Base(f), "title", BoardTitle(f, sch.Str("title")), "new", NewCount(f), "history", BoardHistory(p.Str("path"), sch.Str("title")))
+			board = O("session_id", sid, "path", f, "name", filepath.Base(f), "title", BoardTitle(f, sch.Str("title")), "new", NewCount(f), "url", BoardURL(p.Str("id"), BoardSlug(f)), "history", BoardHistory(p.Str("path"), sch.Str("title")))
 		}
 	}
 	return O("schedule", scheduleView(sch), "runs", list, "board", board), nil
@@ -170,7 +204,7 @@ func (s *Service) boardReports() []*Obj {
 		}
 		modified := isoTime(st.ModTime())
 		seen := last.Str("seen_at") != "" && last.Str("seen_at") >= modified
-		item := O("session_id", last.Get("id"), "path", f, "name", filepath.Base(f), "kind", "board", "title", BoardTitle(f, sch.Str("title")), "size", st.Size(), "modified", modified, "seen", seen, "schedule_id", sch.Get("id"), "new", NewCount(f))
+		item := O("session_id", last.Get("id"), "path", f, "name", filepath.Base(f), "kind", "board", "title", BoardTitle(f, sch.Str("title")), "size", st.Size(), "modified", modified, "seen", seen, "schedule_id", sch.Get("id"), "new", NewCount(f), "url", BoardURL(p.Str("id"), BoardSlug(f)))
 		reportPreview(item, f, "board")
 		out = append(out, item)
 	}

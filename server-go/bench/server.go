@@ -107,6 +107,7 @@ type ctxt struct {
 type authInfo struct {
 	local  bool
 	device *Obj
+	worker *Obj
 }
 
 type route struct {
@@ -207,8 +208,15 @@ func (s *Server) who(r *http.Request) *authInfo {
 	if d := s.Svc.Store.DeviceByToken(t); d != nil {
 		return &authInfo{device: d}
 	}
+	if w := s.Svc.Store.WorkerByToken(t); w != nil {
+		return &authInfo{worker: w}
+	}
 	return nil
 }
+
+// person is true for a signed-in person (signed in on localhost or paired), not a worker.
+// Enrolling and revoking workers is a person's decision.
+func person(a *authInfo) bool { return a != nil && a.worker == nil }
 
 func sameOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
@@ -467,9 +475,11 @@ func (s *Server) wire() {
 		}
 		go s.pushAll(O("title", title, "body", ss.Str("title"), "url", SessionPath(ss), "tag", "turn-"+ss.Str("id"), "sessionId", ss.Str("id")), kind)
 	})
+	s.Svc.On("workers", func(any) { s.broadcast(O("type", "workers"), "") })
 	s.Svc.On("task", func(t any) { s.broadcast(O("type", "task", "task", t), "") })
 	s.Svc.On("git", func(p any) { s.broadcast(O("type", "git", "project_id", p), "") })
 	s.Svc.On("devices", func(any) { s.broadcast(O("type", "devices"), "") })
+	s.Svc.On("job", func(p any) { s.broadcast(O("type", "job", "job", p), "") })
 	s.Svc.On("meeting", func(any) { s.broadcast(O("type", "meeting"), "") })
 }
 
@@ -800,6 +810,65 @@ func (s *Server) sendSessionFile(w http.ResponseWriter, r *http.Request, session
 	io.CopyN(w, fh, length)
 }
 
+// serveBoard serves a project's board. When a linked device hosts it and the file has not
+// changed since it was published, the bytes come from the device; otherwise the server
+// reads the file itself. X-Bench-Served-By says which.
+func (s *Server) serveBoard(c *ctxt, projectID, name string) {
+	p, err := s.Svc.Project(projectID)
+	if err != nil {
+		writeJSON(c.w, c.r, O("error", "No such project"), 404)
+		return
+	}
+	full, mime, err := BoardBySlug(p.Str("path"), name)
+	if err != nil {
+		writeJSON(c.w, c.r, O("error", err.Error()), 404)
+		return
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		writeJSON(c.w, c.r, O("error", err.Error()), 500)
+		return
+	}
+	servedBy := "server"
+	if fi, err := os.Stat(full); err == nil {
+		if bh := s.Svc.Jobs().BoardHost(projectID, BoardSlug(full)); bh != nil && !fi.ModTime().After(bh.At) {
+			if remote, derr := fetchHosted(bh); derr == nil {
+				data = remote
+				servedBy = "mac:" + bh.Device
+			}
+		}
+	}
+	h := c.w.Header()
+	h.Set("Content-Type", mime)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "no-cache")
+	h.Set("X-Bench-Served-By", servedBy)
+	if strings.HasPrefix(mime, "text/html") {
+		// Scripts run, but the page has an opaque origin and no access to the server.
+		h.Set("Content-Security-Policy", "sandbox allow-scripts")
+	}
+	c.w.Write(data)
+}
+
+// fetchHosted reads a board from the device that is serving it.
+func fetchHosted(bh *boardHost) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", bh.URL(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("%s answered %d", bh.Device, resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+}
+
 func encodeURIComponent(s string) string {
 	var b strings.Builder
 	for _, c := range []byte(s) {
@@ -1012,6 +1081,21 @@ func (s *Server) routesInit() {
 	s.route("POST", "/api/projects/:id/push", func(c *ctxt) (any, error) { return svc.Push(c.params[0]) })
 	s.route("POST", "/api/projects/:id/checkout", func(c *ctxt) (any, error) { return svc.Checkout(c.params[0], c.body) })
 	s.route("POST", "/api/projects/:id/commit", func(c *ctxt) (any, error) { return svc.Commit(c.params[0], c.body.Str("message")) })
+	s.route("GET", "/api/projects/:id/boards/:slug", func(c *ctxt) (any, error) {
+		s.serveBoard(c, c.params[0], c.params[1])
+		c.sent = true
+		return nil, nil
+	})
+	s.route("POST", "/api/projects/:id/boards/:slug/host", func(c *ctxt) (any, error) {
+		return svc.HostBoard(c.params[0], c.params[1], c.body.Str("on"))
+	})
+	s.route("POST", "/api/projects/:id/checks/host", func(c *ctxt) (any, error) {
+		if _, err := svc.Project(c.params[0]); err != nil {
+			return nil, err
+		}
+		svc.SetChecksHostPref(c.params[0], c.body.Str("on"))
+		return O("ok", true, "on", svc.ChecksHostPref(c.params[0])), nil
+	})
 	s.route("GET", "/api/fs", func(c *ctxt) (any, error) {
 		home, _ := os.UserHomeDir()
 		dir := q(c, "path")
@@ -1353,6 +1437,24 @@ func (s *Server) routesInit() {
 	s.route("DELETE", "/api/linked-devices/:id", func(c *ctxt) (any, error) { return svc.Devices().Forget(c.params[0]) })
 	s.route("POST", "/api/linked-devices/:id/ask", func(c *ctxt) (any, error) { return svc.Devices().Ask(c.params[0], c.body, "") })
 	s.route("DELETE", "/api/linked-devices/asks/:id", func(c *ctxt) (any, error) { return svc.Devices().CancelAsk(c.params[0]) })
+	s.route("GET", "/api/jobs", func(c *ctxt) (any, error) { return svc.Jobs().Recent(), nil })
+	s.route("GET", "/api/jobs/queue", func(c *ctxt) (any, error) {
+		st.ExpireQueuedJobs() // a worker that stopped answering gives its job back
+		return O("depth", st.JobQueueDepth(), "jobs", st.QueuedJobs(0)), nil
+	})
+	s.route("POST", "/api/jobs/:id/cancel", func(c *ctxt) (any, error) { return svc.Jobs().CancelJob(c.params[0]) })
+	s.route("GET", "/api/jobs/:id/tree", func(c *ctxt) (any, error) {
+		gz, hash, ok := svc.Jobs().Tree(c.params[0])
+		if !ok {
+			return nil, httpErr(404, "No such tree")
+		}
+		h := c.w.Header()
+		h.Set("Content-Type", "application/gzip")
+		h.Set("X-Tree-Hash", hash)
+		c.w.Write(gz)
+		c.sent = true
+		return nil, nil
+	})
 	s.route("GET", "/api/recipes", func(c *ctxt) (any, error) { return svc.Recipes(), nil })
 	s.route("POST", "/api/recipes", func(c *ctxt) (any, error) { return svc.AddRecipe(c.body) })
 	s.route("PATCH", "/api/recipes/:id", func(c *ctxt) (any, error) { return svc.UpdateRecipe(c.params[0], c.body) })
@@ -1412,6 +1514,49 @@ func (s *Server) routesInit() {
 	s.route("GET", "/api/doctor", func(c *ctxt) (any, error) { return svc.Doctor(), nil })
 	s.route("GET", "/api/devices", func(c *ctxt) (any, error) { return st.ListDevices(), nil })
 	s.route("DELETE", "/api/devices/:id", func(c *ctxt) (any, error) { return O("ok", st.RevokeDevice(c.params[0])), nil })
+	s.route("GET", "/api/workers", func(c *ctxt) (any, error) { return svc.Workers().List(), nil })
+	s.route("POST", "/api/workers", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person enrols a worker", 403)
+		}
+		return svc.Workers().Enrol(c.body, requestBase(c.r))
+	})
+	s.route("GET", "/api/services", func(c *ctxt) (any, error) { return svc.Workers().Services(), nil })
+	s.route("POST", "/api/workers/:id/services", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person starts a service", 403)
+		}
+		return svc.StartService(c.r.Context(), c.params[0], c.body.Str("kind"), c.body.ObjAt("args"))
+	})
+	s.route("POST", "/api/jobs", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person runs a job", 403)
+		}
+		timeout := time.Duration(c.body.Num("timeoutSec")) * time.Second
+		r, err := svc.Jobs().Run(c.r.Context(), &JobSpec{
+			Kind:    c.body.Str("kind"),
+			Args:    c.body.ObjAt("args"),
+			Sticky:  c.body.Str("sticky"),
+			Timeout: timeout,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return O("ok", r.OK, "text", r.Text, "image", r.Image, "exit", r.Exit,
+			"ranOn", r.RanOn, "worker_id", r.DeviceID, "worker", r.Device, "ms", r.Ms), nil
+	})
+	s.route("POST", "/api/services/:id/stop", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person stops a service", 403)
+		}
+		return svc.Workers().StopService(c.params[0])
+	})
+	s.route("DELETE", "/api/workers/:id", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person revokes a worker", 403)
+		}
+		return svc.Workers().Revoke(c.params[0])
+	})
 	s.route("POST", "/api/pairing", func(c *ctxt) (any, error) {
 		p, err := s.newPairing()
 		if err != nil {
@@ -1851,6 +1996,15 @@ func (s *Server) receiveUpload(w http.ResponseWriter, r *http.Request, u *url.UR
 	writeJSON(w, r, out, 200)
 }
 
+// requestBase is the URL a worker uses to reach this server, from the request that enrolled it.
+func requestBase(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" || regexp.MustCompile(`\.ts\.net(:\d+)?$`).MatchString(r.Host) {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
 func ownHosts() []string {
 	host, _ := os.Hostname()
 	seen := map[string]bool{}
@@ -2054,6 +2208,26 @@ func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.Svc.Devices().Link(ws)
+	case "/api/workers/link":
+		// A compute worker: its hello, then jobs. The token is the worker's whole credential.
+		// A worker on this same machine counts as local, so its row comes from the token.
+		auth := s.who(r)
+		row := (*Obj)(nil)
+		if auth != nil {
+			row = auth.worker
+		}
+		if row == nil {
+			row = s.Svc.Store.WorkerByToken(presentedToken(r))
+		}
+		if row == nil {
+			refuse(w, "401 Unauthorized")
+			return
+		}
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
+		if err != nil {
+			return
+		}
+		s.Svc.Workers().Link(ws, row)
 	case "/api/browser/view":
 		// The take-over view: the server's browser, streamed to the person, their input sent back.
 		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})

@@ -1,0 +1,25 @@
+# A Bench worker as a systemd service on Linux.
+#
+#   sudo install -m 755 bench-worker /usr/local/bin/
+#   sudo install -d -m 700 /etc/bench-worker
+#   sudo install -m 600 config.json /etc/bench-worker/config.json
+#   sudo cp bench-worker.service /etc/systemd/system/
+#   sudo systemctl enable --now bench-worker
+#
+# The worker reconnects on its own; systemd only restarts it if the process itself stops.
+[Unit]
+Description=Bench compute worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/bench-worker run --config /etc/bench-worker/config.json
+Restart=always
+RestartSec=10
+StateDirectory=bench-worker
+CacheDirectory=bench-worker
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1004,6 +1004,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .qr{width:200px;height:200px;background:var(--paper);border-radius:var(--radius-sm);padding:var(--space-2);box-sizing:border-box}
 .qr svg{width:100%;height:100%}
 .pair-url{overflow-wrap:anywhere;user-select:all}
+/* The command that joins a machine to the pool: one mono block, read once, copied. */
+.worker-cmd{display:flex;align-items:flex-start;gap:var(--space-2);margin-top:var(--space-2);padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);min-width:0}
+.worker-cmd code{flex:1 1 auto;min-width:0;font-family:var(--font-mono);font-size:var(--text-sm);color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;user-select:all}
 /* One grid for the whole table, so the name column is as wide as its longest name and
    every value starts on the same line. */
 .checks{display:grid;grid-template-columns:20px max-content minmax(0,1fr);gap:var(--space-2) var(--space-3);padding-top:var(--space-2);font-size:var(--text-sm)}

@@ -5969,6 +5969,7 @@
      "seen": false,
      "schedule_id": "<id17>",
      "new": 2,
+     "url": "/api/projects/<id1>/boards/job-board",
      "gist": "Updated today",
      "preview": [
       {
@@ -6027,6 +6028,7 @@
      "name": "job-board.md",
      "title": "Remote roles",
      "new": 2,
+     "url": "/api/projects/<id1>/boards/job-board",
      "history": [
       "2026-01-02T00-00.md"
      ]

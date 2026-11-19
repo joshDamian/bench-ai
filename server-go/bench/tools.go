@@ -735,7 +735,9 @@ func pickReviewer(svc *Service, me *Obj) pick {
 				models = append(models, m)
 			}
 		}
-		sort.SliceStable(models, func(i, j int) bool { return models[i].Num("output_cost_per_mtok") > models[j].Num("output_cost_per_mtok") })
+		sort.SliceStable(models, func(i, j int) bool {
+			return models[i].Num("output_cost_per_mtok") > models[j].Num("output_cost_per_mtok")
+		})
 		if len(models) > 0 {
 			return pick{ProviderID: p.Str("id"), ModelID: models[0].Str("id")}
 		}
@@ -1441,7 +1443,9 @@ func BenchServer(svc *Service, sessionID string) *MCPServer {
 			note = fmt.Sprintf("Note: %s is the same model family as this session; it reviewed in a fresh context.", by)
 		}
 		doneCh := make(chan reviewResult, 1)
-		go func() { doneCh <- finishReview(svc, reviewer.Str("id"), task.Str("id"), by, c.me.Str("id"), shots != nil) }()
+		go func() {
+			doneCh <- finishReview(svc, reviewer.Str("id"), task.Str("id"), by, c.me.Str("id"), shots != nil)
+		}()
 		blocked := func(s *Obj) bool {
 			if s.Str("status") == "idle" || s.Str("status") == "error" {
 				return true
@@ -1568,7 +1572,33 @@ func BenchServer(svc *Service, sessionID string) *MCPServer {
 		}
 		return strings.Join(out, "\n"), nil
 	})
-	return withDevices(svc, sessionID, newMCP("bench", tools))
+	if svc.RendererAvailable() {
+		tools["bench_render"] = toolFn(func(ctx context.Context, a *Obj) (string, error) {
+			full, err := svc.Render(ctx, a.Str("url"), int(a.Num("width")), int(a.Num("height")), a.Str("format"))
+			if err != nil {
+				return "", err
+			}
+			return "Drew the page to " + full, nil
+		})
+	}
+	mcp := newMCP("bench", tools)
+	if !svc.RendererAvailable() {
+		// The schema lists every tool the server may offer; this one is left out where no
+		// machine can draw a page, so the model is never told of a tool that cannot work.
+		mcp.Manifest = withoutTool(mcp.Manifest, "bench_render")
+	}
+	return withDevices(svc, sessionID, mcp)
+}
+
+// withoutTool is a manifest that lists the same tools but one.
+func withoutTool(manifest *Obj, name string) *Obj {
+	kept := []any{}
+	for _, t := range arr(manifest.ObjAt("toolsListResult").Get("tools")) {
+		if o := t.(*Obj); o.Str("name") != name {
+			kept = append(kept, o)
+		}
+	}
+	return O("initializeResult", manifest.Get("initializeResult"), "toolsListResult", O("tools", kept))
 }
 
 func waitReport(ctx context.Context, svc *Service, target, a *Obj, me string) (string, error) {

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A Bench worker as a launchd service on macOS.
+
+     Install:
+       sudo cp bench-worker /usr/local/bin/
+       sudo cp com.bench.worker.plist /Library/LaunchDaemons/
+       sudo chown root:wheel /Library/LaunchDaemons/com.bench.worker.plist
+       sudo launchctl load -w /Library/LaunchDaemons/com.bench.worker.plist
+     The token lives in the root-owned config file, written by `bench-worker enrol` as root. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.bench.worker</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/bench-worker</string>
+		<string>run</string>
+		<string>--config</string>
+		<string>/var/root/.config/bench-worker/config.json</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>StandardOutPath</key>
+	<string>/var/log/bench-worker.log</string>
+	<key>StandardErrorPath</key>
+	<string>/var/log/bench-worker.log</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

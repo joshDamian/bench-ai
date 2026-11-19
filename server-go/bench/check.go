@@ -1,7 +1,12 @@
 package bench
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -119,6 +124,85 @@ func exitCode(err error, cmd *exec.Cmd) any {
 		return nil
 	}
 	return float64(cmd.ProcessState.ExitCode())
+}
+
+// --- a tree for a device to check ---------------------------------------------------
+
+// PackLimit caps the unpacked tree a device is asked to check.
+const PackLimit = 64 << 20
+
+// packSkip are the folders a check never needs from the server: they are made on the device
+// by its own install step, or they are repositories inside the repository.
+var packSkip = map[string]bool{".git": true, "node_modules": true, ".next": true, "dist": true, "build": true, "vendor": true}
+
+// PackTree packs a worktree as a gzipped tar and names it by its content. Two packs of the
+// same files give the same hash, so a device can keep a folder it already has.
+func PackTree(root string) ([]byte, string, error) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	var total int64
+	err := filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if p == root {
+			return nil
+		}
+		if fi.IsDir() {
+			if packSkip[fi.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		link := ""
+		if fi.Mode()&os.ModeSymlink != 0 {
+			link, _ = os.Readlink(p)
+		} else if !fi.Mode().IsRegular() {
+			return nil
+		}
+		if fi.Mode().IsRegular() {
+			total += fi.Size()
+			if total > PackLimit {
+				return fmt.Errorf("The tree is larger than %d MB", PackLimit>>20)
+			}
+		}
+		hdr, err := tar.FileInfoHeader(fi, link)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		hdr.Name = filepath.ToSlash(rel)
+		hdr.ModTime = time.Unix(0, 0)
+		hdr.Uid, hdr.Gid, hdr.Uname, hdr.Gname = 0, 0, "", ""
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if !fi.Mode().IsRegular() {
+			return nil
+		}
+		f, err := os.Open(p)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(tw, f)
+		f.Close()
+		return err
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if err := tw.Close(); err != nil {
+		return nil, "", err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, "", err
+	}
+	sum := sha256.Sum256(buf.Bytes())
+	return buf.Bytes(), hex.EncodeToString(sum[:]), nil
 }
 
 // --- suggestions --------------------------------------------------------------------

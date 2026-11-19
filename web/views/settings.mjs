@@ -1,11 +1,12 @@
 // Providers, defaults, devices, notifications and the server's health.
 import { html, useEffect, useRef, useState, recall, remember, formatCost, formatDuration, formatTokens } from '../lib.mjs';
-import { api, useStore, refresh, reconnectNow } from '../api.mjs';
+import { api, useStore, refresh, reconnectNow, watchWorkers } from '../api.mjs';
 import { showToast } from '../components/toast.mjs';
 import { confirmAction } from '../components/confirm.mjs';
 import { Toggle, Select } from '../components/form.mjs';
 import { Time } from '../components/time.mjs';
 import { ModelPicker, ModePicker, EffortPicker } from '../components/ui.mjs';
+import { CopyButton } from '../components/copy.mjs';
 import { useInstall } from '../install.mjs';
 import { ThemeTrigger } from '../components/theme-picker.mjs';
 import { TIERS, DEFAULT_ROUTING, routingModelOptions, modelName } from '../components/routing.mjs';
@@ -26,6 +27,7 @@ export function Settings() {
           <${Providers} />
           <${Notifications} />
           <${Devices} />
+          <${Workers} />
           <${InstallApp} />
           <${Usage} />
           <${Doctor} />
@@ -346,8 +348,106 @@ function Devices() {
   `;
 }
 
-function urlBase64ToUint8Array(s) {
-  const pad = '='.repeat((4 - (s.length % 4)) % 4);
+/**
+ * The machines that run the pool's jobs, as against Devices, which are the screens a
+ * person reads Bench on. A worker says what it can run while it is online; a service is
+ * something it holds past the job that started it, such as a booted simulator.
+ */
+function Workers() {
+  const [workers, setWorkers] = useState(null);
+  const [services, setServices] = useState([]);
+  const [failed, setFailed] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [enroled, setEnroled] = useState(null);
+  const [enrolError, setEnrolError] = useState(null);
+  const load = () =>
+    Promise.all([api.workers(), api.services()]).then(
+      ([w, s]) => {
+        setWorkers(w);
+        setServices(s);
+        setFailed(false);
+      },
+      () => setFailed(true)
+    );
+  useEffect(() => {
+    load();
+    return watchWorkers(load);
+  }, []);
+  const enrol = () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    setEnrolError(null);
+    api
+      .enrolWorker({ name: name.trim() })
+      .then((r) => {
+        setEnroled(r);
+        setName('');
+        load();
+      })
+      .catch((e) => setEnrolError(e.message || String(e)))
+      .finally(() => setBusy(false));
+  };
+  const stop = (sv) => api.stopService(sv.id).then(load).catch(toast);
+  const held = (id) => services.filter((s) => s.worker_id === id);
+  return html`
+    <${Group} id="workers" title="Workers" hint=${html`Other machines that run Bench's jobs - checks, renders, an iOS simulator - while they are online. A worker is a node process, not the Bench app.`}>
+      ${failed && !workers
+        ? html`<${LoadFailed} what="workers" retry=${load} />`
+        : !workers
+          ? html`<${SkeletonRows} n=${1} />`
+          : html`
+              ${!workers.length ? html`<p class="set-note">No other machines yet. Enrol one to run checks, renders and simulators there.</p>` : null}
+              ${workers.map((w) => {
+                const online = w.online;
+                const svs = held(w.id);
+                return html`
+                  <${Row}
+                    key=${w.id}
+                    label=${html`${w.name} <span class="badge ${online ? 'badge-good' : 'badge-neutral'}">${online ? 'online' : 'offline'}</span>`}
+                    hint=${online
+                      ? `${w.platform || 'unknown'} machine with ${w.resources?.cpus || '?'} cores, taking ${w.slots} job${w.slots === 1 ? '' : 's'} at a time. Runs ${(w.kinds || []).join(', ')}.`
+                      : w.last_seen_at
+                        ? html`Last seen <${Time} at=${w.last_seen_at} />`
+                        : 'Never linked'}
+                  >
+                    <button class="btn sm danger" type="button" onClick=${() => api.revokeWorker(w.id).then(load).catch(toast)}>Revoke</button>
+                  <//>
+                  ${svs.map(
+                    (sv) => html`<${Row}
+                      key=${sv.id}
+                      label=${sv.detail?.device || sv.id}
+                      hint=${`Held for ${formatDuration((sv.held_s || 0) * 1000)}, started by a ${sv.kind} job. ${sv.id}`}
+                    >
+                      <button class="btn sm secondary" type="button" onClick=${() => stop(sv)}>Stop</button>
+                    <//>`
+                  )}
+                `;
+              })}
+            `}
+      <${Row}
+        label="Enrol a worker"
+        hint="Get bench-worker on the machine, then run this command there. It joins this server and takes jobs while it is online, then reconnects by itself."
+        wide
+        after=${enroled
+          ? html`<div class="worker-cmd">
+              <code>${enroled.command}</code>
+              <${CopyButton} text=${enroled.command} label="Copy" />
+            </div>
+            <p class="set-note">The token in it is shown once. If it is lost, revoke the worker and enrol another.</p>`
+          : enrolError
+            ? html`<p class="set-error" role="alert"><span>Couldn't enrol it: ${enrolError}</span></p>`
+            : null}
+      >
+        <input class="input" aria-label="Worker name" placeholder="Name this machine" value=${name} onInput=${(e) => setName(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && enrol()} />
+        <button class="btn sm secondary" type="button" disabled=${!name.trim() || busy} onClick=${enrol}>${busy ? 'Enrolling…' : 'Enrol'}</button>
+      <//>
+      <p class="set-note">A worker holds no durable state. If it goes away mid-job, the server runs the job itself.</p>
+    <//>
+  `;
+}
+
+function urlBase64ToUint8Array(s) {  const pad = '='.repeat((4 - (s.length % 4)) % 4);
   const raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
