@@ -3,3 +3,4 @@ node_modules/
 .bench/*
 !.bench/design-check.*
 .ai-code/
+.playwright-mcp/
