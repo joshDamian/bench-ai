@@ -45,6 +45,8 @@ func (c *Conn) doJob(ctx context.Context, r *request) (map[string]any, error) {
 		return c.runCheck(ctx, r)
 	case "render":
 		return c.runRender(ctx, r)
+	case iosSim:
+		return c.runIOSSim(ctx, r)
 	}
 	return nil, fmt.Errorf("this worker does not run %s jobs", r.Kind)
 }

@@ -20,7 +20,7 @@ import (
 )
 
 // JobKinds are what a device can offer and the kinds of job the server sends.
-var JobKinds = []string{"exec", "check", "render", "serve"}
+var JobKinds = []string{"exec", "check", "render", "serve", "ios-sim", "android-emu"}
 
 // JobLimit is the longest a job may run unless it asks for less.
 const JobLimit = 15 * time.Minute

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -70,9 +71,21 @@ func (c *Config) Normalise() error {
 		c.Cache = filepath.Join(dir, "bench-worker")
 	}
 	if len(c.Kinds) == 0 {
-		c.Kinds = append([]string{}, DefaultKinds...)
+		c.Kinds = defaultKinds()
 	}
 	return nil
+}
+
+// defaultKinds is what this machine offers without being told: the general kinds, plus the
+// iOS simulator where the tools for it are installed.
+func defaultKinds() []string {
+	out := append([]string{}, DefaultKinds...)
+	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("xcrun"); err == nil {
+			out = append(out, iosSim)
+		}
+	}
+	return out
 }
 
 // Conn is one live link to the server.
@@ -163,6 +176,8 @@ func (c *Conn) Serve(ctx context.Context) error {
 			c.start(jobFrom(msg), ctx)
 		case "job_cancel":
 			c.stop(str(msg["id"]))
+		case "service_stop":
+			c.stopService(str(msg["id"]), str(msg["kind"]))
 		case "ping":
 			c.send(map[string]any{"type": "pong"})
 		case "pong":

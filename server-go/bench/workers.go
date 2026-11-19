@@ -40,18 +40,32 @@ type worker struct {
 	jobs    map[string]*jobWait
 }
 
-// Workers holds the registry rows in SQLite and the live links in memory.
+// serviceInfo is a long-lived thing a worker holds for the pool: a booted simulator, an
+// emulator, a hosted board. It lives only as long as the worker's link.
+type serviceInfo struct {
+	ID       string
+	Kind     string
+	WorkerID string
+	Worker   string
+	State    string
+	Ports    []any
+	Detail   *Obj
+	At       time.Time
+}
+
+// Workers holds the registry rows in SQLite, the live links and the services in memory.
 type Workers struct {
-	svc  *Service
-	mu   sync.Mutex
-	live map[string]*worker
+	svc      *Service
+	mu       sync.Mutex
+	live     map[string]*worker
+	services map[string]*serviceInfo
 }
 
 func (s *Service) Workers() *Workers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.workers == nil {
-		s.workers = &Workers{svc: s, live: map[string]*worker{}}
+		s.workers = &Workers{svc: s, live: map[string]*worker{}, services: map[string]*serviceInfo{}}
 	}
 	return s.workers
 }
@@ -154,8 +168,94 @@ func (w *Workers) shape(row *Obj, live *worker) *Obj {
 	}
 	return O("id", row.Str("id"), "name", row.Str("name"), "platform", platform, "labels", labels,
 		"slots", slots, "online", online, "version", version, "kinds", kinds, "resources", resources,
-		"job", job, "job_kind", jobKind,
+		"job", job, "job_kind", jobKind, "services", w.servicesOf(row.Str("id")),
 		"last_seen", row.Get("last_seen_at"), "created_at", row.Get("created_at"))
+}
+
+// rememberService records a service a worker says it holds, or drops it when it says the
+// service has stopped. A worker can only speak for its own services.
+func (w *Workers) rememberService(workerID string, msg *Obj) {
+	sid := strings.TrimSpace(msg.Str("id"))
+	kind := strings.TrimSpace(msg.Str("kind"))
+	if sid == "" || kind == "" {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	wk := w.live[workerID]
+	if wk == nil {
+		return
+	}
+	state := strings.ToLower(msg.Str("state"))
+	if state == "stopped" || state == "gone" {
+		delete(w.services, sid)
+		return
+	}
+	name := wk.info.Str("name")
+	w.services[sid] = &serviceInfo{ID: sid, Kind: kind, WorkerID: workerID, Worker: name,
+		State: state, Ports: arr(msg.Get("ports")), Detail: msg.ObjAt("detail"), At: time.Now()}
+}
+
+// servicesOf is a worker's services as the apps show them. Callers hold w.mu.
+func (w *Workers) servicesOf(workerID string) []any {
+	out := []any{}
+	for _, sv := range w.services {
+		if sv.WorkerID == workerID {
+			out = append(out, sv.Obj())
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].(*Obj).Str("id") < out[j].(*Obj).Str("id") })
+	return out
+}
+
+// Obj is one service as the apps see it.
+func (sv *serviceInfo) Obj() *Obj {
+	return O("id", sv.ID, "kind", sv.Kind, "worker_id", sv.WorkerID, "worker", sv.Worker,
+		"state", sv.State, "ports", sv.Ports, "detail", sv.Detail,
+		"held_s", int(time.Since(sv.At).Seconds()))
+}
+
+// Services is every service the pool holds now.
+func (w *Workers) Services() []*Obj {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := []*Obj{}
+	for _, sv := range w.services {
+		out = append(out, sv.Obj())
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Str("id") < out[j].Str("id") })
+	return out
+}
+
+// Service is one service by its instance id.
+func (w *Workers) Service(id string) *Obj {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if sv := w.services[id]; sv != nil {
+		return sv.Obj()
+	}
+	return nil
+}
+
+// StopService asks the worker to end a service and forgets it. A worker that has gone takes
+// its services with it, so this is best effort.
+func (w *Workers) StopService(id string) (*Obj, error) {
+	w.mu.Lock()
+	sv := w.services[id]
+	delete(w.services, id)
+	wk := (*worker)(nil)
+	if sv != nil {
+		wk = w.live[sv.WorkerID]
+	}
+	w.mu.Unlock()
+	if sv == nil {
+		return nil, fail("No such service", 404)
+	}
+	if wk != nil {
+		wk.send(O("type", "service_stop", "id", id, "kind", sv.Kind))
+	}
+	w.svc.Emit("workers", nil)
+	return O("ok", true), nil
 }
 
 // List is every worker, online first, then by name.
@@ -213,6 +313,11 @@ func (w *Workers) Link(ws *websocket.Conn, row *Obj) {
 			close(jw.done)
 		}
 		wk.jobs = map[string]*jobWait{}
+		for sid, sv := range w.services {
+			if sv.WorkerID == id {
+				delete(w.services, sid)
+			}
+		}
 		w.mu.Unlock()
 		w.svc.Emit("workers", nil)
 	}()
@@ -242,6 +347,9 @@ func (w *Workers) Link(ws *websocket.Conn, row *Obj) {
 				"labels", cleanLabels(msg.Get("labels")), "slots", msg.Num("slots"),
 				"kinds", kinds, "resources", msg.Get("resources"), "job", wk.info.Str("job"), "job_kind", wk.info.Str("job_kind"))
 			w.mu.Unlock()
+			w.svc.Emit("workers", nil)
+		case "service":
+			w.rememberService(id, msg)
 			w.svc.Emit("workers", nil)
 		case "job_progress", "job_done":
 			w.mu.Lock()
@@ -433,3 +541,37 @@ var (
 	errWorkerGone = fmt.Errorf("The worker went offline")
 	errWorkerBusy = fmt.Errorf("The worker has no free slot")
 )
+
+// StartService runs a service's start action on one worker and returns what it now holds.
+// A service is long-lived work with an instance id, so the job is sticky to that worker and
+// its cancel stops the service there.
+func (s *Service) StartService(ctx context.Context, workerID, kind string, args *Obj) (*Obj, error) {
+	dv := s.Workers().Worker(workerID)
+	if dv == nil || !truthy(dv.Get("online")) {
+		return nil, fail("That worker is not online", 409)
+	}
+	if args == nil {
+		args = O()
+	}
+	args = args.Clone()
+	if !args.Has("action") {
+		args.Set("action", "boot")
+	}
+	r, err := s.Jobs().Run(ctx, &JobSpec{Kind: kind, Args: args, Sticky: workerID, Timeout: 5 * time.Minute})
+	if err != nil {
+		return nil, err
+	}
+	if !r.OK {
+		return nil, fail("The service did not start: "+r.Text, 502)
+	}
+	// The worker registers the service just before it says the job is done.
+	for i := 0; i < 20; i++ {
+		for _, sv := range s.Workers().Services() {
+			if sv.Str("worker_id") == workerID && sv.Str("kind") == kind {
+				return sv, nil
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil, fail("The worker finished without registering a service", 502)
+}

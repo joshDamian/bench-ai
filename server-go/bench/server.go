@@ -1521,6 +1521,36 @@ func (s *Server) routesInit() {
 		}
 		return svc.Workers().Enrol(c.body, requestBase(c.r))
 	})
+	s.route("GET", "/api/services", func(c *ctxt) (any, error) { return svc.Workers().Services(), nil })
+	s.route("POST", "/api/workers/:id/services", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person starts a service", 403)
+		}
+		return svc.StartService(c.r.Context(), c.params[0], c.body.Str("kind"), c.body.ObjAt("args"))
+	})
+	s.route("POST", "/api/jobs", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person runs a job", 403)
+		}
+		timeout := time.Duration(c.body.Num("timeoutSec")) * time.Second
+		r, err := svc.Jobs().Run(c.r.Context(), &JobSpec{
+			Kind:    c.body.Str("kind"),
+			Args:    c.body.ObjAt("args"),
+			Sticky:  c.body.Str("sticky"),
+			Timeout: timeout,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return O("ok", r.OK, "text", r.Text, "image", r.Image, "exit", r.Exit,
+			"ranOn", r.RanOn, "worker_id", r.DeviceID, "worker", r.Device, "ms", r.Ms), nil
+	})
+	s.route("POST", "/api/services/:id/stop", func(c *ctxt) (any, error) {
+		if !person(c.auth) {
+			return nil, fail("Only a person stops a service", 403)
+		}
+		return svc.Workers().StopService(c.params[0])
+	})
 	s.route("DELETE", "/api/workers/:id", func(c *ctxt) (any, error) {
 		if !person(c.auth) {
 			return nil, fail("Only a person revokes a worker", 403)
