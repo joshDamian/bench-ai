@@ -25,8 +25,13 @@ const ALIASES = [
 
 /** The Claude login's own models, by the id Claude Code takes. */
 function claudeModels(providers) {
-  const claude = providers.find((p) => p.kind === 'claude-code');
-  return (claude?.models || []).filter((m) => m.enabled).map((m) => ({ value: m.name, label: m.display_name || m.name }));
+  const seen = new Map();
+  for (const p of providers.filter((x) => x.kind === 'claude-code')) {
+    for (const m of p.models || []) {
+      if (m.enabled && !seen.has(m.name)) seen.set(m.name, { value: m.name, label: m.display_name || m.name });
+    }
+  }
+  return [...seen.values()];
 }
 
 /** What a model value reads as: an alias's name, a model's display name, or the id itself. */

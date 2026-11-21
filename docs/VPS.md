@@ -39,7 +39,23 @@ npm install -g @anthropic-ai/claude-code
 claude          # then /login, follow the link, then /exit
 ```
 
-Bench's sessions use this login. If you use DeepSeek, OpenRouter or Fireworks instead or as well, put their keys in `~/.bench/env`, one `KEY=value` per line. The server reads that file itself when it starts, however it was started:
+Bench's sessions use this login. A second Claude subscription can be added as a fallback: log it in with its own config folder, then turn on **Anthropic (Claude login 2)** in Settings and pick it under Usage limit.
+
+```bash
+CLAUDE_CONFIG_DIR=~/.claude-2 claude   # then /login with the second account, then /exit
+```
+
+Settings and skills are per config folder. To share them with the first login, symlink the shared files in `~/.claude-2`, and keep credentials and history separate:
+
+```bash
+cd ~/.claude-2
+ln -sfn ~/.claude/settings.json settings.json
+ln -sfn ~/.claude/CLAUDE.md CLAUDE.md
+ln -sfn ~/.claude/skills skills
+ln -sfn ~/.claude/plugins plugins
+```
+
+If you use DeepSeek, OpenRouter or Fireworks instead or as well, put their keys in `~/.bench/env`, one `KEY=value` per line. The server reads that file itself when it starts, however it was started:
 
 ```bash
 mkdir -p ~/.bench && touch ~/.bench/env && chmod 600 ~/.bench/env

@@ -214,9 +214,10 @@ const fallbackKey = (f) => (f ? `${f.providerId}|${f.modelId || ''}` : '');
 /** What happens when the Claude login's usage limit stops a session. */
 function UsageLimit() {
   const providers = useStore((s) => s.providers);
+  const providerId = useStore((s) => s.defaults?.providerId);
   const l = useStore((s) => s.defaults?.limits) || { autoResume: true, fallback: null };
   const { run, saved, failed } = useSaves((limits) => api.setDefaults({ limits }).then(refresh));
-  const others = providers.filter((p) => p.kind !== 'claude-code' && (p.ready || p.id === l.fallback?.providerId));
+  const others = providers.filter((p) => p.id !== providerId && (p.ready || p.id === l.fallback?.providerId));
   const options = [
     { value: '', label: 'Nobody - wait for the limit' },
     ...others.flatMap((p) => [

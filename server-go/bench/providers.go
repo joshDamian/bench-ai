@@ -3,6 +3,7 @@ package bench
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -79,11 +80,20 @@ func InvocationID(m *Obj) string {
 	return ""
 }
 
+// providerConfigDir is a second Claude login's own folder, when the provider names one.
+func providerConfigDir(p *Obj) string {
+	return p.ObjAt("config").Str("claudeConfigDir")
+}
+
 // ProviderEnv is what sends a session to its provider, on top of CleanEnv.
 func ProviderEnv(p *Obj, model *Obj) ([]string, error) {
 	h, ok := hostedProviders[p.Str("kind")]
 	if !ok {
-		return []string{"BENCH_PROVIDER=" + p.Str("id")}, nil
+		out := []string{"BENCH_PROVIDER=" + p.Str("id")}
+		if d := providerConfigDir(p); d != "" && p.Str("kind") == "claude-code" {
+			out = append(out, "CLAUDE_CONFIG_DIR="+expandHome(d))
+		}
+		return out, nil
 	}
 	cfg := p.ObjAt("config")
 	keyEnv := cfg.Str("apiKeyEnv")
@@ -115,7 +125,14 @@ func ProviderReady(p *Obj) (bool, any) {
 	h, ok := hostedProviders[p.Str("kind")]
 	if !ok {
 		if p.Str("kind") == "claude-code" {
-			return true, nil
+			d := providerConfigDir(p)
+			if d == "" {
+				return true, nil
+			}
+			if exists(filepath.Join(expandHome(d), ".credentials.json")) {
+				return true, nil
+			}
+			return false, "Not logged in: run CLAUDE_CONFIG_DIR=" + d + " claude, then /login."
 		}
 		return false, "Unknown kind " + p.Str("kind")
 	}

@@ -1063,8 +1063,8 @@ func (s *Service) fallback(v any) (any, error) {
 	if p == nil {
 		return nil, fail("No such provider")
 	}
-	if p.Str("kind") == "claude-code" {
-		return nil, fail("The fallback has to be another provider: the Claude login is the one that is out")
+	if p.Str("id") == s.Defaults().Str("providerId") {
+		return nil, fail("The fallback has to be a different provider from the one sessions run on")
 	}
 	var modelID any
 	if m := fb.Str("modelId"); m != "" {
