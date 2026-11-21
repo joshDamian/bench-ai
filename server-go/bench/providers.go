@@ -85,6 +85,45 @@ func providerConfigDir(p *Obj) string {
 	return p.ObjAt("config").Str("claudeConfigDir")
 }
 
+// carryTranscript copies a conversation's transcript from whichever Claude config
+// folder holds it into the one the session is about to resume on. Claude Code keeps
+// transcripts per config folder, so a session moved to another Claude login would
+// otherwise stop with "No conversation found with session ID".
+func carryTranscript(toDir, id string, fromDirs []string) {
+	if toDir == "" || id == "" {
+		return
+	}
+	name := id + ".jsonl"
+	find := func(dir string) string {
+		m, _ := filepath.Glob(filepath.Join(dir, "projects", "*", name))
+		if len(m) == 0 {
+			return ""
+		}
+		return m[0]
+	}
+	if find(toDir) != "" {
+		return
+	}
+	for _, from := range fromDirs {
+		src := find(from)
+		if src == "" || filepath.Clean(from) == filepath.Clean(toDir) {
+			continue
+		}
+		b, err := os.ReadFile(src)
+		if err != nil {
+			continue
+		}
+		dst := filepath.Join(toDir, "projects", filepath.Base(filepath.Dir(src)))
+		if err := os.MkdirAll(dst, 0o700); err != nil {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(dst, name), b, 0o600); err != nil {
+			continue
+		}
+		return
+	}
+}
+
 // ProviderEnv is what sends a session to its provider, on top of CleanEnv.
 func ProviderEnv(p *Obj, model *Obj) ([]string, error) {
 	h, ok := hostedProviders[p.Str("kind")]

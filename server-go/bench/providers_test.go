@@ -186,3 +186,44 @@ func fakeClaude(t *testing.T) string {
 	}
 	return path
 }
+
+// A conversation started on one Claude login is copied into the other login's folder.
+func TestCarryTranscriptCopiesAConversationToAnotherLogin(t *testing.T) {
+	first, second := t.TempDir(), t.TempDir()
+	srcDir := filepath.Join(first, "projects", "-home-dev-bench-projects-research")
+	if err := os.MkdirAll(srcDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(srcDir, "abc-123.jsonl")
+	if err := os.WriteFile(src, []byte("{\"type\":\"user\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	carryTranscript(second, "abc-123", []string{first})
+	dst := filepath.Join(second, "projects", "-home-dev-bench-projects-research", "abc-123.jsonl")
+	b, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("no copy: %v", err)
+	}
+	if string(b) != "{\"type\":\"user\"}\n" {
+		t.Fatalf("copy reads %q", b)
+	}
+	if st, _ := os.Stat(dst); st.Mode().Perm() != 0o600 {
+		t.Fatalf("copy mode %v", st.Mode().Perm())
+	}
+
+	// A later copy does not overwrite what the second login itself has written.
+	if err := os.WriteFile(dst, []byte("grown\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	carryTranscript(second, "abc-123", []string{first})
+	if b, _ := os.ReadFile(dst); string(b) != "grown\n" {
+		t.Fatalf("the copy was overwritten: %q", b)
+	}
+
+	// An unknown conversation copies nothing.
+	carryTranscript(second, "not-there", []string{first})
+	if _, err := os.Stat(filepath.Join(second, "projects", "-home-dev-bench-projects-research", "not-there.jsonl")); !os.IsNotExist(err) {
+		t.Fatal("an unknown conversation was copied")
+	}
+}
