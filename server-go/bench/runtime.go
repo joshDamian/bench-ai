@@ -65,6 +65,32 @@ func configDir() string {
 	return filepath.Join(home, ".claude")
 }
 
+// transcriptDirs are the Claude config folders a conversation may have started in:
+// Bench's own, and every Claude login the catalog knows.
+func (r *Runtime) transcriptDirs() []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(d string) {
+		d = expandHome(strings.TrimSpace(d))
+		if d == "" {
+			return
+		}
+		d = filepath.Clean(d)
+		if seen[d] {
+			return
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	add(configDir())
+	for _, p := range r.Store.ListProviders() {
+		if p.Str("kind") == "claude-code" {
+			add(providerConfigDir(p))
+		}
+	}
+	return out
+}
+
 func userInstructions() string {
 	b, err := os.ReadFile(filepath.Join(configDir(), "CLAUDE.md"))
 	if err != nil {
@@ -890,6 +916,14 @@ func (r *Runtime) start(s *Obj) (*live, error) {
 		l.lastUsed = time.Now()
 		l.mu.Unlock()
 		r.handle(l, id, m, priced)
+	}
+	// A resume on another Claude login needs the conversation in that login's folder.
+	if o.Resume != "" && provider.Str("kind") == "claude-code" {
+		to := providerConfigDir(provider)
+		if to == "" {
+			to = configDir()
+		}
+		carryTranscript(expandHome(to), o.Resume, r.transcriptDirs())
 	}
 	proc, err := StartProc(o)
 	if err != nil {
