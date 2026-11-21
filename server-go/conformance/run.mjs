@@ -48,6 +48,9 @@ async function start(kind, root, port) {
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
   env.GH_CONFIG_DIR = path.join(root, 'gh');
+  // The developer's own Claude logins are not the scenario's answer either.
+  env.HOME = path.join(root, 'home');
+  fs.mkdirSync(env.HOME, { recursive: true });
   const child = spawn(goBin, ['serve'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   child.stdout.on('data', (d) => (log += d));

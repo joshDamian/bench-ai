@@ -63,7 +63,7 @@ const schema = `
 //go:embed providers.json
 var providersJSON []byte
 
-// BuiltinProviders is the catalog src/providers.mjs ships, exported from it as JSON.
+// BuiltinProviders is the Go server's catalog; src/providers.mjs is the frozen Node reference it came from.
 var BuiltinProviders = func() []any { return ParseJSON(string(providersJSON)).([]any) }()
 
 func Hash(s string) string {
