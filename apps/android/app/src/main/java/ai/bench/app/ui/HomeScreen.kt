@@ -523,7 +523,7 @@ fun HomeScreen(store: BenchStore, onOpen: (String) -> Unit, onNew: () -> Unit, o
  * viewer, with the run's "Then" steps under it. Home and Research both open reports here.
  */
 @Composable
-fun ReportViewer(store: BenchStore, r: Report, onOpen: (String) -> Unit, onAbout: () -> Unit, onClose: () -> Unit) {
+fun ReportViewer(store: BenchStore, r: Report, onOpen: (String) -> Unit, onAbout: () -> Unit, above: (@Composable () -> Unit)? = null, below: (@Composable () -> Unit)? = null, onClose: () -> Unit) {
     val s by store.state.collectAsState()
     val reports by store.reports.collectAsState()
     val schedules by store.schedules.collectAsState()
@@ -536,21 +536,27 @@ fun ReportViewer(store: BenchStore, r: Report, onOpen: (String) -> Unit, onAbout
         // A schedule's second report offers to keep one board instead.
         val sch = schedules.firstOrNull { it.id == r.schedule_id }
         var offered by remember(r.path) { mutableStateOf(sch != null && !sch.keep_board && r.kind != "board" && reports.count { it.schedule_id == sch.id && it.kind != "drafts" } >= 2 && !BoardOffers.dismissed(sch.id)) }
-        ai.bench.app.ui.session.FileViewer(
-            files, ai.bench.app.ui.session.FileInfo(r.path, r.path, r.name, if (r.name.endsWith(".html")) "text/html" else "text/markdown", r.size, true, "text", true),
-            top = if (!offered || sch == null) null else ({
-                BoardOffer(sch.title, onKeep = {
-                    offered = false
-                    scope.launch { runCatching { store.api.saveSchedule(sch.id, kotlinx.serialization.json.buildJsonObject { put("keepBoard", true) }) }; store.loadExtras() }
-                }) { offered = false; BoardOffers.dismiss(sch.id) }
-            }),
-            bottom = s.sessions.firstOrNull { it.id == r.session_id }?.next_steps?.takeIf { it.isNotEmpty() }?.let { steps -> @Composable {
-                ThenSteps(steps) { step ->
+        val steps = s.sessions.firstOrNull { it.id == r.session_id }?.next_steps?.takeIf { it.isNotEmpty() }
+        val thenAndBelow: (@Composable () -> Unit)? = if (steps == null && below == null) null else {
+            {
+                if (steps != null) ThenSteps(steps) { step ->
                     onClose()
                     scope.launch { runCatching { store.api.send(r.session_id, step) } }
                     onOpen(r.session_id)
                 }
-            } },
+                below?.invoke()
+            }
+        }
+        ai.bench.app.ui.session.FileViewer(
+            files, ai.bench.app.ui.session.FileInfo(r.path, r.path, r.name, if (r.name.endsWith(".html")) "text/html" else "text/markdown", r.size, true, "text", true),
+            top = if ((!offered || sch == null) && above == null) null else ({
+                above?.invoke()
+                if (offered && sch != null) BoardOffer(sch.title, onKeep = {
+                    offered = false
+                    scope.launch { runCatching { store.api.saveSchedule(sch.id, kotlinx.serialization.json.buildJsonObject { put("keepBoard", true) }) }; store.loadExtras() }
+                }) { offered = false; BoardOffers.dismiss(sch.id) }
+            }),
+            bottom = thenAndBelow,
         ) { onClose() }
     }
 }
@@ -748,7 +754,7 @@ private fun ReportList(list: List<Report>, sessions: List<ai.bench.app.data.Sess
 }
 
 @Composable
-private fun FilterChip(text: String, on: Boolean, onClick: () -> Unit) {
+internal fun FilterChip(text: String, on: Boolean, onClick: () -> Unit) {
     val c = Bench.colors
     Text(
         text, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,

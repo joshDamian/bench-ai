@@ -319,3 +319,30 @@
 - *Subagents and Usage limit sit right after Defaults, before Providers.* They are defaults too - what a session starts with and what happens when it stops - and a person who came for one is the one who came for Defaults. Providers is a different job (where calls go), and the fallback select names providers, so it reads naturally just above them.
 - *A project's and a task's subagent models are a dialog, not a Settings group.* They belong to the project or the task; the dialog shows each field as `Default (Haiku)` - the value it would follow, named - so a person can see what "default" means at that level without opening Settings. Each field saves when the dialog's **Save** is pressed, the one filled button inside the dialog.
 - *Workers sit beside Devices, not on the Dashboard.* A worker is a machine a person adds and removes, and revoking one is the same kind of decision as unpairing a device - which is why the two groups are neighbours and neither is filled. The Dashboard answers what the server is costing now; a worker pool is configured, not watched, and a group that ticks a status dot is enough to say a machine has gone.
+
+## View: Android Research tab
+
+**Mode:** Operate. Motion only answers an action.
+**Job:** come back to something you asked Claude to find out or do, and read what it found.
+**Unit:** one row is one question (one Research session), never one file. The files a question made are its answer and live inside it. A row is never a session in one place and a file in another.
+**Pattern:** list-detail on phone (list, then a full-screen answer), with states and a filter-in-place search. Two lists, because there are two kinds of question:
+- Following: questions a schedule answers again (boards, watched pages, repeat runs). Their answer changes, so what matters is "what is new since I last looked".
+- Answers: questions asked once, newest first. What matters is "is it done, and what did it find".
+**Primary action:** "What should Claude find out?" bar under the title. Exactly one.
+**Hierarchy:** 1. what each question found (the answer's title); 2. whether it is new to you (a dot and a heavier title); 3. the question as you asked it; 4. when.
+**Rows (both lists):** one strong line and one muted line, no cards, no buttons in rows, no middle-dot meta strings. A fixed 8dp slot on the left holds the accent dot when the row has something you have not seen.
+- Answers, running: line 1 the question; line 2 the live step in accent; right "now". Tap opens the conversation.
+- Answers, done with files: line 1 the main file's title (a report or page before drafts); line 2 the question; right the time. Unsent drafts make line 2 "2 emails to send" in accent, because that is something you owe. Tap opens the answer.
+- Answers, done without a file: line 1 the question; line 2 "Answered in the conversation". Tap opens the conversation.
+- Following: line 1 the schedule's name; line 2 its freshness ("4 new, updated 2 h ago", "Watching example.com, checked 9:00"). Tap opens its latest board or report; with none yet, the schedule.
+**Answer (detail):** opens straight on the main file in the file viewer. When the question made more than one file, a row of chips under the viewer's title switches between them; drafts open the drafts screen and Back returns to the answer. The bottom bar holds "Open conversation" and, for a question asked once, "Follow". The run's "Then" steps stay above that bar.
+**States:**
+- Empty, first run: "No research yet", one line on what it does, and three example questions that start research.
+- Loading: the lists keep their last data; pull to refresh.
+- No search results: "Nothing matches 'x'." No examples.
+- Following empty: the section is not shown. Answers empty while Following has rows: "Nothing asked yet." under the Answers label.
+- Happy path: 1 to 5 followed questions, 20 to 60 answers with 0 to 12 unread.
+- Worst case: a question that is a pasted URL or a 300-character prompt (two lines, then an ellipsis); 15 files from one question (chips scroll sideways); 100 answers (one lazy list, labels Today, This week, Earlier).
+**Layout - phone (390):** title row with search; the ask bar; "Following" label with "All schedules" on its right and at most three rows; "Answers" under day labels. Bottom navigation unchanged.
+**Avoid:** a section per status (it splits one question across the screen), cards with a Read button for every file, a middle screen between a tap and the answer, filter chips that hide most of the tab.
+**Chosen, not asked:** unread is a row state, not a section, so the count of rows equals the count of questions; running is a row state for the same reason; the answer's title leads the row because it is what the person remembers finding, while the prompt (often a pasted link) is a poor name; the person confirmed every item in the tab comes from research sessions, so the scope stays.

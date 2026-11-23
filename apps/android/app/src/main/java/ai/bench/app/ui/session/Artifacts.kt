@@ -485,6 +485,9 @@ fun HtmlPage(html: String, key: String) {
                         val u = req.url
                         val host = u.host.orEmpty()
                         if (host.endsWith(".pages.bench.invalid")) return null
+                        // The page itself: newer WebViews load loadDataWithBaseURL's document as a
+                        // data: URL through here, and it has no host. Blocking it blanks every page.
+                        if (u.scheme in setOf("data", "blob", "about")) return null
                         val picture = req.method == "GET" && (req.requestHeaders["Accept"].orEmpty().startsWith("image/") || u.path.orEmpty().substringAfterLast('.').lowercase() in PICTURES)
                         if (u.scheme == "https" && req.method == "GET" && (host in PAGE_CDNS || picture)) return null
                         return android.webkit.WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
