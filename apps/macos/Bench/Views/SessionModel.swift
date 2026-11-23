@@ -85,6 +85,9 @@ final class SessionModel {
     private(set) var times: [Int: Date] = [:]
     /// Edit & resend: text for the composer to take.
     var editDraft: String?
+    /// What is typed in the composer and not sent yet. It lives here, not in the view,
+    /// so it is still there when you leave the tab and come back.
+    var draft = ""
     var thinking: [String: String] = [:]
     var error: String?
 

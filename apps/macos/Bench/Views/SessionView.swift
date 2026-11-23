@@ -20,7 +20,6 @@ struct SessionView: View {
     var showsTitle = true
     @State private var model: SessionModel
     @State private var files: SessionFiles
-    @State private var draft = ""
     @State private var follow = true
     @State private var dropTargeted = false
     @FocusState private var composerFocused: Bool
@@ -119,7 +118,7 @@ struct SessionView: View {
             sidePanel()
                 .overlay {
                     FloatingComposer(files: files, lastReply: lastReply) {
-                        Composer(model: model, draft: $draft, running: model.session?.status == "running", embedded: true, focused: $composerFocused, floating: true)
+                        Composer(model: model, draft: $model.draft, running: model.session?.status == "running", embedded: true, focused: $composerFocused, floating: true)
                     } onOpen: { composerFocused = true }
                 }
         } else {
@@ -336,7 +335,7 @@ struct SessionView: View {
                                   model: model, jump: { jumpTurn($0, proxy) }))
             .overlay(alignment: .bottom) {
                 if approvals.isEmpty {
-                    Composer(model: model, draft: $draft, running: running, embedded: embedded, focused: $composerFocused)
+                    Composer(model: model, draft: $model.draft, running: running, embedded: embedded, focused: $composerFocused)
                         // The thread keeps room for the composer however tall it grows.
                         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { composerHeight = $0 }
                         .padding(.top, 28)
@@ -388,7 +387,7 @@ struct SessionView: View {
         .onAppear { takePending() }
         .onChange(of: model.editDraft) { _, v in
             guard let v else { return }
-            draft = v; model.editDraft = nil; composerFocused = true
+            model.draft = v; model.editDraft = nil; composerFocused = true
         }
         .onChange(of: app.pendingAttachments[sessionId]?.count ?? 0) { _, _ in takePending() }
         .onDrop(of: [.fileURL, .image], isTargeted: $dropTargeted) { providers in
