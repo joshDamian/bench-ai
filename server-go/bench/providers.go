@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Providers: where a session's requests go (src/providers.mjs).
@@ -85,10 +86,12 @@ func providerConfigDir(p *Obj) string {
 	return p.ObjAt("config").Str("claudeConfigDir")
 }
 
-// carryTranscript copies a conversation's transcript from whichever Claude config
-// folder holds it into the one the session is about to resume on. Claude Code keeps
-// transcripts per config folder, so a session moved to another Claude login would
-// otherwise stop with "No conversation found with session ID".
+// carryTranscript makes the folder a session is about to resume on hold the newest
+// copy of its conversation. Claude Code keeps transcripts per config folder, so each
+// Claude login has its own copy; a session that moves between logins would otherwise
+// resume a stale copy (or find none: "No conversation found with session ID"). The
+// copy modified last is the one the session last ran on, so it wins. An older copy in
+// the target is replaced through a temporary file and a rename, never half-written.
 func carryTranscript(toDir, id string, fromDirs []string) {
 	if toDir == "" || id == "" {
 		return
@@ -101,26 +104,46 @@ func carryTranscript(toDir, id string, fromDirs []string) {
 		}
 		return m[0]
 	}
-	if find(toDir) != "" {
+	var src string
+	var newest time.Time
+	for _, from := range fromDirs {
+		if filepath.Clean(from) == filepath.Clean(toDir) {
+			continue
+		}
+		f := find(from)
+		if f == "" {
+			continue
+		}
+		if st, err := os.Stat(f); err == nil && st.ModTime().After(newest) {
+			src, newest = f, st.ModTime()
+		}
+	}
+	if src == "" {
 		return
 	}
-	for _, from := range fromDirs {
-		src := find(from)
-		if src == "" || filepath.Clean(from) == filepath.Clean(toDir) {
-			continue
+	dst := find(toDir)
+	if dst != "" {
+		if st, err := os.Stat(dst); err == nil && !st.ModTime().Before(newest) {
+			return
 		}
-		b, err := os.ReadFile(src)
-		if err != nil {
-			continue
-		}
-		dst := filepath.Join(toDir, "projects", filepath.Base(filepath.Dir(src)))
-		if err := os.MkdirAll(dst, 0o700); err != nil {
-			continue
-		}
-		if err := os.WriteFile(filepath.Join(dst, name), b, 0o600); err != nil {
-			continue
-		}
+	} else {
+		dst = filepath.Join(toDir, "projects", filepath.Base(filepath.Dir(src)), name)
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
 		return
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return
+	}
+	tmp := dst + ".bench-tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		os.Remove(tmp)
+		return
+	}
+	os.Chtimes(tmp, newest, newest)
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
 	}
 }
 
