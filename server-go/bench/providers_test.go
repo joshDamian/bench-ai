@@ -187,43 +187,59 @@ func fakeClaude(t *testing.T) string {
 	return path
 }
 
-// A conversation started on one Claude login is copied into the other login's folder.
-func TestCarryTranscriptCopiesAConversationToAnotherLogin(t *testing.T) {
+// A conversation started on one Claude login is copied into the other login's folder,
+// and a switch back brings the newer copy with it rather than resuming a stale one.
+func TestCarryTranscriptKeepsTheNewestCopy(t *testing.T) {
 	first, second := t.TempDir(), t.TempDir()
-	srcDir := filepath.Join(first, "projects", "-home-dev-bench-projects-research")
-	if err := os.MkdirAll(srcDir, 0o700); err != nil {
-		t.Fatal(err)
+	proj := "-home-dev-bench-projects-research"
+	path := func(dir string) string { return filepath.Join(dir, "projects", proj, "abc-123.jsonl") }
+	write := func(dir, body string, at time.Time) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path(dir)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path(dir), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		os.Chtimes(path(dir), at, at)
 	}
-	src := filepath.Join(srcDir, "abc-123.jsonl")
-	if err := os.WriteFile(src, []byte("{\"type\":\"user\"}\n"), 0o600); err != nil {
-		t.Fatal(err)
+	read := func(dir string) string {
+		b, _ := os.ReadFile(path(dir))
+		return string(b)
 	}
+	base := time.Now().Add(-time.Hour)
+	both := []string{first, second}
 
-	carryTranscript(second, "abc-123", []string{first})
-	dst := filepath.Join(second, "projects", "-home-dev-bench-projects-research", "abc-123.jsonl")
-	b, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("no copy: %v", err)
+	// Login 1 to login 2: the second has none, so it gets a copy.
+	write(first, "one\n", base)
+	carryTranscript(second, "abc-123", both)
+	if got := read(second); got != "one\n" {
+		t.Fatalf("login 2 has %q", got)
 	}
-	if string(b) != "{\"type\":\"user\"}\n" {
-		t.Fatalf("copy reads %q", b)
-	}
-	if st, _ := os.Stat(dst); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(path(second)); st.Mode().Perm() != 0o600 {
 		t.Fatalf("copy mode %v", st.Mode().Perm())
 	}
 
-	// A later copy does not overwrite what the second login itself has written.
-	if err := os.WriteFile(dst, []byte("grown\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	carryTranscript(second, "abc-123", []string{first})
-	if b, _ := os.ReadFile(dst); string(b) != "grown\n" {
-		t.Fatalf("the copy was overwritten: %q", b)
+	// The session grows on login 2, then moves back: login 1's stale copy is replaced.
+	write(second, "one\ntwo\n", base.Add(time.Minute))
+	carryTranscript(first, "abc-123", both)
+	if got := read(first); got != "one\ntwo\n" {
+		t.Fatalf("back on login 1 the session would resume %q", got)
 	}
 
-	// An unknown conversation copies nothing.
-	carryTranscript(second, "not-there", []string{first})
-	if _, err := os.Stat(filepath.Join(second, "projects", "-home-dev-bench-projects-research", "not-there.jsonl")); !os.IsNotExist(err) {
+	// A target that is already the newest is left alone.
+	write(first, "one\ntwo\nthree\n", base.Add(2*time.Minute))
+	carryTranscript(first, "abc-123", both)
+	if got := read(first); got != "one\ntwo\nthree\n" {
+		t.Fatalf("the newest copy was overwritten: %q", got)
+	}
+
+	// An unknown conversation copies nothing, and no temporary file is left.
+	carryTranscript(second, "not-there", both)
+	if _, err := os.Stat(filepath.Join(second, "projects", proj, "not-there.jsonl")); !os.IsNotExist(err) {
 		t.Fatal("an unknown conversation was copied")
+	}
+	if m, _ := filepath.Glob(filepath.Join(second, "projects", proj, "*.bench-tmp")); len(m) > 0 {
+		t.Fatalf("temporary files left: %v", m)
 	}
 }
